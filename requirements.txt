@@ -1,0 +1,8 @@
+langgraph==1.2.16
+chromadb==1.5.9
+llama-cpp-python==0.3.36
+sentence-transformers==6.2.0
+fastapi==0.161.1
+python-docx==1.2.0
+snowballstemmer==3.0.1
+pytest==8.4.2

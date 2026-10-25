@@ -1,0 +1,11 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+
+data/chroma/
+data/chroma-debug/
+data/inbox/
+data/models/
+data/load_time.txt
+
+.env

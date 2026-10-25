@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Документы</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; max-width: 46rem; }
+    section { margin-bottom: 2rem; }
+    #query { width: 100%; min-height: 6rem; box-sizing: border-box; }
+    #readiness { font-weight: bold; }
+    progress { width: 100%; }
+    .file { margin: 0.5rem 0; }
+    .turn { margin: 1rem 0; padding-bottom: 0.5rem; border-bottom: 1px solid #ddd; }
+    .question { font-weight: bold; }
+    .answer { margin: 0.3rem 0; white-space: pre-wrap; }
+    .status { color: #555; font-size: 0.9rem; }
+    .sources { color: #555; font-size: 0.85rem; margin: 0.2rem 0 0 1rem; padding: 0; }
+  </style>
+</head>
+<body>
+  <p id="readiness">Модель загружается</p>
+  <section>
+    <h1>Документы</h1>
+    <input id="files" type="file" multiple accept=".txt,.md,.doc,.docx">
+    <button id="load" type="button">Загрузить</button>
+    <ul id="names"></ul>
+    <div id="steps"></div>
+  </section>
+  <section>
+    <h2>Чат</h2>
+    <form id="ask">
+      <textarea id="query" required></textarea>
+      <button id="send" type="submit">Спросить</button>
+      <button id="fresh" type="button">Новый диалог</button>
+    </form>
+    <div id="log"></div>
+  </section>
+  <script>
+    const readiness = document.getElementById("readiness");
+    let systemReady = false;
+    let dialogId = sessionStorage.getItem("dialogId");
+    if (!dialogId) {
+      dialogId = crypto.randomUUID();
+      sessionStorage.setItem("dialogId", dialogId);
+    }
+
+    function element(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    async function showReady() {
+      try {
+        const response = await fetch("/ready", { signal: AbortSignal.timeout(4000) });
+        if (response.status === 200) {
+          systemReady = true;
+          readiness.textContent = "Система готова";
+          return;
+        }
+        systemReady = false;
+        const data = await response.json().catch(() => ({}));
+        if (typeof data.elapsed_sec === "number") {
+          readiness.textContent = data.eta_sec == null
+            ? `Модель загружается. Прошло ${data.elapsed_sec} с.`
+            : `Модель загружается. Прошло ${data.elapsed_sec} с. Осталось около ${data.eta_sec} с.`;
+        } else {
+          readiness.textContent = "Модель загружается";
+        }
+      } catch (error) {
+        readiness.textContent = "Модель загружается";
+      }
+      setTimeout(showReady, 2000);
+    }
+
+    async function showDocuments() {
+      try {
+        const data = await (await fetch("/documents", { signal: AbortSignal.timeout(4000) })).json();
+        names.replaceChildren(...(data.documents || []).map((name) => {
+          const item = element("li", "", `${name} `);
+          item.append(element("span", "", "готов к получению вопросов"), " ");
+          const remove = element("button", "", "Удалить");
+          remove.type = "button";
+          remove.dataset.name = name;
+          item.append(remove);
+          return item;
+        }));
+      } catch (error) {
+        setTimeout(showDocuments, 2000);
+      }
+    }
+
+    names.onclick = async (event) => {
+      const name = event.target.dataset.name;
+      if (!name) return;
+      await fetch("/documents/" + encodeURIComponent(name), { method: "DELETE" });
+      await showDocuments();
+    };
+
+    function row(file) {
+      const box = element("div", "file");
+      box.dataset.file = file.name;
+      const bar = element("progress");
+      bar.max = 3;
+      bar.value = 0;
+      box.append(element("div", "", file.name), bar, element("span", "", "загружен"));
+      return box;
+    }
+
+    function paint(name, step, label) {
+      const box = [...steps.children].find((child) => child.dataset.file === name);
+      if (!box) return;
+      box.querySelector("progress").value = step;
+      box.querySelector("span").textContent = label;
+    }
+
+    load.onclick = async () => {
+      const chosen = [...files.files];
+      steps.replaceChildren(...chosen.map(row));
+      const body = new FormData();
+      for (const file of chosen) body.append("files", file);
+      const request = new XMLHttpRequest();
+      request.open("POST", "/upload");
+      request.upload.onprogress = (event) => {
+        if (!event.lengthComputable) return;
+        for (const file of chosen) paint(file.name, Math.min(1, event.loaded / event.total), "загружен");
+      };
+      request.onload = async () => {
+        let data = {};
+        try { data = JSON.parse(request.responseText); } catch (error) { data = {}; }
+        if (request.status !== 200) {
+          steps.append(element("p", "", data.detail || "Ошибка загрузки"));
+          return;
+        }
+        for (const file of chosen) paint(file.name, 2, "разобран");
+        await showDocuments();
+        const known = new Set(data.documents || []);
+        for (const file of chosen) {
+          if (known.has(file.name)) paint(file.name, 3, "готов к получению вопросов");
+        }
+      };
+      request.onerror = () => steps.append(element("p", "", "Ошибка загрузки"));
+      request.send(body);
+    };
+
+    fresh.onclick = () => {
+      dialogId = crypto.randomUUID();
+      sessionStorage.setItem("dialogId", dialogId);
+      log.replaceChildren();
+      query.value = "";
+    };
+
+    ask.onsubmit = async (event) => {
+      event.preventDefault();
+      const text = query.value.trim();
+      if (!text) return;
+      const turn = element("div", "turn");
+      turn.append(element("div", "question", text));
+      const answer = element("div", "answer", "Ответ пишется… 0 с");
+      turn.append(answer);
+      log.append(turn);
+      query.value = "";
+      send.disabled = true;
+      const started = Date.now();
+      const timer = setInterval(() => {
+        answer.textContent = `Ответ пишется… ${Math.round((Date.now() - started) / 1000)} с`;
+      }, 1000);
+      try {
+        const response = await fetch("/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: text, dialog_id: dialogId }),
+        });
+        const data = await response.json().catch(() => ({}));
+        clearInterval(timer);
+        if (!response.ok) {
+          answer.textContent = data.detail || "Ошибка сервера";
+          return;
+        }
+        answer.textContent = data.answer;
+        const seconds = Math.round((Date.now() - started) / 1000);
+        turn.append(element("div", "status", `Статус: ${data.status}. Время: ${seconds} с.`));
+        const sources = data.sources || [];
+        if (sources.length) {
+          const list = element("ul", "sources");
+          for (const source of sources) {
+            const where = source.section ? ` — ${source.section}` : "";
+            list.append(element("li", "", `[${source.number}] ${source.document_name}${where}`));
+          }
+          turn.append(list);
+        }
+      } catch (error) {
+        clearInterval(timer);
+        answer.textContent = "Сервер не ответил";
+      } finally {
+        send.disabled = false;
+        if (systemReady) readiness.textContent = "Система готова";
+      }
+    };
+
+    showReady();
+    showDocuments();
+  </script>
+</body>
+</html>
