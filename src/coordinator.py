@@ -1,6 +1,6 @@
 from langgraph.graph import END, StateGraph
 
-from agents import MISSING, NO_ANSWER, UNCONFIRMED, answer_agent, check_agent, clarify_agent, search_agent, select_agent
+from agents import MISSING, NO_ANSWER, UNCONFIRMED, _dependent, answer_agent, check_agent, clarify_agent, search_agent, select_agent
 from dialog import add_turn, get_dialog
 from store import known
 
@@ -17,7 +17,10 @@ def run(query, dialog_id):
         return state
 
     def search(state):
-        state["chunks"] = search_agent(state["clear"])
+        names = None
+        if state["work"] and _dependent(state["query"]):
+            names = state["work"][-1].get("document_names") or None
+        state["chunks"] = search_agent(state["clear"], names)
         return state
 
     def answer(state):
@@ -33,14 +36,16 @@ def run(query, dialog_id):
         return state
 
     def route(state):
-        if state["status"] == UNCONFIRMED and state["attempts"] < ATTEMPTS:
-            return "answer"
-        return "finish"
+        if state["status"] != UNCONFIRMED or state["attempts"] >= ATTEMPTS:
+            return "finish"
+        feedback = state.get("feedback") or ""
+        if "Разных значений" in feedback or "документ" in feedback.lower():
+            return "search"
+        return "answer"
 
     def finish(state):
-        if state["status"] in (UNCONFIRMED, MISSING):
+        if state["status"] == MISSING:
             state["answer"] = NO_ANSWER
-            state["status"] = MISSING
             state["sources"] = []
         names = []
         for source in state["sources"]:
@@ -58,7 +63,7 @@ def run(query, dialog_id):
     graph.add_edge("clarify", "search")
     graph.add_edge("search", "answer")
     graph.add_edge("answer", "check")
-    graph.add_conditional_edges("check", route, {"answer": "answer", "finish": "finish"})
+    graph.add_conditional_edges("check", route, {"answer": "answer", "search": "search", "finish": "finish"})
     graph.add_edge("finish", END)
     out = graph.compile().invoke({"query": query, "dialog_id": dialog_id})
     return {

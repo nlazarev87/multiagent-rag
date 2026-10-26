@@ -14,7 +14,8 @@ SYSTEM = (
     "Если фрагменты противоречат друг другу, скажи об этом. "
     "Названия, номера и коды переписывай из фрагментов без изменений. "
     "Строка «Разных значений в столбце … Список: …» перечисляет все значения столбца таблицы: "
-    "используй её, когда нужно перечислить или посчитать. "
+    "назови число или перечисли весь список, когда нужно перечислить или посчитать. "
+    "Если во фрагменте рядом с тем же сказуемым, что и в вопросе, стоит «не» или «нет», начни ответ со слова «Нет». "
     "Если ответа во фрагментах нет, напиши: В документах нет ответа."
 )
 TASK = (
@@ -24,6 +25,8 @@ TASK = (
 YES_NO = "Начни ответ со слова «Да» или «Нет»."
 RETRY = "Прошлый ответ не содержал фактов из фрагментов. Ответь заново полным предложением по фрагментам."
 COPIED = "Прошлый ответ переписывал фрагменты или повторялся. Ответь кратко своими словами в одном-трёх предложениях."
+INVERT = "Вопрос с «ли»: начни с «Да» или «Нет» по отрицанию у того же сказуемого во фрагменте."
+LIST_GAP = "В прошлом ответе не было полного списка или числа из строки «Разных значений». Перечисли все элементы или назови число."
 SPAN = 30
 _EXAMPLES = (
     (
@@ -39,6 +42,11 @@ _EXAMPLES = (
             "Библиотека > Правила\nВ залах соблюдается тишина.",
         ],
         "В библиотеке три зала: Читальный, Детский и Архивный [1].",
+    ),
+    (
+        "Нужно ли записываться заранее?",
+        ["Библиотека > Правила\nЗапись заранее не нужна. Вход свободный."],
+        "Нет, запись заранее не нужна [1].",
     ),
 )
 _PRONOUNS = {"он", "она", "оно", "они", "его", "её", "ее", "их", "ему", "ей", "им", "него", "неё", "нее", "них", "это", "этот", "эта", "эти"}
@@ -60,13 +68,29 @@ def _flat(text):
     return " ".join(text.lower().replace("ё", "е").split())
 
 
-def select_agent(query, turns):
-    if not turns:
-        return []
-    if set(re.findall(r"[а-яёa-z]+", query.lower())) & _PRONOUNS:
-        return [turns[-1]]
-    words = set(_words(query))
-    return [turn for turn in turns if words & set(_words(turn["query"]))]
+def _codes(text):
+    found = []
+    for token in _TOKEN.findall(text or ""):
+        upper = sum(ch.isupper() for ch in token)
+        coded = any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
+        if upper >= 2 or coded:
+            key = token.lower().replace("ё", "е")
+            if key not in found:
+                found.append(key)
+    return found
+
+
+def _anchors(text):
+    found = []
+    clean = re.sub(r"\[[\d,\s]+\]", " ", text or "")
+    for token in _TOKEN.findall(clean):
+        upper = sum(ch.isupper() for ch in token)
+        coded = any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
+        numbered = any(ch.isdigit() for ch in token)
+        if upper >= 2 or coded or numbered:
+            if token not in found:
+                found.append(token)
+    return found
 
 
 def _dependent(query):
@@ -74,13 +98,35 @@ def _dependent(query):
     return bool(tokens & _PRONOUNS) or not _words(query)
 
 
+def select_agent(query, turns):
+    if not turns:
+        return []
+    if _dependent(query):
+        return [turns[-1]]
+    words = set(_words(query))
+    codes = set(_codes(query))
+    chosen = None
+    for turn in turns:
+        same_code = codes & set(_codes(turn["query"]))
+        same_words = words & set(_words(turn["query"]))
+        if same_code or len(same_words) >= 2:
+            chosen = turn
+    return [chosen] if chosen else []
+
+
 def clarify_agent(query, work_turns):
     if not work_turns or not _dependent(query):
         return query
-    return f"{work_turns[-1]['query']} {query}"
+    previous = work_turns[-1]
+    extra = _anchors(previous.get("answer", ""))
+    if extra:
+        return f"{previous['query']} {query} {' '.join(extra)}"
+    return f"{previous['query']} {query}"
 
 
-def search_agent(clear_query):
+def search_agent(clear_query, document_names=None):
+    if document_names:
+        return search_chunks(clear_query, 4, document_names)
     return search_chunks(clear_query, 4)
 
 
@@ -207,6 +253,50 @@ def _verdict(status, missing=(), feedback="", sources=()):
     return {"status": status, "missing": list(missing), "feedback": feedback, "sources": list(sources)}
 
 
+def _inverted(query, answer, flats):
+    if "ли" not in re.findall(r"[а-яё]+", query.lower()):
+        return False
+    start = _flat(answer)
+    says_yes = start.startswith("да")
+    says_no = start.startswith("нет")
+    if not says_yes and not says_no:
+        return False
+    frag = " ".join(flats)
+    negated = False
+    for word in _words(query):
+        stem = word[:5]
+        if re.search(rf"(?<![0-9a-zа-я])не {re.escape(stem)}", frag):
+            negated = True
+            break
+    if negated and says_yes:
+        return True
+    if (not negated) and says_no:
+        return True
+    return False
+
+
+def _list_gap(query, answer, flats):
+    asked = query.lower()
+    if not any(marker in asked for marker in ("сколько", "какие", "перечисли")):
+        return False
+    items, count = [], None
+    for text in flats:
+        listed = re.search(r"список:\s*(.+)", text)
+        if listed:
+            items = [part.strip(" .;") for part in re.split(r",| и ", listed.group(1)) if part.strip(" .;")]
+        numbered = re.search(r"разных значений[^:]*:\s*(\d+)", text)
+        if numbered:
+            count = numbered.group(1)
+    if not items and not count:
+        return False
+    body = _flat(re.sub(r"\[[\d,\s]+\]", " ", answer))
+    if count and count in body:
+        return False
+    if items and all(_flat(item) in body for item in items):
+        return False
+    return True
+
+
 def check_agent(answer, chunks, query="", known=None):
     text = answer.strip()
     known = known or (lambda _term: True)
@@ -217,6 +307,10 @@ def check_agent(answer, chunks, query="", known=None):
     asked = " ".join(word for word in _flat(query).replace("?", " ").split() if known(word.strip(".,:;«»()")))
     if _copied(text, flats):
         return _verdict(UNCONFIRMED, feedback=COPIED)
+    if _inverted(query, text, flats):
+        return _verdict(UNCONFIRMED, feedback=INVERT)
+    if _list_gap(query, text, flats):
+        return _verdict(UNCONFIRMED, feedback=LIST_GAP)
     cited = []
     for group in re.findall(r"\[([\d,\s]+)\]", text):
         for number in re.findall(r"\d+", group):
