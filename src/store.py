@@ -324,18 +324,23 @@ def _contexts(index, ranked, limit):
     for slot in order:
         numbers = slots[slot]
         meta = index["metas"][numbers[0]]
+        kind = meta.get("kind", "text")
+        if meta.get("group"):
+            members = index["groups"].get((meta["document_name"], meta["group"]), [])
+            if any(index["metas"][number].get("kind") == "overview" for number in members):
+                kind = "overview"
         found.append({
             "id": index["ids"][numbers[0]],
             "text": _render(index, numbers),
             "document_name": meta["document_name"],
             "chunk_index": meta["chunk_index"],
             "section": meta.get("section", ""),
-            "kind": meta.get("kind", "text"),
+            "kind": kind,
         })
     return found
 
 
-def search_chunks(clear_query, limit=4):
+def search_chunks(clear_query, limit=4, document_names=None):
     global calls, _index
     calls += 1
     col = collection()
@@ -345,6 +350,10 @@ def search_chunks(clear_query, limit=4):
     if _index is None or len(_index["ids"]) != total:
         _index = _build(col)
     allowed = scope(_index, clear_query)
+    if document_names:
+        present = [name for name in document_names if name in _index["vocabulary"]]
+        if present:
+            allowed = present
     dense = _dense(col, _focus(clear_query, allowed), allowed, total)
     ranked = _fuse(_lexical(_index, clear_query, allowed), dense)
     return _contexts(_index, ranked, limit)

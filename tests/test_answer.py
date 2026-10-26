@@ -34,7 +34,7 @@ def test_prompt_keeps_previous_turn_for_dependent_question(monkeypatch):
     monkeypatch.setattr(agents, "complete", lambda system, user, examples=(): seen.append(user) or "2019 [1].")
     turns = [{"query": "Какое давление у насоса?", "answer": "Давление равно 6 бар [1].", "document_names": ["pump.md"]}]
     clear = agents.clarify_agent("В каком году его выпустили?", turns)
-    assert clear == "Какое давление у насоса? В каком году его выпустили?"
+    assert clear == "Какое давление у насоса? В каком году его выпустили? 6"
     agents.answer_agent("В каком году его выпустили?", clear, [PUMP], turns)
     assert "Прошлый вопрос: Какое давление у насоса?" in seen[0]
 
@@ -78,6 +78,18 @@ def test_check_allows_names_from_question():
 def test_check_refuses_when_question_names_unknown_thing():
     verdict = agents.check_agent("В насосе используется версия 2019 [1].", [PUMP], "Какая версия Python в насосе?", known=lambda term: term != "python")
     assert verdict["status"] == agents.MISSING
+
+
+def test_check_rejects_yes_when_fragment_negates():
+    chunk = {"text": "Охлаждение насоса не требуется. Давление равно 6 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Да, охлаждение требуется [1].", [chunk], "Требуется ли охлаждение насоса?")["feedback"] == agents.INVERT
+    assert agents.check_agent("Нет, охлаждение не требуется [1].", [chunk], "Требуется ли охлаждение насоса?")["status"] == agents.CONFIRMED
+
+
+def test_check_rejects_incomplete_list():
+    chunk = {"text": "Цех > Смены\nРазных значений в столбце «Смена»: 3. Список: Утренняя, Дневная, Ночная.", "document_name": "charter.txt"}
+    assert agents.check_agent("В цехе есть Утренняя и Дневная смены [1].", [chunk], "Какие смены есть в цехе?")["feedback"] == agents.LIST_GAP
+    assert agents.check_agent("В цехе три смены: Утренняя, Дневная и Ночная [1].", [chunk], "Какие смены есть в цехе?")["status"] == agents.CONFIRMED
 
 
 def test_check_rejects_empty_and_broken_answers():

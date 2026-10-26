@@ -58,4 +58,17 @@ def test_run_gives_up_after_second_failure(monkeypatch):
     _wire(monkeypatch, order, [_verdict(agents.UNCONFIRMED, feedback="a"), _verdict(agents.UNCONFIRMED, feedback="b")])
     result = coordinator.run("Какой номер у цеха?", "d3")
     assert order.count("answer") == 2
-    assert result == {"answer": agents.NO_ANSWER, "status": agents.MISSING, "document_names": [], "sources": []}
+    assert result == {"answer": "Цех имеет номер 4 [1].", "status": agents.UNCONFIRMED, "document_names": [], "sources": []}
+
+
+def test_run_researches_when_list_is_incomplete(monkeypatch):
+    order = []
+    feedback = _wire(
+        monkeypatch,
+        order,
+        [_verdict(agents.UNCONFIRMED, feedback=agents.LIST_GAP), _verdict(agents.CONFIRMED, [SOURCE])],
+    )
+    result = coordinator.run("Какие смены есть в цехе?", "d5")
+    assert order == ["select", "clarify", "search", "answer", "check", "search", "answer", "check", "save"]
+    assert feedback == [None, agents.LIST_GAP]
+    assert result["status"] == agents.CONFIRMED
