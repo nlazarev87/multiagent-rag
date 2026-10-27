@@ -1018,6 +1018,11 @@ def _keeps(span, stem, token):
                     while left < number.start() and span[left].isalpha():
                         left += 1
                 middle = span[left:number.start()]
+                # «на входе и 6»: the qualifier before «и» names the earlier
+                # value, so it must not confirm the later one. «давление 16 бар
+                # и 6» still keeps давление, because another number sits in the gap.
+                if _split_gap(middle) and re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", middle) is None:
+                    continue
                 # «насос номер 6 ... давление 8» and «6 бар — давление и
                 # температура 80». The number's own name is another measurement.
                 # «при температуре 80 градусов составляет» is not: it qualifies
@@ -1071,16 +1076,45 @@ def _from_question(fact, asked):
     return _grounded(fact, asked)
 
 
+# Declined units. «градусов» does not pick one pressure out of two; «бар» is
+# already glue, but the full word is not. «части» is not «час».
+_UNITS = (
+    "градус", "процент", "метр", "литр", "секунд", "минут", "час",
+    "килограмм", "ампер", "вольт", "ватт", "паскал", "герц",
+)
+
+
+def _unit_word(word):
+    for stem in _UNITS:
+        if word.startswith(stem) and word[len(stem):] in _CASE_ENDINGS:
+            return True
+    return False
+
+
 def _content_words(region):
     # Words that can tell two values of one measurement apart.
     # «на выходе» keeps «выходе», «максимальное» keeps «максимальное».
     # A unit, a preposition or a linking verb does not.
     words = []
     for word in re.findall(r"[a-zа-яё]{3,}", (region or "").lower().replace("ё", "е")):
-        if word in _GLUE or word in _LINKS or word in _PRONOUNS or word in _ASKED or _bridge_word(word):
+        if word in _GLUE or word in _LINKS or word in _PRONOUNS or word in _ASKED or _bridge_word(word) or _unit_word(word):
             continue
         words.append(word)
     return words
+
+
+def _gap_parts(region):
+    # «2 бар на входе и 6» — the conjunction gives «на входе» to 2.
+    # «2 бар и на выходе 6» — «на выходе» names 6. A comma does the same:
+    # «2 бар, давление на выходе 6».
+    found = re.search(
+        r"(?<![0-9a-zа-яё])(?:,|" + "|".join(sorted(_CONJUNCTIONS, key=len, reverse=True)) + r")(?![0-9a-zа-яё])",
+        region or "",
+        re.IGNORECASE,
+    )
+    if not found:
+        return None
+    return region[:found.start()], region[found.end():]
 
 
 def _label_words(span, start, end):
@@ -1088,25 +1122,40 @@ def _label_words(span, start, end):
     # «давление на входе 2 бар и давление на выходе 6» gives «входе» to 2
     # and «выходе» to 6. «6 бар — давление» has nothing before it, so the
     # name after the dash belongs to 6.
+    # «давление 2 бар на входе и 6 бар на выходе» puts the qualifier after
+    # the value. The words in front are only «давление», so the inlet was
+    # left on 6 and the outlet claim took the inlet pressure.
     previous = 0
     for match in _PLAIN_NUMBER.finditer(span):
         if match.start() >= start:
             break
         previous = match.end()
-    words = _content_words(span[previous:start])
-    if words:
-        return words
     nxt = len(span)
     for match in _PLAIN_NUMBER.finditer(span):
         if match.start() >= end:
             nxt = match.start()
             break
-    # «от 6 до 10 градусов»: «градусов» is only a unit, so 10 keeps the name
-    # before the range. «6 бар — давление» has the name after the number.
-    forward = _content_words(span[end:nxt])
-    if any(_head_key(word) for word in forward):
-        return forward
-    return []
+    before = span[previous:start]
+    after = span[end:nxt]
+    split_before = _gap_parts(before)
+    # No conjunction: the words in front name this number.
+    # «бар на входе и» keeps «входе» with the earlier value.
+    preface = split_before[1] if split_before else before
+    split_after = _gap_parts(after)
+    if split_after:
+        postfix = split_after[0]
+    elif nxt == len(span):
+        # «6 бар на выходе» and «6 бар — давление»: nothing follows the name.
+        postfix = after
+    else:
+        # «80 градусов рабочее давление составляет 6»: those words name 6.
+        # «от 6 до 10»: «до» is not a new claim, and 10 keeps the name in front.
+        postfix = ""
+    words = _content_words(preface)
+    for word in _content_words(postfix):
+        if word not in words:
+            words.append(word)
+    return words
 
 
 def _head_key(word):

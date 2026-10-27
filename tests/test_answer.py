@@ -987,6 +987,41 @@ def test_check_rejects_a_grouped_or_signed_number_of_another_value():
     assert agents.check_agent("Давление на выходе равно 6 бар [1].", [word])["status"] == agents.CONFIRMED
 
 
+def test_check_rejects_a_qualifier_written_after_the_number():
+    ends = {"text": "Давление 2 бар на входе и 6 бар на выходе.", "document_name": "pump.md"}
+    stated = {"text": "Давление составляет 2 бар на входе и 6 бар на выходе.", "document_name": "pump.md"}
+    paren = {"text": "Давление 6 бар (на входе) и 16 бар (на выходе).", "document_name": "pump.md"}
+    limits = {"text": "Давление 6 бар минимальное и 16 бар максимальное.", "document_name": "pump.md"}
+    grouped = {"text": "Давление 12 000 бар на входе и 6 бар на выходе.", "document_name": "pump.md"}
+    signed = {"text": "Давление -12 бар на входе и 6 бар на выходе.", "document_name": "pump.md"}
+    carried = {"text": "Максимальное давление 16 бар и 6 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Давление на входе равно 6 бар [1].", [ends])["missing"] == ["6"]
+    assert agents.check_agent("Давление на выходе равно 2 бар [1].", [ends])["missing"] == ["2"]
+    assert agents.check_agent("Давление на входе равно 2 бар [1].", [ends])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [ends])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на входе равно 6 бар [1].", [stated])["missing"] == ["6"]
+    assert agents.check_agent("Давление на входе равно 2 бар [1].", [stated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [stated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на входе равно 16 бар [1].", [paren])["missing"] == ["16"]
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [paren])["missing"] == ["6"]
+    assert agents.check_agent("Давление на входе равно 6 бар [1].", [paren])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 16 бар [1].", [paren])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное давление равно 6 бар [1].", [limits])["missing"] == ["6"]
+    assert agents.check_agent("Минимальное давление равно 16 бар [1].", [limits])["missing"] == ["16"]
+    assert agents.check_agent("Минимальное давление равно 6 бар [1].", [limits])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное давление равно 16 бар [1].", [limits])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на входе равно 6 бар [1].", [grouped])["missing"] == ["6"]
+    assert agents.check_agent("Давление на выходе равно 12 000 бар [1].", [grouped])["missing"] == ["12 000"]
+    assert agents.check_agent("Давление на входе равно 12 000 бар [1].", [grouped])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [grouped])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на входе равно 6 бар [1].", [signed])["missing"] == ["6"]
+    assert agents.check_agent("Давление на выходе равно -12 бар [1].", [signed])["missing"] == ["-12"]
+    assert agents.check_agent("Давление на входе равно -12 бар [1].", [signed])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [signed])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное давление равно 16 бар [1].", [carried])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное давление равно 6 бар [1].", [carried])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}
