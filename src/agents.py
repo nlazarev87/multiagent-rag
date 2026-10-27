@@ -329,8 +329,11 @@ def _negated(text, start):
     # range: «6-10» still has both ends. A spaced dash is punctuation, not a
     # sign: «давление - 6» and «давление – 6» still mean 6. The signed matcher
     # already requires the hyphen to touch the digits, so a space must not
-    # swallow the bare number.
+    # swallow the bare number. The minus in «50+-0,2» belongs to the tolerance
+    # sign, so 0,2 is not a negative value.
     prefix = text[:start]
+    if re.search(r"(?:±|\+/-|\+-)\s*$", prefix):
+        return False
     if re.search(r"(?<![0-9a-zа-яё])минус\s*$", prefix, re.IGNORECASE):
         return True
     if re.search(r"(?<!\d)\u2212\s?$", prefix):
@@ -403,7 +406,19 @@ def _facts(answer):
                 # to 80. «от 6 до 10» has no name of its own, so 10 keeps давление.
                 local = _number_stems(sentence, previous, origin, finish)
                 context = tuple(local) if local else wide
+                # «равно 50 ± 0,2» claims 50, and 0,2 only as its half-width.
+                # «равно 0,2» is a different claim: there the half-width is the value.
+                base = _number_before_tolerance(sentence, origin)
+                attached = bool(base) and previous >= len(base) and sentence[previous - len(base):previous] == base
                 previous = finish
+                if attached:
+                    parent = context
+                    for earlier in reversed(facts):
+                        if earlier[0] == "near" and earlier[1].lstrip("-−\u2212") == base:
+                            parent = earlier[2]
+                            break
+                    facts.append(("near", token, parent, True))
+                    continue
                 # 1–3 digit values have to sit with the claim. A longer exact match is how
                 # «выпущен в 2019» still meets the line «Год выпуска: 2019».
                 short = sum(ch.isdigit() for ch in token) <= 3
@@ -530,6 +545,18 @@ def _kind_noun(word):
 # A condition after «при» can name its number with a word outside _KINDS.
 # «ходе» is «ход» and «угле» is «угол». «холод» is not «ход», «параметр» is not «пар».
 _MEASURES = ("ход", "ток", "вес", "пар", "тип", "кпд", "зазор", "угл", "напряж", "времен")
+# A difference, error, or swing of another measurement. «перепад давления» is not
+# the pressure, «допуск диаметра» is not the diameter, and «амплитуда хода» is
+# not the stroke. «падение» is «падени» plus «е»; «отклонений» keeps the final «й».
+_DELTAS = (
+    "перепад", "погрешност", "допуск", "отклонени", "потер", "падени", "пульсаци",
+    "амплитуд", "снижени", "разност", "неравномерност", "колебани", "градиент",
+)
+_DELTA_ENDINGS = {
+    "", "а", "я", "у", "ю", "е", "и", "ы", "о", "ь", "й",
+    "ом", "ем", "ой", "ою", "ей", "ею", "ью", "ов", "ев",
+    "ам", "ям", "ах", "ях", "ами", "ями",
+}
 # A condition after «при» can also name its number with a longer unlisted word.
 # «радиусе» is «радиус» and «площади» is «площадь». The ending has to be a case
 # ending: «площадке» is not «площадь», and «шагать» is not «шаг».
@@ -554,6 +581,16 @@ def _fold(word):
     if word == "угол" or (word.startswith("угл") and _brief(word[3:])):
         return "угл"
     return word
+
+
+def _delta_word(word):
+    # «допускается» and «потерять» are not «допуск» and «потеря».
+    if not word:
+        return False
+    for stem in _DELTAS:
+        if word.startswith(stem) and word[len(stem):] in _DELTA_ENDINGS:
+            return True
+    return False
 
 
 def _size_word(word):
@@ -808,9 +845,11 @@ def _phrase_owner(nouns):
     # «класс точности» and «степень защиты»: the word next to the generic head is.
     # «насос номер» and «градусов … давление»: the kind written next to another noun is.
     # «постоянно радиус поршня»: the adverb does not take the number from радиус.
+    # «перепад давления», «погрешность давления», «допуск диаметра» and
+    # «амплитуда хода»: the difference, error, or swing owns the number.
     head = nouns[-1]
     follower = nouns[-2]
-    if _kind_word(head) or _measure_noun(head):
+    if _kind_word(head) or _measure_noun(head) or _delta_word(head):
         return head
     if _generic_head(head) or _adverb_head(head) or _kind_noun(follower) or _measure_noun(follower):
         return follower
@@ -834,11 +873,15 @@ def _foreign_phrase(span, number_start, stem):
     # «ток», «зазор», «угол», «кпд», «напряжение», «ход поршня», «радиус»,
     # «толщина», «ресурс», «производительность», «шаг», «емкость», «срок»,
     # «площадь» and «глубина».
+    # «перепад», «погрешность», «допуск», «отклонение», «потеря», «падение»,
+    # «пульсация», «амплитуда», «снижение», «разность», «неравномерность»,
+    # «колебание» and «градиент» do too: «давление при перепаде 2 бар» is not
+    # давление 2.
     # «давление на выходе: 6», «давление на площадке: 6» and «давление при работе: 6»
     # name no other measurement.
     if any(_measure_word(word) and not _matches(word, stem) for word in nouns):
         return True
-    if _size_word(owner):
+    if _delta_word(owner) or _size_word(owner):
         return True
     return _kind_noun(owner)
 
@@ -853,6 +896,30 @@ def _stated_condition(middle):
     return re.fullmatch(pattern, middle or "") is not None
 
 
+def _number_before_tolerance(span, number_start):
+    # «6 ± 0,5», «50+/-0,2» and «50+-0,2» put the half-width after the value.
+    # «6 бар ± 0,5» may keep a unit in between. «погрешность: ±0,5» has no
+    # value before the sign, so 0,5 is the reading itself. A hyphen is a range
+    # or a dash, not this sign: «6-10» and «давление - 6» stay as they are.
+    if not span or number_start <= 0:
+        return ""
+    prefix = span[:number_start]
+    if re.search(r"(?:±|\+/-|\+-)\s*$", prefix) is None:
+        return ""
+    body = re.sub(r"(?:±|\+/-|\+-)\s*$", "", prefix)
+    found = None
+    for match in re.finditer(r"(?<!\d)\d{1,3}(?: \d{3})+(?:[,.]\d+)?|(?<!\d)\d+(?:[,.]\d+)?", body):
+        found = match
+    if not found:
+        return ""
+    tail = body[found.end():].strip()
+    if tail:
+        words = re.findall(r"[0-9a-zа-яё°%./]+", tail.lower().replace("ё", "е"))
+        if not words or len(words) > 3 or any(_kind_word(word) or _measure_word(word) for word in words):
+            return ""
+    return found.group(0)
+
+
 def _short_owns(span, number_start, stem):
     # «ток: 80» touches the name. «ход поршня: 80» and «угол поворота: 80» do not:
     # the object sits in between, but the short name still owns the number.
@@ -861,13 +928,17 @@ def _short_owns(span, number_start, stem):
     owner = _phrase_owner(nouns)
     if _inflected(owner, stem):
         return True
-    if owner and (_kind_word(owner) or _measure_noun(owner)):
+    # «амплитуда хода: 80». The short object is not the measurement, so «ход» does not keep 80.
+    if owner and (_kind_word(owner) or _measure_noun(owner) or _delta_word(owner)):
         return False
     return _inflected(_name_before(span, number_start), stem)
 
 
 def _keeps(span, stem, token):
-    numbers = _hits(span, token)
+    # The half-width in «диаметр: 50 ± 0,2» is not диаметр 0,2. The value in
+    # front of the sign still is. «погрешность: ±0,5» keeps 0,5: nothing numeric
+    # stands before the sign.
+    numbers = [number for number in _hits(span, token) if not _number_before_tolerance(span, number.start())]
     if len(stem) < 5:
         return any(_short_owns(span, number.start(), stem) for number in numbers)
     # «давление: 6 бар и температура: 80» is one clause, so the line window still
@@ -903,8 +974,16 @@ def _keeps(span, stem, token):
                 # the value that follows.
                 if not _stated_condition(middle):
                     names = re.findall(r"[a-zа-яё]{5,}", middle)
-                    if _measure_label(names, stem) and (
-                        not _kind_stem(stem) or _plain_number(span[number.end():]) or _plain_number(span[:found.start()])
+                    # «перепад давления: 2»: давления is the object of перепад, not
+                    # another measurement standing between the name and its number.
+                    if (
+                        _measure_label(names, stem)
+                        and not _delta_word(word)
+                        and (
+                            not _kind_stem(stem)
+                            or _plain_number(span[number.end():])
+                            or _plain_number(span[:found.start()])
+                        )
                     ):
                         continue
                     if _other_name(span, number.start(), stem) and (
@@ -913,6 +992,10 @@ def _keeps(span, stem, token):
                         continue
             elif number.end() <= found.start():
                 if _other_label(span, number.start(), found):
+                    continue
+                # «перепад давления 2 бар и рабочее давление 6». The 2 already
+                # belongs to перепад, so the later давление does not take it.
+                if _foreign_phrase(span, number.start(), stem):
                     continue
                 middle = span[number.end():found.start()]
             else:
@@ -992,6 +1075,10 @@ def _head_key(word):
         for stem in _SIZES:
             if word.startswith(stem):
                 return stem
+    if _delta_word(word):
+        for stem in _DELTAS:
+            if word.startswith(stem):
+                return stem
     return ""
 
 
@@ -1054,10 +1141,26 @@ def _qualifier_conflict(text, start, answer_stems):
     return False
 
 
+def _tolerance_grounded(token, stems, text):
+    # «диаметр равен 50 ± 0,2» is grounded when 50 belongs to диаметр and the
+    # same clause carries ± 0,2. A different half-width, or a bare 0,2, is not.
+    for match in _hits(text, token):
+        base = _number_before_tolerance(text, match.start())
+        if not base:
+            continue
+        left, right = _bounds(text, match.start())
+        nearby = text[left:right]
+        if any(_keeps(nearby, stem, base) for stem in stems):
+            return True
+    return False
+
+
 def _grounded(fact, text):
     kind, token = fact[0], _flat(fact[1])
     if kind == "stem":
         return re.search(rf"(?<![0-9a-zа-я]){re.escape(token[:5])}", text) is not None
+    if len(fact) > 3 and fact[3]:
+        return _tolerance_grounded(token, fact[2], text)
     places = list(_hits(text, token))
     if kind == "exact" or not places:
         return bool(places)
