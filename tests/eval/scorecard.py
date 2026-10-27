@@ -34,6 +34,7 @@ HIGHER = {
     "coord_order", "coord_retry_cap", "coord_empty_skip", "coord_retry_help", "coord_status_exact",
     "e2e_dev", "e2e_holdout", "e2e_dialog",
     "document_swap_pass_rate", "citation_coverage", "config_only_change_success",
+    "ingest_overview_complete", "ingest_table_intro_group", "ingest_version",
 }
 LOWER = {
     "select_false_attach", "select_false_drop",
@@ -43,7 +44,7 @@ LOWER = {
     "code_knowledge_leakage",
 }
 TIME_KEYS = {"search_latency_ms", "answer_latency_s", "e2e_latency_s"}
-FAST_NODES = ("select", "clarify", "search", "check", "coord", "univ")
+FAST_NODES = ("ingest", "select", "clarify", "search", "check", "coord", "univ")
 SLOW_NODES = ("answer", "e2e")
 OVERVIEW_MARKERS = ("сколько", "какие", "перечисли")
 NO_ANSWER = "В документах нет ответа."
@@ -765,6 +766,57 @@ def measure_e2e(holdout=False, only_holdout=False):
         dialog.reset()
 
 
+def measure_ingest():
+    import tempfile
+
+    import ingest
+    from docx import Document
+    from ingest import VERSION, chunks_from_blocks, ingest_dir, split_chunks
+
+    saved_count = ingest.count_tokens
+    ingest.count_tokens = lambda text: max(1, len(str(text).split()))
+    ingest._word_tokens.cache_clear()
+    try:
+        values = [f"Наименование характеристики номер {number} очень длинное" for number in range(1, 41)]
+        blocks = [{
+            "kind": "table",
+            "caption": "Таблица 1 – Перечень",
+            "labels": ["Статус", "Описание"],
+            "width": 2,
+            "rows": [[("Статус", "Да"), ("Описание", value)] for value in values],
+        }]
+        chunks = chunks_from_blocks(blocks, "list.txt")
+        overview = next((chunk["text"] for chunk in chunks if chunk["kind"] == "overview"), "")
+        overview_ok = "Разных значений в столбце «Описание»: 40." in overview and all(value in overview for value in values)
+    finally:
+        ingest.count_tokens = saved_count
+        ingest._word_tokens.cache_clear()
+
+    group_ok = False
+    with tempfile.TemporaryDirectory() as raw:
+        folder = Path(raw)
+        document = Document()
+        document.add_heading("Склад", level=1)
+        document.add_paragraph("Температура склада равна 18 градусам.")
+        document.add_paragraph("Таблица 1 – Состав склада")
+        table = document.add_table(rows=3, cols=2)
+        for row, (key, value) in zip(table.rows, [("Показатель", "Значение"), ("Площадь", "120 м²"), ("Этаж", "2")]):
+            row.cells[0].text, row.cells[1].text = key, value
+        document.save(folder / "store.docx")
+        chunks = ingest_dir(folder)
+        rows = [chunk for chunk in chunks if chunk["kind"] == "table"]
+        intro = next((chunk for chunk in chunks if chunk["kind"] == "intro"), None)
+        group_ok = bool(rows and intro and intro.get("group") == rows[0].get("group"))
+
+    pieces = split_chunks("Цех имеет номер 4.", "charter.txt")
+    version_ok = bool(pieces) and all(chunk["version"] == VERSION for chunk in pieces)
+    cards = {}
+    cards.update(card("ingest_overview_complete", float(overview_ok), 1, hits=int(overview_ok)))
+    cards.update(card("ingest_table_intro_group", float(group_ok), 1, hits=int(group_ok)))
+    cards.update(card("ingest_version", float(version_ok), 1, hits=int(version_ok)))
+    return cards
+
+
 def measure_universality():
     import universality
 
@@ -781,7 +833,9 @@ def measure(nodes, holdout=False):
     cards = {}
     for node in nodes:
         print(f"== {node} ==", flush=True)
-        if node == "select":
+        if node == "ingest":
+            cards.update(measure_ingest())
+        elif node == "select":
             cards.update(measure_select())
         elif node == "clarify":
             cards.update(measure_clarify())

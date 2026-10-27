@@ -322,7 +322,16 @@ def _table_pieces(block, section):
 
 
 def chunks_from_blocks(blocks, document_name=""):
-    digest = hashlib.sha256((json.dumps(blocks, ensure_ascii=False) + str(VERSION)).encode()).hexdigest()
+    # Upsert skips a document when this hash matches. Overlap, chunk size and the
+    # intro limit change the stored text and kind without changing the source, and
+    # often without changing how many chunks there are.
+    limits = json.dumps(
+        {"tokens": _tokens(), "overlap": _overlap(), "intro": _intro()},
+        sort_keys=True,
+    )
+    digest = hashlib.sha256(
+        (json.dumps(blocks, ensure_ascii=False) + str(VERSION) + limits).encode()
+    ).hexdigest()
     pieces, path, buffer = [], [], []
     tables = 0
 

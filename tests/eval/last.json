@@ -449,7 +449,7 @@
     "best": 0.0,
     "room": 0.0,
     "floor": 0.0,
-    "n": 1,
+    "n": 84,
     "direction": "lower",
     "hits": 0
   },
@@ -472,6 +472,33 @@
     "hits": 2
   },
   "config_only_change_success": {
+    "now": 1.0,
+    "best": 1.0,
+    "room": 0.0,
+    "floor": 1.0,
+    "n": 1,
+    "direction": "higher",
+    "hits": 1
+  },
+  "ingest_overview_complete": {
+    "now": 1.0,
+    "best": 1.0,
+    "room": 0.0,
+    "floor": 1.0,
+    "n": 1,
+    "direction": "higher",
+    "hits": 1
+  },
+  "ingest_table_intro_group": {
+    "now": 1.0,
+    "best": 1.0,
+    "room": 0.0,
+    "floor": 1.0,
+    "n": 1,
+    "direction": "higher",
+    "hits": 1
+  },
+  "ingest_version": {
     "now": 1.0,
     "best": 1.0,
     "room": 0.0,

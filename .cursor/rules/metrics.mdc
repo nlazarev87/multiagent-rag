@@ -1,0 +1,18 @@
+---
+description: Always re-run live quality metrics after pipeline changes; full scorecard before a PR
+alwaysApply: true
+---
+
+# Live metrics
+
+Do not treat `pytest tests/test_floors.py` or stale `tests/eval/last.json` as proof. That test compares stored cards and does not remeasure.
+
+After any change in `src/`, `config/`, or `data/prompts/`:
+
+1. Read `.cursor/skills/scorecard/SKILL.md`.
+2. Run the **fast** scorecard for the touched nodes (or `--nodes fast`) plus the matching `tests/test_*.py`.
+3. Stop only on GATE OK. Report `now / floor / room` for the keys you ran.
+
+Before a PR or when asked to push/open a PR: `python scripts/release_check.py` (leakage + swap + guard, then `--nodes all --holdout` on 1.5B).
+
+A fallen card is a fix in that node. Do not put corpus facts in `src/`. Do not lower floors or pass `--write-floors` / `--raise-floors` unless the user asked and GATE is OK.
