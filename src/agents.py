@@ -882,11 +882,11 @@ def _date_number(text, start, end):
     return re.search(r"(?<![0-9a-zа-яё])(?:в|во|с|со|до|от|к|ко|по)\s*$", before, re.IGNORECASE) is not None
 
 
-# «в 6 часов», «в 14 ч», «в 14 ч.», «к 8 часам». «часового» is not «час»,
-# and «часть» is not either: the short form is only the letter «ч».
+# «в 6 часов», «в 14 ч», «в 14 ч.», «к 8 часам», «по 18 часов».
+# «часового» is not «час», and «часть» is not either: the short form is only «ч».
 _HOUR_STEM = r"(?:час(?:а|ов|ам|у|ах|ами|ом|е)?|ч)"
 _HOUR_WORD = re.compile(rf"{_HOUR_STEM}(?![0-9a-zа-яё])\.?")
-_TIME_PREP = r"(?:около|во|ко|со|от|до|в|к|с)"
+_TIME_PREP = r"(?:около|во|ко|со|от|до|по|в|к|с)"
 # «30 минут», «30 мин», «30 мин.», «1 минуту», «15 секунд», «15 сек».
 # «минутный» is not «минут», and «минимум» is not «мин».
 _MINUTE_STEM = r"(?:минут(?:а|ы|у|е|ой|ою|ам|ах|ами)?|мин)"
@@ -901,8 +901,9 @@ _CLOCK_PART_BEFORE = re.compile(
 
 
 def _hour_range_after(after):
-    # «до 18 часов», «до 18 ч» and «до 18 ч.». «до 18 бар» has no hour word.
-    found = re.match(rf"\s*до\s+(\d{{1,2}})\s+{_HOUR_WORD.pattern}", _case(after))
+    # «до 18 часов», «по 18 часов», «до 18 ч» and «по 18 ч.».
+    # «до 18 бар» and «по 18 бар» have no hour word.
+    found = re.match(rf"\s*(?:до|по)\s+(\d{{1,2}})\s+{_HOUR_WORD.pattern}", _case(after))
     return found is not None and int(found.group(1)) <= 24
 
 
@@ -910,11 +911,12 @@ def _clock_number(text, start, end):
     # «в 6 часов», «к 8 часам», «до 18 часов» and «в 14:30» name a time of day.
     # That hour is not the reading, so «давление в 6 часов составляет 10» is
     # давление 10, and «в 18 часов рабочее давление: 6» is not давление 18.
-    # «с 8 до 18 часов» and «от 6 до 10 часов» are the same kind of hour, on
-    # both ends. A duration still owns its range: «наработка от 6 до 10 часов».
-    # «давление с 8 до 18 часов составляет 6» does not, so 8 and 18 must not
-    # hide 6. «от 6 до 10 бар» stays a reading: a range needs an hour word.
-    # «6.5» and «14.30 бар» stay readings: a dot is a time only after «в».
+    # «с 8 до 18 часов», «с 8 по 18 часов» and «от 6 до 10 часов» are the same
+    # kind of hour, on both ends. A duration still owns its range:
+    # «наработка от 6 до 10 часов» and «наработка с 8 по 18 часов».
+    # «давление с 8 по 18 часов составляет 6» does not, so 8 and 18 must not
+    # hide 6. «с 8 по 18 бар» stays a reading: a range needs an hour word.
+    # «6.5» and «14.30 бар» stay readings: a dot is a time only after a time preposition.
     # «в 14 часов 30 минут» and «в 14 ч 30 мин» are the same clock: 30 is not
     # the reading. «часть» and «минутный» are not those units.
     token = text[start:end]
