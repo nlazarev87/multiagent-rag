@@ -1351,7 +1351,9 @@ def _keeps(span, stem, token):
 def _from_question(fact, asked):
     token = fact[1]
     if any(ch.isdigit() for ch in token) and not any(ch.isalpha() for ch in token):
-        return False
+        # «версия 1.0» in the question is not a measurement the fragments must repeat.
+        # A lone «6» is not this case: it still has to sit in a fragment.
+        return len(token) >= 3 and _flat(token) in _flat(asked)
     return _grounded(fact, asked)
 
 

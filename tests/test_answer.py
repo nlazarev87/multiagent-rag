@@ -1278,6 +1278,12 @@ def test_check_rejects_an_hour_range_through_po_taken_as_its_measurement():
     assert agents.check_agent("Давление равно 10 бар [1].", [part])["missing"] == ["10"]
 
 
+def test_check_allows_a_version_written_in_the_question():
+    chunk = {"text": "Ответственный: Петров А.А.", "document_name": "doc.md"}
+    query = "Кто указан ответственным за версию 1.0?"
+    assert agents.check_agent("Петров указан для версии 1.0 [1].", [chunk], query)["status"] == agents.CONFIRMED
+
+
 def test_check_grounds_a_code_and_a_numeric_range():
     flows = {"text": "Список: FLOW_A.1, FLOW_B.2. Частота: 0-24 раз в день.", "document_name": "spec.md"}
     assert agents.check_agent("Потоки FLOW_A.1 и FLOW_B.2 [1].", [flows])["status"] == agents.CONFIRMED
