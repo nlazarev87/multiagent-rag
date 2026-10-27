@@ -759,6 +759,18 @@ def _naming_nouns(span, number_start):
     return nouns, dropped
 
 
+def _generic_head(word):
+    # «класс точности», «степень защиты», «коэффициент действия».
+    # The head only classifies the next noun. «классификация» is not «класс».
+    return any(_inflected(word, stem) for stem in ("класс", "степень", "коэффициент"))
+
+
+def _adverb_head(word):
+    # «временно», «напряженно» and «постоянно» modify the next noun.
+    # «число» and «масло» do not end in «нно».
+    return word.endswith("нно")
+
+
 def _phrase_owner(nouns):
     if not nouns:
         return ""
@@ -766,11 +778,18 @@ def _phrase_owner(nouns):
         return nouns[0]
     # «давление масла» and «диаметр патрубка»: the kind is the measurement.
     # «ход поршня», «ток двигателя», «угол поворота» and «время работы» too.
+    # «радиус поршня», «толщина стенки» and «шаг резьбы» name themselves.
+    # A head outside the kind list is still the measurement, so the object does not own the number.
     # «класс точности» and «степень защиты»: the word next to the generic head is.
+    # «насос номер» and «градусов … давление»: the kind written next to another noun is.
+    # «постоянно радиус поршня»: the adverb does not take the number from радиус.
     head = nouns[-1]
+    follower = nouns[-2]
     if _kind_word(head) or _measure_noun(head):
         return head
-    return nouns[-2]
+    if _generic_head(head) or _adverb_head(head) or _kind_noun(follower) or _measure_noun(follower):
+        return follower
+    return head
 
 
 def _foreign_phrase(span, number_start, stem):
@@ -873,9 +892,9 @@ def _keeps(span, stem, token):
             if other and label and not (found.end() <= number.start() and _stated_condition(middle)):
                 continue
             # The stem has to be the noun that owns the number. A shared object
-            # («масла», «насоса», «патрубка»), a generic head («класс», «степень»,
+            # («масла», «насоса», «поршня»), a generic head («класс», «степень»,
             # «коэффициент») or a side mention («при температуре составляет»)
-            # does not.
+            # does not. «радиус поршня» owns 80; the object does not.
             if found.end() <= number.start() and _foreign_phrase(span, number.start(), stem):
                 continue
             return True
