@@ -208,17 +208,25 @@ def _signs(text):
 
 
 def _negated(text, start):
-    # «-12» and «минус 12» are one value. A hyphen between digits is a range:
-    # «6-10» still has both ends. The digit scan otherwise keeps 12.
-    return re.search(
-        r"(?<!\d)[-\u2212\u2013]\s?$|(?<![0-9a-zа-яё])минус\s*$",
-        text[:start],
-        re.IGNORECASE,
-    ) is not None
+    # «-12», «−12» and «минус 12» are one value. A hyphen between digits is a
+    # range: «6-10» still has both ends. A spaced dash is punctuation, not a
+    # sign: «давление - 6» and «давление – 6» still mean 6. The signed matcher
+    # already requires the hyphen to touch the digits, so a space must not
+    # swallow the bare number.
+    prefix = text[:start]
+    if re.search(r"(?<![0-9a-zа-яё])минус\s*$", prefix, re.IGNORECASE):
+        return True
+    if re.search(r"(?<!\d)\u2212\s?$", prefix):
+        return True
+    return re.search(r"(?<!\d)[-\u2013]$", prefix) is not None
 
 
 def _hits(text, token):
-    text = _signs(text)
+    # Sign normalization is one character for one character, so match offsets
+    # still point at the original text. Negation has to see that original:
+    # a unicode minus is a sign, and a spaced en-dash is not.
+    raw = text or ""
+    text = _signs(raw)
     token = _signs(token)
     signed = token[1:].lstrip() if token.startswith("-") and _pure_number(token[1:].lstrip()) else ""
     if signed:
@@ -246,7 +254,7 @@ def _hits(text, token):
     found = list(re.finditer(pattern, text))
     if signed or not _pure_number(token):
         return found
-    return [match for match in found if not _negated(text, match.start())]
+    return [match for match in found if not _negated(raw, match.start())]
 
 
 def _facts(answer):

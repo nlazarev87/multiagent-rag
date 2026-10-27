@@ -188,6 +188,22 @@ def test_check_rejects_a_number_taken_from_a_negative_value():
     assert agents.check_agent("Рабочая температура равна -12 градусов [1].", [warm])["missing"] == ["-12"]
 
 
+def test_check_accepts_a_number_after_a_spaced_dash():
+    hyphen = {"text": "Насос > Режим\nРабочее давление - 6 бар.", "document_name": "pump.md"}
+    endash = {"text": "Насос > Режим\nРабочее давление – 6 бар.", "document_name": "pump.md"}
+    emdash = {"text": "Насос > Режим\nРабочее давление — 6 бар.", "document_name": "pump.md"}
+    spaced = {"text": "Насос > Режим\nРабочая температура − 12 градусов.", "document_name": "pump.md"}
+    wide = {"text": "Насос > Режим\nРабочее давление: 6 - 10 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [hyphen])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно -6 бар [1].", [hyphen])["missing"] == ["-6"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [endash])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно -6 бар [1].", [endash])["missing"] == ["-6"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [emdash])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочая температура равна 12 градусов [1].", [spaced])["missing"] == ["12"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [wide])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 10 бар [1].", [wide])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}
