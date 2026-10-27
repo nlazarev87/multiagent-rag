@@ -900,11 +900,20 @@ _CLOCK_PART_BEFORE = re.compile(
 )
 
 
+def _hour_range_after(after):
+    # «до 18 часов», «до 18 ч» and «до 18 ч.». «до 18 бар» has no hour word.
+    found = re.match(rf"\s*до\s+(\d{{1,2}})\s+{_HOUR_WORD.pattern}", _case(after))
+    return found is not None and int(found.group(1)) <= 24
+
+
 def _clock_number(text, start, end):
     # «в 6 часов», «к 8 часам», «до 18 часов» and «в 14:30» name a time of day.
     # That hour is not the reading, so «давление в 6 часов составляет 10» is
     # давление 10, and «в 18 часов рабочее давление: 6» is not давление 18.
-    # «наработка от 6 до 10 часов» is a range of a duration, not a clock.
+    # «с 8 до 18 часов» and «от 6 до 10 часов» are the same kind of hour, on
+    # both ends. A duration still owns its range: «наработка от 6 до 10 часов».
+    # «давление с 8 до 18 часов составляет 6» does not, so 8 and 18 must not
+    # hide 6. «от 6 до 10 бар» stays a reading: a range needs an hour word.
     # «6.5» and «14.30 бар» stay readings: a dot is a time only after «в».
     # «в 14 часов 30 минут» and «в 14 ч 30 мин» are the same clock: 30 is not
     # the reading. «часть» and «минутный» are not those units.
@@ -929,15 +938,11 @@ def _clock_number(text, start, end):
         return True
     if not re.fullmatch(r"\d{1,2}", token) or int(token) > 24:
         return False
+    if _hour_range_after(after) and re.search(
+        rf"(?<![0-9a-zа-яё])(?:от|с|со)\s*$", before, re.IGNORECASE
+    ):
+        return True
     if not re.match(rf"\s*{_HOUR_WORD.pattern}", _case(after)):
-        return False
-    if re.search(rf"(?<![0-9a-zа-яё])(?:от|с|со)\s*$", before, re.IGNORECASE) and re.match(
-        r"\s*до(?![0-9a-zа-яё])", after, re.IGNORECASE
-    ):
-        return False
-    if re.search(r"(?<![0-9a-zа-яё])до\s*$", before, re.IGNORECASE) and re.search(
-        r"(?<![0-9a-zа-яё])(?:от|с|со)\s+\d", before, re.IGNORECASE
-    ):
         return False
     return re.search(rf"(?<![0-9a-zа-яё]){_TIME_PREP}\s*$", before, re.IGNORECASE) is not None
 
@@ -978,17 +983,36 @@ def _clock_part(token, before, after):
     return _part_hour_at(before, len(before)) is not None
 
 
+def _clock_unit(word):
+    # «часов» and «минут» sit inside «с 8 часов до 18» and «с 8 ч 30 мин до 18».
+    # They are the unit, not the noun that owns the duration. «часового» is not.
+    folded = _case(word)
+    return _HOUR_WORD.fullmatch(folded) is not None or _CLOCK_PART_WORD.fullmatch(folded) is not None
+
+
 def _hour_owner(span, start):
     # The noun a duration measures: «срок службы в 6 часов» → срок,
     # «наработка до 6 часов» → наработка. A leading «в 6 часов» has none.
+    # «наработка от 6 до 10 часов»: the end has to walk past 6 and «до».
+    # «наработка с 8 часов до 18» also walks past the hour unit.
     pos = start
-    for _ in range(6):
+    for _ in range(8):
         prefix = span[:pos].rstrip(" \t:;—–-\u2212()«»\",")
+        number = re.search(r"\d+(?:[,.]\d+)?$", prefix)
+        if number:
+            pos = number.start()
+            continue
         found = re.search(r"([a-zа-яё]+)$", prefix)
         if not found:
             return ""
         word = found.group(1)
-        if word in _GLUE or word in _LINKS or word in _ASKED or word in {"в", "к", "с", "о", "у"}:
+        if (
+            word in _GLUE
+            or word in _LINKS
+            or word in _ASKED
+            or word in {"в", "к", "с", "о", "у"}
+            or _clock_unit(word)
+        ):
             pos = found.start()
             continue
         nouns, _dropped = _naming_nouns(span, found.end())
@@ -1019,12 +1043,15 @@ def _owns_hours(span, start, stem):
     return True
 
 
-def _reading(text):
+def _reading(text, follow=""):
     # A date or a clock between a name and its value is not another measurement.
+    # «время работы от 6 до 10 часов»: the slice before 10 stops at «до», so
+    # the hour word after 10 still has to show that 6 is the other end.
     if not text:
         return None
+    whole = text + (follow or "")
     for match in re.finditer(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", text):
-        if _date_number(text, match.start(), match.end()) or _clock_number(text, match.start(), match.end()):
+        if _date_number(whole, match.start(), match.end()) or _clock_number(whole, match.start(), match.end()):
             continue
         return match
     return None
@@ -1270,10 +1297,11 @@ def _keeps(span, stem, token):
                     while left < number.start() and span[left].isalpha():
                         left += 1
                 middle = span[left:number.start()]
+                follow = span[number.start():]
                 # «на входе и 6»: the qualifier before «и» names the earlier
                 # value, so it must not confirm the later one. «давление 16 бар
                 # и 6» still keeps давление, because another number sits in the gap.
-                if _split_gap(middle) and _reading(middle) is None:
+                if _split_gap(middle) and _reading(middle, follow) is None:
                     continue
                 # «насос номер 6 ... давление 8» and «6 бар — давление и
                 # температура 80». The number's own name is another measurement.
@@ -1293,7 +1321,7 @@ def _keeps(span, stem, token):
                         )
                     ):
                         continue
-                    if _other_name(span, number.start(), stem) and (_reading(middle) or _split_gap(middle)):
+                    if _other_name(span, number.start(), stem) and (_reading(middle, follow) or _split_gap(middle)):
                         continue
             elif number.end() <= found.start():
                 if _other_label(span, number.start(), found):
@@ -1303,9 +1331,10 @@ def _keeps(span, stem, token):
                 if _foreign_phrase(span, number.start(), stem):
                     continue
                 middle = span[number.end():found.start()]
+                follow = span[found.start():]
             else:
                 continue
-            other = _reading(middle)
+            other = _reading(middle, follow)
             label = re.search(r"[a-zа-яё]{5,}", middle)
             if other and label and not (found.end() <= number.start() and _stated_condition(middle)):
                 continue
