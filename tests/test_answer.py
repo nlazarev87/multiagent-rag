@@ -484,6 +484,39 @@ def test_check_rejects_a_measurement_that_only_shares_the_object():
     assert agents.check_agent("Напряжение равно 6 В [1].", [intense])["missing"] == ["6"]
 
 
+def test_check_rejects_a_measurement_that_only_shares_the_object_of_an_unlisted_name():
+    radius = {"text": "Насос > Режим\nРадиус поршня: 80 мм.", "document_name": "pump.md"}
+    wall = {"text": "Насос > Режим\nТолщина стенки: 12 мм.", "document_name": "pump.md"}
+    life = {"text": "Насос > Режим\nРесурс подшипника: 80 часов.", "document_name": "pump.md"}
+    output = {"text": "Насос > Режим\nПроизводительность насоса: 80 м3/ч.", "document_name": "pump.md"}
+    pitch = {"text": "Насос > Режим\nШаг резьбы: 2 мм.", "document_name": "pump.md"}
+    tank = {"text": "Насос > Режим\nЕмкость резервуара: 80 литров.", "document_name": "pump.md"}
+    term = {"text": "Насос > Режим\nСрок службы: 80 месяцев.", "document_name": "pump.md"}
+    area = {"text": "Насос > Режим\nПлощадь фильтра: 80 см2.", "document_name": "pump.md"}
+    depth = {"text": "Насос > Режим\nГлубина погружения: 40 мм.", "document_name": "pump.md"}
+    steady = {"text": "Постоянно радиус поршня равен 80 мм.", "document_name": "pump.md"}
+    assert agents.check_agent("Диаметр поршня равен 80 мм [1].", [radius])["missing"] == ["80"]
+    assert agents.check_agent("Радиус поршня равен 80 мм [1].", [radius])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Высота стенки равна 12 мм [1].", [wall])["missing"] == ["12"]
+    assert agents.check_agent("Толщина стенки равна 12 мм [1].", [wall])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Масса подшипника равна 80 кг [1].", [life])["missing"] == ["80"]
+    assert agents.check_agent("Ресурс подшипника равен 80 часов [1].", [life])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Мощность насоса равна 80 кВт [1].", [output])["missing"] == ["80"]
+    assert agents.check_agent("Производительность насоса равна 80 м3/ч [1].", [output])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Диаметр резьбы равен 2 мм [1].", [pitch])["missing"] == ["2"]
+    assert agents.check_agent("Шаг резьбы равен 2 мм [1].", [pitch])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Диаметр резервуара равен 80 мм [1].", [tank])["missing"] == ["80"]
+    assert agents.check_agent("Емкость резервуара равна 80 литров [1].", [tank])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Масса службы равна 80 [1].", [term])["missing"] == ["80"]
+    assert agents.check_agent("Срок службы равен 80 месяцев [1].", [term])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Диаметр фильтра равен 80 мм [1].", [area])["missing"] == ["80"]
+    assert agents.check_agent("Площадь фильтра равна 80 см2 [1].", [area])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Длина погружения равна 40 мм [1].", [depth])["missing"] == ["40"]
+    assert agents.check_agent("Глубина погружения равна 40 мм [1].", [depth])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Диаметр поршня равен 80 мм [1].", [steady])["missing"] == ["80"]
+    assert agents.check_agent("Радиус поршня равен 80 мм [1].", [steady])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}
