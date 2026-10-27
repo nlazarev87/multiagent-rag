@@ -202,7 +202,9 @@ def _facts(answer):
             before = sentence[:match.start()].rstrip()
             start = not before or before[-1] in ".!?:\n«\"("
             if any(ch.isdigit() for ch in token):
-                short = sum(ch.isdigit() for ch in token) <= 2
+                # 1–3 digit values have to sit with the claim. A longer exact match is how
+                # «выпущен в 2019» still meets the line «Год выпуска: 2019».
+                short = sum(ch.isdigit() for ch in token) <= 3
                 facts.append(("near", token, context) if short and context else ("exact", token))
             elif sum(ch.isupper() for ch in token) >= 2:
                 facts.append(("exact", token))
@@ -251,6 +253,32 @@ def _span(text, start):
     return text[left:right]
 
 
+def _keeps(span, stem, token):
+    # «давление: 6 бар и температура: 80» is one clause, so the line window still
+    # sees both numbers. 80 belongs to давление only when no other value with its
+    # own label sits between them. «от 6 до 10» has no such label.
+    stems = list(re.finditer(rf"(?<![0-9a-zа-я]){re.escape(stem)}", span))
+    numbers = list(re.finditer(rf"(?<![0-9a-zа-я_]){re.escape(token)}(?![0-9a-zа-я_])", span))
+    for number in numbers:
+        for found in stems:
+            if found.end() <= number.start():
+                left = found.end()
+                if 0 < left < number.start() and span[left - 1].isalpha() and span[left].isalpha():
+                    while left < number.start() and span[left].isalpha():
+                        left += 1
+                middle = span[left:number.start()]
+            elif number.end() <= found.start():
+                middle = span[number.end():found.start()]
+            else:
+                continue
+            other = re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", middle)
+            label = re.search(r"[a-zа-яё]{5,}", middle)
+            if other and label:
+                continue
+            return True
+    return False
+
+
 def _from_question(fact, asked):
     token = fact[1]
     if any(ch.isdigit() for ch in token) and not any(ch.isalpha() for ch in token):
@@ -267,7 +295,7 @@ def _grounded(fact, text):
         return bool(places)
     for place in places:
         nearby = _span(text, place)
-        if any(re.search(rf"(?<![0-9a-zа-я]){re.escape(stem)}", nearby) for stem in fact[2]):
+        if any(_keeps(nearby, stem, token) for stem in fact[2]):
             return True
     return False
 

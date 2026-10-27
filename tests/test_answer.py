@@ -82,6 +82,32 @@ def test_check_rejects_short_number_from_another_line():
     assert "10" in asked["missing"]
 
 
+def test_check_rejects_number_from_another_fact_in_the_same_sentence():
+    joined = {"text": "Насос > Характеристики\nРабочее давление: 6 бар и температура: 80 градусов.", "document_name": "pump.md"}
+    note = {"text": "Насос > Характеристики\nРабочее давление составляет 6 бар (цех номер 4).", "document_name": "pump.md"}
+    ranged = {"text": "Насос > Режим\nРабочее давление: от 6 до 10 бар", "document_name": "pump.md"}
+    coded = {"text": "Насос ХН-7 рабочее давление: 6 бар.", "document_name": "pump.md"}
+    wrong = agents.check_agent("Рабочее давление насоса равно 80 бар [1].", [joined])
+    assert wrong["status"] == agents.UNCONFIRMED
+    assert wrong["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление насоса равно 6 бар [1].", [joined])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар, температура равна 80 градусов [1].", [joined])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление насоса равно 4 бар [1].", [note])["missing"] == ["4"]
+    assert agents.check_agent("Рабочее давление насоса равно 6 бар [1].", [note])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление насоса от 6 до 10 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление насоса ХН-7 равно 6 бар [1].", [coded], "Какое давление у насоса ХН-7?")["status"] == agents.CONFIRMED
+
+
+def test_check_rejects_three_digit_number_from_another_line():
+    chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
+    real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}
+    wrong = agents.check_agent("Рабочее давление насоса равно 180 бар [1].", [chunk])
+    assert wrong["status"] == agents.UNCONFIRMED
+    assert wrong["missing"] == ["180"]
+    assert agents.check_agent("Инвентарный номер насоса равен 180 [1].", [chunk])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление насоса равно 160 бар [1].", [real])["status"] == agents.CONFIRMED
+
+
 def test_check_fixes_wrong_citation():
     verdict = agents.check_agent("Насос выпущен в 2019 году [2].", [PUMP, SHOP])
     assert verdict["status"] == agents.CONFIRMED
