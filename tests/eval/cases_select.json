@@ -1,0 +1,66 @@
+[
+  {
+    "id": "pronoun",
+    "query": "Сколько она длится?",
+    "turns": [
+      {"query": "Какой номер у цеха?", "answer": "Смена длится 8 часов.", "document_names": ["charter.txt"]}
+    ],
+    "gold": [0]
+  },
+  {
+    "id": "empty-content",
+    "query": "А как?",
+    "turns": [
+      {"query": "Какой номер у цеха?", "answer": "4", "document_names": ["charter.txt"]}
+    ],
+    "gold": [0]
+  },
+  {
+    "id": "new-topic",
+    "query": "Какое давление у насоса?",
+    "turns": [
+      {"query": "Какой номер у цеха?", "answer": "4", "document_names": ["charter.txt"]}
+    ],
+    "gold": []
+  },
+  {
+    "id": "one-word-number",
+    "query": "Какой номер у склада?",
+    "turns": [
+      {"query": "Какой номер у цеха?", "answer": "Смена длится 8 часов.", "document_names": ["charter.txt"]}
+    ],
+    "gold": []
+  },
+  {
+    "id": "two-words",
+    "query": "Напомни номер у цеха",
+    "turns": [
+      {"query": "Какой номер у цеха?", "answer": "4", "document_names": ["charter.txt"]}
+    ],
+    "gold": [0]
+  },
+  {
+    "id": "code-name",
+    "query": "Какое давление у Н-12?",
+    "turns": [
+      {"query": "Что умеет насос Н-12?", "answer": "Насос имеет обозначение Н-12.", "document_names": ["pump.md"]}
+    ],
+    "gold": [0]
+  },
+  {
+    "id": "empty-history",
+    "query": "Какой номер у цеха?",
+    "turns": [],
+    "gold": []
+  },
+  {
+    "id": "last-matching",
+    "query": "Напомни номер у цеха",
+    "turns": [
+      {"query": "Какой номер у цеха?", "answer": "4", "document_names": ["charter.txt"]},
+      {"query": "Какое давление у насоса?", "answer": "6 бар", "document_names": ["pump.md"]},
+      {"query": "Какой номер у цеха?", "answer": "Цех имеет номер 4.", "document_names": ["charter.txt"]}
+    ],
+    "gold": [2]
+  }
+]

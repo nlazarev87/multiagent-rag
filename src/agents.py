@@ -167,6 +167,79 @@ def _example(query, fragments, reply):
 EXAMPLES = [_example(*example) for example in _EXAMPLES]
 
 
+_OVERVIEW_LINE = re.compile(r"Разных значений в столбце «([^»]+)»: (\d+)\. Список: (.+)", re.IGNORECASE)
+_LIST_MARK = re.compile(r"(?<![а-яёa-z])(скольк(?:о|их|ими|им)|какие|перечисли)", re.IGNORECASE)
+_COUNT_MARK = re.compile(r"(?<![а-яёa-z])скольк(?:о|их|ими|им)(?![а-яёa-z])", re.IGNORECASE)
+
+
+def _list_ask(query):
+    return bool(_LIST_MARK.search(query or ""))
+
+
+def _count_ask(query):
+    return bool(_COUNT_MARK.search(query or ""))
+
+
+def _chunk_score(query, text):
+    body = _flat(text)
+    score = 0
+    for word in _words(query):
+        if word in body or (len(word) >= 4 and word[:4] in body):
+            score += 1
+    return score
+
+
+def _label_score(query, label):
+    asked = _flat(query)
+    name = _flat(label)
+    score = 0
+    for word in _words(query):
+        stem = word[:4] if len(word) >= 4 else word
+        if stem in name:
+            score += 1
+    for token in re.findall(r"[0-9a-zа-яё]+", name):
+        stem = token[:4] if len(token) >= 4 else token
+        if len(stem) >= 3 and stem in asked:
+            score += 1
+    return score
+
+
+def _from_overview(query, chunks):
+    if not _list_ask(query) or not chunks:
+        return None
+    ranked = []
+    for number, chunk in enumerate(chunks, 1):
+        text = chunk.get("text") or ""
+        for match in _OVERVIEW_LINE.finditer(text):
+            score = _label_score(query, match.group(1))
+            if score:
+                ranked.append((score, number, match.group(2), match.group(3).rstrip(" .")))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    _, number, count, items = ranked[0]
+    if _count_ask(query):
+        if any(ch.isdigit() for ch in query):
+            return None
+        listed = f"{count} значений [{number}]."
+    else:
+        listed = f"{items} [{number}]."
+    if len(_flat(re.sub(r"\[[\d,\s]+\]", " ", listed)).split()) >= SPAN:
+        return None
+    return listed
+
+
+def _with_cite(answer, chunks):
+    if not chunks or not answer:
+        return answer
+    if _flat(NO_ANSWER).rstrip(".") in _flat(answer):
+        return answer
+    if re.search(r"\[\d+\]", answer):
+        return answer
+    best = max(range(1, len(chunks) + 1), key=lambda number: _chunk_score(answer, chunks[number - 1].get("text", "")))
+    return answer.rstrip() + f" [{best}]"
+
+
 def build_prompt(query, chunks, previous=None, feedback=None, count=None, budget=PROMPT_TOKENS):
     count = count or count_tokens
     head, tail = _frame(query, previous, feedback)
@@ -188,8 +261,12 @@ def build_prompt(query, chunks, previous=None, feedback=None, count=None, budget
 def answer_agent(query, clear_query, chunks, work_turns, feedback=None):
     if not chunks:
         return NO_ANSWER
+    if not feedback:
+        listed = _from_overview(query, chunks)
+        if listed:
+            return listed
     previous = work_turns[-1] if work_turns and clear_query != query else None
-    return complete(SYSTEM, build_prompt(query, chunks, previous, feedback), examples=EXAMPLES)
+    return _with_cite(complete(SYSTEM, build_prompt(query, chunks, previous, feedback), examples=EXAMPLES), chunks)
 
 
 def _facts(answer):
@@ -275,26 +352,26 @@ def _inverted(query, answer, flats):
     return False
 
 
-def _list_gap(query, answer, flats):
-    asked = query.lower()
-    if not any(marker in asked for marker in ("сколько", "какие", "перечисли")):
+def _list_gap(query, answer, flats, cited=None):
+    if not _list_ask(query):
         return False
-    items, count = [], None
-    for text in flats:
-        listed = re.search(r"список:\s*(.+)", text)
-        if listed:
-            items = [part.strip(" .;") for part in re.split(r",| и ", listed.group(1)) if part.strip(" .;")]
-        numbered = re.search(r"разных значений[^:]*:\s*(\d+)", text)
-        if numbered:
-            count = numbered.group(1)
-    if not items and not count:
-        return False
+    indices = cited or list(range(1, len(flats) + 1))
     body = _flat(re.sub(r"\[[\d,\s]+\]", " ", answer))
-    if count and count in body:
-        return False
-    if items and all(_flat(item) in body for item in items):
-        return False
-    return True
+    saw = False
+    for number in indices:
+        text = flats[number - 1]
+        listed = re.search(r"список:\s*(.+)", text)
+        numbered = re.search(r"разных значений[^:]*:\s*(\d+)", text)
+        if not listed and not numbered:
+            continue
+        saw = True
+        items = [part.strip(" .;") for part in re.split(r",| и ", listed.group(1)) if part.strip(" .;")] if listed else []
+        count = numbered.group(1) if numbered else None
+        if count and count in body:
+            return False
+        if items and all(_flat(item) in body for item in items):
+            return False
+    return saw
 
 
 def check_agent(answer, chunks, query="", known=None):
@@ -309,8 +386,6 @@ def check_agent(answer, chunks, query="", known=None):
         return _verdict(UNCONFIRMED, feedback=COPIED)
     if _inverted(query, text, flats):
         return _verdict(UNCONFIRMED, feedback=INVERT)
-    if _list_gap(query, text, flats):
-        return _verdict(UNCONFIRMED, feedback=LIST_GAP)
     cited = []
     for group in re.findall(r"\[([\d,\s]+)\]", text):
         for number in re.findall(r"\d+", group):
@@ -319,6 +394,8 @@ def check_agent(answer, chunks, query="", known=None):
                 return _verdict(UNCONFIRMED, feedback=f"Ссылайся только на номера фрагментов от 1 до {len(chunks)}.")
             if number not in cited:
                 cited.append(number)
+    if _list_gap(query, text, flats, cited):
+        return _verdict(UNCONFIRMED, feedback=LIST_GAP)
     used = list(cited)
     missing = []
     facts = _facts(text)
