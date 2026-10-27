@@ -1185,6 +1185,56 @@ def _answers_head(stem, heads):
     return any(stem == head or stem == head[:5] for head in heads)
 
 
+def _genitive_shape(word):
+    # «масла» and «воды» are the object of a measurement whose name was left
+    # out. «насос» and «выход» end on a consonant and name the number itself.
+    return any(word.endswith(ending) and len(word) > len(ending) + 2 for ending in ("а", "я", "ы", "и", "ов", "ев", "ей"))
+
+
+def _qualifier_only(text, number_start):
+    # A later value still belongs to the measurement named before a clause
+    # break when it adds only a qualifier. «на выходе: 6», «16 бар
+    # максимальное» and «масла: 16» do. «насос №4» and «4 насоса» name a
+    # different fact, so the pressure must not inherit them.
+    left, right = _bounds(text, number_start)
+    span = _case(text[left:right])
+    local = number_start - left
+    for match in re.finditer(r"[a-zа-яё]{3,}", span):
+        word = match.group(0)
+        if word in _GLUE or word in _LINKS or word in _PRONOUNS or word in _ASKED or _bridge_word(word) or _unit_word(word):
+            continue
+        if _head_key(word):
+            return False
+        if _ADJECTIVE.search(word) and not _kind_noun(word):
+            continue
+        preceded = span[:match.start()].rstrip(" \t:;—–-\u2212()«»\",")
+        prev = re.search(r"([a-zа-яё]+)$", preceded)
+        if prev and prev.group(1) in _PREPOSITIONS:
+            continue
+        if match.end() <= local and _genitive_shape(word) and not re.search(r"[a-zа-яё]", span[match.end():local]):
+            continue
+        return False
+    return True
+
+
+def _carried_heads(text, earlier, later):
+    # «На входе давление: 2 бар; на выходе: 6 бар». The break makes two
+    # spans, and the second never repeats давление. It is still that
+    # measurement, so 2 must not confirm the outlet. «Давление: 6 бар;
+    # температура: 80» names a new measurement. «4 насоса; давление 8»
+    # has nothing to carry forward.
+    _, _, token, span, words = earlier
+    later_at, _, _, _, later_words = later
+    heads = {key for word in words if (key := _head_key(word))}
+    later_heads = {key for word in later_words if (key := _head_key(word))}
+    if not heads or later_heads - heads:
+        return set()
+    kept = {head for head in heads if _keeps(span, head, token)}
+    if not kept or not _qualifier_only(text, later_at):
+        return set()
+    return kept
+
+
 def _qualifier_conflict(text, start, answer_stems, end=None):
     # «давление на выходе равно 2» is not the inlet pressure, and
     # «максимальное давление равно 6» is not the minimum. The head is the
@@ -1221,7 +1271,8 @@ def _qualifier_conflict(text, start, answer_stems, end=None):
         return False
     here_stems = {word[:5] for word in words}
     here_heads = {key for word in words if (key := _head_key(word))}
-    for other_start, _, other_token, other_span, other_words in found:
+    for other_item in found:
+        other_start, _, other_token, other_span, other_words = other_item
         if other_start == current_at:
             continue
         other_heads = {key for word in other_words if (key := _head_key(word))}
@@ -1229,6 +1280,11 @@ def _qualifier_conflict(text, start, answer_stems, end=None):
             head for head in here_heads | other_heads
             if _keeps(span, head, token) and _keeps(other_span, head, other_token)
         }
+        # «давление: 2 бар; на выходе: 6». The break drops the repeated name,
+        # so the outlet is invisible unless the first head is carried over.
+        if not shared and span != other_span:
+            first, second = (current, other_item) if current_at < other_start else (other_item, current)
+            shared = _carried_heads(signed, first, second)
         # «давление на входе 2 бар и на выходе 6» leaves the second value
         # without its own head. Those words still belong to the same measurement.
         # A headless number earlier in the clause does not: «в цехе 4 насоса
