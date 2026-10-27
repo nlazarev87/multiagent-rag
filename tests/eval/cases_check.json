@@ -1,0 +1,150 @@
+[
+  {
+    "id": "confirm-grounded",
+    "query": "Какое давление у насоса?",
+    "answer": "Рабочее давление насоса равно 6 бар, год выпуска 2019 [1].",
+    "chunks": [
+      {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nГод выпуска: 2019", "document_name": "pump.md", "section": "Насос > Характеристики"},
+      {"text": "Цех имеет номер 4. Мастер цеха — Иванов.", "document_name": "charter.txt", "section": ""}
+    ],
+    "gold_status": "подтверждён",
+    "gold_document": "pump.md",
+    "feedback_type": ""
+  },
+  {
+    "id": "confirm-yes",
+    "query": "Должен ли насос иметь давление?",
+    "answer": "Да, насос должен иметь давление 6 бар [1].",
+    "chunks": [
+      {"text": "Насос должен иметь рабочее давление 6 бар.", "document_name": "pump.md", "section": ""}
+    ],
+    "gold_status": "подтверждён",
+    "gold_document": "pump.md",
+    "feedback_type": ""
+  },
+  {
+    "id": "confirm-no",
+    "query": "Требуется ли охлаждение насоса?",
+    "answer": "Нет, охлаждение не требуется [1].",
+    "chunks": [
+      {"text": "Охлаждение насоса не требуется. Давление равно 6 бар.", "document_name": "pump.md", "section": ""}
+    ],
+    "gold_status": "подтверждён",
+    "gold_document": "pump.md",
+    "feedback_type": ""
+  },
+  {
+    "id": "reject-missing-year",
+    "query": "В каком году выпущен насос?",
+    "answer": "Насос выпущен в 2021 году [1].",
+    "chunks": [
+      {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nГод выпуска: 2019", "document_name": "pump.md", "section": "Насос > Характеристики"}
+    ],
+    "gold_status": "не подтверждён",
+    "feedback_type": "missing"
+  },
+  {
+    "id": "reject-copied",
+    "query": "Что сказано про цех?",
+    "answer": "Цех имеет номер 4, в нём работают токари, слесари и наладчики, мастер цеха — Иванов, смена длится восемь часов, обед начинается в полдень и длится один час, склад находится рядом с цехом на первом этаже.",
+    "chunks": [
+      {"text": "Цех имеет номер 4, в нём работают токари, слесари и наладчики, мастер цеха — Иванов, смена длится восемь часов, обед начинается в полдень и длится один час, склад находится рядом с цехом на первом этаже.", "document_name": "charter.txt", "section": ""}
+    ],
+    "gold_status": "не подтверждён",
+    "feedback_type": "copied"
+  },
+  {
+    "id": "reject-bad-cite",
+    "query": "Какое давление у насоса?",
+    "answer": "Давление 6 бар [5].",
+    "chunks": [
+      {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nГод выпуска: 2019", "document_name": "pump.md", "section": "Насос > Характеристики"}
+    ],
+    "gold_status": "не подтверждён",
+    "feedback_type": "cite"
+  },
+  {
+    "id": "reject-short",
+    "query": "Какое давление у насоса?",
+    "answer": "Да.",
+    "chunks": [
+      {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nГод выпуска: 2019", "document_name": "pump.md", "section": "Насос > Характеристики"}
+    ],
+    "gold_status": "не подтверждён",
+    "feedback_type": "retry"
+  },
+  {
+    "id": "missing-no-answer",
+    "query": "Какое давление у насоса?",
+    "answer": "В документах нет ответа.",
+    "chunks": [
+      {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nГод выпуска: 2019", "document_name": "pump.md", "section": "Насос > Характеристики"}
+    ],
+    "gold_status": "нет ответа",
+    "feedback_type": ""
+  },
+  {
+    "id": "missing-unknown-name",
+    "query": "Какая версия Python в насосе?",
+    "answer": "В насосе используется версия 2019 [1].",
+    "chunks": [
+      {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nГод выпуска: 2019", "document_name": "pump.md", "section": "Насос > Характеристики"}
+    ],
+    "known_missing": ["python"],
+    "gold_status": "нет ответа",
+    "feedback_type": ""
+  },
+  {
+    "id": "false-confirm-inversion",
+    "query": "Требуется ли охлаждение насоса?",
+    "answer": "Да, охлаждение требуется [1].",
+    "chunks": [
+      {"text": "Охлаждение насоса не требуется. Давление равно 6 бар.", "document_name": "pump.md", "section": ""}
+    ],
+    "gold_status": "не подтверждён",
+    "feedback_type": "inversion"
+  },
+  {
+    "id": "false-confirm-incomplete-list",
+    "query": "Какие смены есть в цехе?",
+    "answer": "В цехе есть Утренняя и Дневная смены [1].",
+    "chunks": [
+      {
+        "text": "Цех > Смены\nРазных значений в столбце «Смена»: 3. Список: Утренняя, Дневная, Ночная.",
+        "document_name": "charter.txt",
+        "section": "Цех > Смены"
+      }
+    ],
+    "gold_status": "не подтверждён",
+    "feedback_type": "incomplete"
+  },
+  {
+    "id": "false-confirm-count",
+    "query": "Сколько смен в цехе?",
+    "answer": "В цехе есть смены [1].",
+    "chunks": [
+      {
+        "text": "Цех > Смены\nРазных значений в столбце «Смена»: 3. Список: Утренняя, Дневная, Ночная.",
+        "document_name": "charter.txt",
+        "section": "Цех > Смены"
+      }
+    ],
+    "gold_status": "не подтверждён",
+    "feedback_type": "incomplete"
+  },
+  {
+    "id": "confirm-full-list",
+    "query": "Какие смены есть в цехе?",
+    "answer": "В цехе три смены: Утренняя, Дневная и Ночная [1].",
+    "chunks": [
+      {
+        "text": "Цех > Смены\nРазных значений в столбце «Смена»: 3. Список: Утренняя, Дневная, Ночная.",
+        "document_name": "charter.txt",
+        "section": "Цех > Смены"
+      }
+    ],
+    "gold_status": "подтверждён",
+    "gold_document": "charter.txt",
+    "feedback_type": ""
+  }
+]
