@@ -84,12 +84,22 @@ def test_check_rejects_yes_when_fragment_negates():
     chunk = {"text": "Охлаждение насоса не требуется. Давление равно 6 бар.", "document_name": "pump.md"}
     assert agents.check_agent("Да, охлаждение требуется [1].", [chunk], "Требуется ли охлаждение насоса?")["feedback"] == agents.INVERT
     assert agents.check_agent("Нет, охлаждение не требуется [1].", [chunk], "Требуется ли охлаждение насоса?")["status"] == agents.CONFIRMED
+    absent = {"text": "Фильтра нет.", "document_name": "pump.md"}
+    assert agents.check_agent("Да, фильтр есть [1].", [absent], "Есть ли фильтр?")["feedback"] == agents.INVERT
+    assert agents.check_agent("Нет, фильтра нет [1].", [absent], "Есть ли фильтр?")["status"] == agents.CONFIRMED
+    cooling = {"text": "Охлаждение требуется.", "document_name": "pump.md"}
+    other = {"text": "Замена фильтра не требуется.", "document_name": "filter.md"}
+    assert agents.check_agent("Да, охлаждение требуется [1].", [cooling, other], "Требуется ли охлаждение?")["status"] == agents.CONFIRMED
+    assert agents.check_agent("Нет, охлаждение не требуется [2].", [cooling, other], "Требуется ли охлаждение?")["feedback"] == agents.INVERT
 
 
 def test_check_rejects_incomplete_list():
     chunk = {"text": "Цех > Смены\nРазных значений в столбце «Смена»: 3. Список: Утренняя, Дневная, Ночная.", "document_name": "charter.txt"}
     assert agents.check_agent("В цехе есть Утренняя и Дневная смены [1].", [chunk], "Какие смены есть в цехе?")["feedback"] == agents.LIST_GAP
+    assert agents.check_agent("В цехе 3 смены: Утренняя и Дневная [1].", [chunk], "Какие смены есть в цехе?")["feedback"] == agents.LIST_GAP
+    assert agents.check_agent("В цехе 13 смен [1].", [chunk], "Сколько смен в цехе?")["feedback"] == agents.LIST_GAP
     assert agents.check_agent("В цехе три смены: Утренняя, Дневная и Ночная [1].", [chunk], "Какие смены есть в цехе?")["status"] == agents.CONFIRMED
+    assert agents.check_agent("В цехе 3 смены [1].", [chunk], "Сколько смен в цехе?")["status"] == agents.CONFIRMED
 
 
 def test_check_rejects_empty_and_broken_answers():

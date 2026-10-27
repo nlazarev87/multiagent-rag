@@ -50,6 +50,25 @@ def test_docx_keeps_order_sections_and_skips_toc(tmp_path):
     assert "18" in load_text(path)
 
 
+def test_overview_list_keeps_every_value(monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(text.split())))
+    from ingest import _word_tokens, chunks_from_blocks
+
+    _word_tokens.cache_clear()
+    values = [f"Наименование характеристики номер {number} очень длинное" for number in range(1, 41)]
+    blocks = [{
+        "kind": "table",
+        "caption": "Таблица 1 – Перечень",
+        "labels": ["Статус", "Описание"],
+        "width": 2,
+        "rows": [[("Статус", "Да"), ("Описание", value)] for value in values],
+    }]
+    chunks = chunks_from_blocks(blocks, "list.txt")
+    overview = next(chunk["text"] for chunk in chunks if chunk["kind"] == "overview")
+    assert "Разных значений в столбце «Описание»: 40." in overview
+    assert all(value in overview for value in values)
+
+
 def test_large_table_gets_overview(tmp_path):
     document = Document()
     table = document.add_table(rows=41, cols=3)
