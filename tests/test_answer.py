@@ -1278,6 +1278,12 @@ def test_check_rejects_an_hour_range_through_po_taken_as_its_measurement():
     assert agents.check_agent("Давление равно 10 бар [1].", [part])["missing"] == ["10"]
 
 
+def test_check_grounds_a_code_and_a_numeric_range():
+    flows = {"text": "Список: FLOW_A.1, FLOW_B.2. Частота: 0-24 раз в день.", "document_name": "spec.md"}
+    assert agents.check_agent("Потоки FLOW_A.1 и FLOW_B.2 [1].", [flows])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Частота равна 0-24 раз в день [1].", [flows])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_a_long_number_of_another_value():
     ends = {"text": "Давление на входе: 2000 бар. Давление на выходе: 6000 бар.", "document_name": "pump.md"}
     joined = {"text": "Давление на входе 2000 бар и давление на выходе 6000 бар.", "document_name": "pump.md"}

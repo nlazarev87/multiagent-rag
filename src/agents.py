@@ -418,6 +418,13 @@ def _facts(answer):
                             break
                     facts.append(("near", token, parent, True))
                     continue
+                # «AB-9.2» and «3-8» are the value written in the fragment, not a
+                # measurement named by the letters of the code or the words around it.
+                coded = any(ch.isalpha() for ch in token) and any(ch.isdigit() for ch in token)
+                ranged = bool(re.fullmatch(r"\d+\s*-\s*\d+", token.replace("\u2212", "-")))
+                if coded or ranged:
+                    facts.append(("exact", token))
+                    continue
                 # 1–3 digit values have to sit with the claim. A longer exact match is how
                 # «выпущен в 2019» still meets the line «Год выпуска: 2019». A measurement
                 # claim does not get that shortcut: «давление равно 2019» must not take
