@@ -150,6 +150,44 @@ def test_check_rejects_a_number_taken_from_a_designation_or_compound():
     assert agents.check_agent("Рабочее давление 6-10 бар [1].", [ranged])["status"] == agents.CONFIRMED
 
 
+def test_check_rejects_a_number_taken_from_a_negative_value():
+    cold = {"text": "Насос > Режим\nРабочая температура: -12 градусов.", "document_name": "pump.md"}
+    signed = {"text": "Насос > Режим\nРабочая температура: −12 градусов.", "document_name": "pump.md"}
+    word = {"text": "Насос > Режим\nРабочая температура: минус 12 градусов.", "document_name": "pump.md"}
+    decimal = {"text": "Насос > Режим\nРабочая температура: -6,5 градусов.", "document_name": "pump.md"}
+    both = {"text": "Насос > Режим\nРабочая температура: -12 градусов, рабочее давление: 6 бар.", "document_name": "pump.md"}
+    ranged = {"text": "Насос > Режим\nРабочая температура: от -6 до 10 градусов.", "document_name": "pump.md"}
+    wide = {"text": "Насос > Режим\nРабочая температура: от 6 до 10 градусов.", "document_name": "pump.md"}
+    warm = {"text": "Насос > Режим\nРабочая температура: 12 градусов.", "document_name": "pump.md"}
+    assert agents.check_agent("Рабочая температура равна 12 градусов [1].", [cold])["missing"] == ["12"]
+    assert agents.check_agent("Рабочая температура равна -12 градусов [1].", [cold])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочая температура равна 12 градусов [1].", [signed])["missing"] == ["12"]
+    assert agents.check_agent("Рабочая температура равна −12 градусов [1].", [signed])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочая температура равна минус 12 градусов [1].", [signed])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочая температура равна 12 градусов [1].", [word])["missing"] == ["12"]
+    assert agents.check_agent("Рабочая температура равна минус 12 градусов [1].", [word])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочая температура равна -12 градусов [1].", [word])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочая температура равна 6 градусов [1].", [decimal])["missing"] == ["6"]
+    assert agents.check_agent("Рабочая температура равна 5 градусов [1].", [decimal])["missing"] == ["5"]
+    assert agents.check_agent("Рабочая температура равна 6,5 градусов [1].", [decimal])["missing"] == ["6,5"]
+    assert agents.check_agent("Рабочая температура равна -6,5 градусов [1].", [decimal])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 12 бар [1].", [both])["missing"] == ["12"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [both])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочая температура равна -12 градусов [1].", [both])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочая температура равна 6 градусов [1].", [ranged])["missing"] == ["6"]
+    assert agents.check_agent("Рабочая температура от -6 до 10 градусов [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочая температура от 6 до 10 градусов [1].", [wide])["status"] == agents.CONFIRMED
+    asked = agents.check_agent(
+        "Да, рабочая температура равна минус 12 градусов [1].",
+        [warm],
+        "Верно ли, что рабочая температура равна минус 12?",
+        known=lambda term: True,
+    )
+    assert asked["status"] == agents.UNCONFIRMED
+    assert "-12" in asked["missing"]
+    assert agents.check_agent("Рабочая температура равна -12 градусов [1].", [warm])["missing"] == ["-12"]
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}

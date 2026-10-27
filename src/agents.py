@@ -203,8 +203,34 @@ def _whole_number(text, start):
     return found.group(0) if found else ""
 
 
+def _signs(text):
+    return (text or "").replace("\u2212", "-").replace("\u2013", "-")
+
+
+def _negated(text, start):
+    # «-12» and «минус 12» are one value. A hyphen between digits is a range:
+    # «6-10» still has both ends. The digit scan otherwise keeps 12.
+    return re.search(
+        r"(?<!\d)[-\u2212\u2013]\s?$|(?<![0-9a-zа-яё])минус\s*$",
+        text[:start],
+        re.IGNORECASE,
+    ) is not None
+
+
 def _hits(text, token):
-    if _pure_number(token):
+    text = _signs(text)
+    token = _signs(token)
+    signed = token[1:].lstrip() if token.startswith("-") and _pure_number(token[1:].lstrip()) else ""
+    if signed:
+        # The magnitude alone is a different measurement. «минус 12» and «−12»
+        # are the same value as «-12».
+        pattern = (
+            rf"(?<![0-9a-zа-я_])(?:-|минус\s*)"
+            rf"{re.escape(signed)}"
+            rf"(?![0-9a-zа-я_])(?!,\d)(?!\.\d)(?! \d{{3}}(?!\d))"
+            rf"(?![\-/][a-zа-я])(?![:/]\d)"
+        )
+    elif _pure_number(token):
         grouped = r"(?<!\d )" if re.fullmatch(r"\d{3}", token) else ""
         # «Н-12», «9/299419» and «6:00» are one value. The digit scan otherwise
         # keeps 12, 9, or 6, and that piece confirms the whole value.
@@ -217,7 +243,10 @@ def _hits(text, token):
         )
     else:
         pattern = rf"(?<![0-9a-zа-я_]){re.escape(token)}(?![0-9a-zа-я_])"
-    return list(re.finditer(pattern, text))
+    found = list(re.finditer(pattern, text))
+    if signed or not _pure_number(token):
+        return found
+    return [match for match in found if not _negated(text, match.start())]
 
 
 def _facts(answer):
@@ -238,6 +267,8 @@ def _facts(answer):
                     if len(whole) > len(token):
                         token = whole
                         covered = match.start() + len(token)
+                    if _negated(sentence, match.start()):
+                        token = "-" + token
                 # 1–3 digit values have to sit with the claim. A longer exact match is how
                 # «выпущен в 2019» still meets the line «Год выпуска: 2019».
                 short = sum(ch.isdigit() for ch in token) <= 3
