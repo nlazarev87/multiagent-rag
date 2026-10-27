@@ -523,6 +523,18 @@ def _kind_noun(word):
 # A condition after «при» can name its number with a word outside _KINDS.
 # «ходе» is «ход» and «угле» is «угол». «холод» is not «ход», «параметр» is not «пар».
 _MEASURES = ("ход", "ток", "вес", "пар", "тип", "кпд", "зазор", "угл", "напряж", "времен")
+# A difference, error, or swing of another measurement. «перепад давления» is not
+# the pressure, «допуск диаметра» is not the diameter, and «амплитуда хода» is
+# not the stroke. «падение» is «падени» plus «е»; «отклонений» keeps the final «й».
+_DELTAS = (
+    "перепад", "погрешност", "допуск", "отклонени", "потер", "падени", "пульсаци",
+    "амплитуд", "снижени", "разност", "неравномерност", "колебани", "градиент",
+)
+_DELTA_ENDINGS = {
+    "", "а", "я", "у", "ю", "е", "и", "ы", "о", "ь", "й",
+    "ом", "ем", "ой", "ою", "ей", "ею", "ью", "ов", "ев",
+    "ам", "ям", "ах", "ях", "ами", "ями",
+}
 
 
 def _brief(extra):
@@ -538,6 +550,16 @@ def _fold(word):
     if word == "угол" or (word.startswith("угл") and _brief(word[3:])):
         return "угл"
     return word
+
+
+def _delta_word(word):
+    # «допускается» and «потерять» are not «допуск» and «потеря».
+    if not word:
+        return False
+    for stem in _DELTAS:
+        if word.startswith(stem) and word[len(stem):] in _DELTA_ENDINGS:
+            return True
+    return False
 
 
 def _measure_word(word):
@@ -783,9 +805,11 @@ def _phrase_owner(nouns):
     # «класс точности» and «степень защиты»: the word next to the generic head is.
     # «насос номер» and «градусов … давление»: the kind written next to another noun is.
     # «постоянно радиус поршня»: the adverb does not take the number from радиус.
+    # «перепад давления», «погрешность давления», «допуск диаметра» and
+    # «амплитуда хода»: the difference, error, or swing owns the number.
     head = nouns[-1]
     follower = nouns[-2]
-    if _kind_word(head) or _measure_noun(head):
+    if _kind_word(head) or _measure_noun(head) or _delta_word(head):
         return head
     if _generic_head(head) or _adverb_head(head) or _kind_noun(follower) or _measure_noun(follower):
         return follower
@@ -807,8 +831,14 @@ def _foreign_phrase(span, number_start, stem):
     # «давление при температуре 80» and «давление при ходе 80»: the condition
     # owns the number, so the head before «при» does not. The same is true of
     # «ток», «зазор», «угол», «кпд», «напряжение» and «ход поршня».
+    # «перепад», «погрешность», «допуск», «отклонение», «потеря», «падение»,
+    # «пульсация», «амплитуда», «снижение», «разность», «неравномерность»,
+    # «колебание» and «градиент» do too: «давление при перепаде 2 бар» is not
+    # давление 2.
     # «давление на выходе: 6» and «давление при работе: 6» name no other measurement.
     if any(_measure_word(word) and not _matches(word, stem) for word in nouns):
+        return True
+    if _delta_word(owner):
         return True
     return _kind_noun(owner)
 
@@ -831,7 +861,8 @@ def _short_owns(span, number_start, stem):
     owner = _phrase_owner(nouns)
     if _inflected(owner, stem):
         return True
-    if owner and (_kind_word(owner) or _measure_noun(owner)):
+    # «амплитуда хода: 80». The short object is not the measurement, so «ход» does not keep 80.
+    if owner and (_kind_word(owner) or _measure_noun(owner) or _delta_word(owner)):
         return False
     return _inflected(_name_before(span, number_start), stem)
 
@@ -873,8 +904,16 @@ def _keeps(span, stem, token):
                 # the value that follows.
                 if not _stated_condition(middle):
                     names = re.findall(r"[a-zа-яё]{5,}", middle)
-                    if _measure_label(names, stem) and (
-                        not _kind_stem(stem) or _plain_number(span[number.end():]) or _plain_number(span[:found.start()])
+                    # «перепад давления: 2»: давления is the object of перепад, not
+                    # another measurement standing between the name and its number.
+                    if (
+                        _measure_label(names, stem)
+                        and not _delta_word(word)
+                        and (
+                            not _kind_stem(stem)
+                            or _plain_number(span[number.end():])
+                            or _plain_number(span[:found.start()])
+                        )
                     ):
                         continue
                     if _other_name(span, number.start(), stem) and (
@@ -883,6 +922,10 @@ def _keeps(span, stem, token):
                         continue
             elif number.end() <= found.start():
                 if _other_label(span, number.start(), found):
+                    continue
+                # «перепад давления 2 бар и рабочее давление 6». The 2 already
+                # belongs to перепад, so the later давление does not take it.
+                if _foreign_phrase(span, number.start(), stem):
                     continue
                 middle = span[number.end():found.start()]
             else:

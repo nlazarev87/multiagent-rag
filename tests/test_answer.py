@@ -680,6 +680,64 @@ def test_check_rejects_a_measurement_that_only_shares_the_object_of_an_unlisted_
     assert agents.check_agent("Радиус поршня равен 80 мм [1].", [steady])["status"] == agents.CONFIRMED
 
 
+def test_check_rejects_a_difference_error_or_swing_of_another_measurement():
+    drop = {"text": "Насос > Режим\nПерепад давления: 2 бар. Рабочее давление: 6 бар.", "document_name": "pump.md"}
+    joined = {"text": "Перепад давления 2 бар и рабочее давление 6 бар.", "document_name": "pump.md"}
+    conditioned = {"text": "Рабочее давление при перепаде 2 бар составляет 6 бар.", "document_name": "pump.md"}
+    error = {"text": "Погрешность давления: 0,5 бар. Рабочее давление: 6 бар.", "document_name": "pump.md"}
+    tolerance = {"text": "Допуск диаметра: 0,2 мм. Диаметр вала: 50 мм.", "document_name": "pump.md"}
+    loss = {"text": "Потеря напора: 12 м. Напор насоса: 40 м.", "document_name": "pump.md"}
+    fall = {"text": "Падение давления составляет 2 бар.", "document_name": "pump.md"}
+    drift = {"text": "Отклонение температуры: 3 градуса.", "document_name": "pump.md"}
+    pulse = {"text": "Пульсация давления: 4 бар.", "document_name": "pump.md"}
+    swing = {"text": "Амплитуда хода поршня: 80 мм.", "document_name": "pump.md"}
+    decrease = {"text": "Снижение давления: 7 бар.", "document_name": "pump.md"}
+    gap = {"text": "Разность давлений: 9 бар.", "document_name": "pump.md"}
+    uneven = {"text": "Неравномерность подачи: 8 процентов.", "document_name": "pump.md"}
+    wave = {"text": "Колебание давления: 4 бар.", "document_name": "pump.md"}
+    slope = {"text": "Градиент давления: 5 бар.", "document_name": "pump.md"}
+    current = {"text": "Сила тока равна 80 А.", "document_name": "pump.md"}
+    numbered = {"text": "Насос номер 6 имеет рабочее давление 8 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Рабочее давление равно 2 бар [1].", [drop])["missing"] == ["2"]
+    assert agents.check_agent("Перепад давления равен 2 бар [1].", [drop])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [drop])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 2 бар [1].", [joined])["missing"] == ["2"]
+    assert agents.check_agent("Перепад давления равен 2 бар, рабочее давление равно 6 бар [1].", [joined])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 2 бар [1].", [conditioned])["missing"] == ["2"]
+    assert agents.check_agent("Перепад равен 2 бар [1].", [conditioned])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление составляет 6 бар [1].", [conditioned])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 0,5 бар [1].", [error])["missing"] == ["0,5"]
+    assert agents.check_agent("Погрешность давления равна 0,5 бар [1].", [error])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [error])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Диаметр вала равен 0,2 мм [1].", [tolerance])["missing"] == ["0,2"]
+    assert agents.check_agent("Допуск диаметра равен 0,2 мм [1].", [tolerance])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Диаметр вала равен 50 мм [1].", [tolerance])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Напор равен 12 м [1].", [loss])["missing"] == ["12"]
+    assert agents.check_agent("Потеря напора равна 12 м [1].", [loss])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Напор насоса равен 40 м [1].", [loss])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление составляет 2 бар [1].", [fall])["missing"] == ["2"]
+    assert agents.check_agent("Падение давления составляет 2 бар [1].", [fall])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура равна 3 градуса [1].", [drift])["missing"] == ["3"]
+    assert agents.check_agent("Отклонение температуры равно 3 градуса [1].", [drift])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 4 бар [1].", [pulse])["missing"] == ["4"]
+    assert agents.check_agent("Пульсация давления равна 4 бар [1].", [pulse])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ход поршня равен 80 мм [1].", [swing])["missing"] == ["80"]
+    assert agents.check_agent("Амплитуда хода поршня равна 80 мм [1].", [swing])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 7 бар [1].", [decrease])["missing"] == ["7"]
+    assert agents.check_agent("Снижение давления равно 7 бар [1].", [decrease])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 9 бар [1].", [gap])["missing"] == ["9"]
+    assert agents.check_agent("Разность давлений равна 9 бар [1].", [gap])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Подача равна 8 [1].", [uneven])["missing"] == ["8"]
+    assert agents.check_agent("Неравномерность подачи равна 8 процентов [1].", [uneven])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 4 бар [1].", [wave])["missing"] == ["4"]
+    assert agents.check_agent("Колебание давления равно 4 бар [1].", [wave])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 5 бар [1].", [slope])["missing"] == ["5"]
+    assert agents.check_agent("Градиент давления равен 5 бар [1].", [slope])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Сила тока равна 80 А [1].", [current])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Номер насоса равен 6, рабочее давление равно 8 бар [1].", [numbered])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [numbered])["missing"] == ["6"]
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}
