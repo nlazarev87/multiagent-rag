@@ -905,15 +905,37 @@ def _hour_range_after(after):
     return found is not None and int(found.group(1)) <= 24
 
 
+def _hour_range_before(before):
+    # «с 8 часов до», «от 6 ч по», «с 8 ч. до»: the unit sits on the start,
+    # so the end number has no hour word after it.
+    return re.search(
+        rf"(?<![0-9a-zа-яё])(?:от|с|со)\s+\d{{1,2}}\s+{_HOUR_WORD.pattern}\s+(?:до|по)\s*$",
+        _case(before),
+    ) is not None
+
+
+def _hour_range_end_unit(after):
+    # «с 8 часов до 18 бар» is a reading. «с 8 часов до 18» and
+    # «с 8 часов до 18 составляет 6» are still the clock end.
+    found = re.match(r"\s*([a-zа-яё]+)", _case(after))
+    if not found:
+        return False
+    word = found.group(1)
+    if _HOUR_WORD.fullmatch(word):
+        return False
+    return word in _GLUE or _unit_word(word)
+
+
 def _clock_number(text, start, end):
     # «в 6 часов», «к 8 часам», «до 18 часов» and «в 14:30» name a time of day.
     # That hour is not the reading, so «давление в 6 часов составляет 10» is
     # давление 10, and «в 18 часов рабочее давление: 6» is not давление 18.
-    # «с 8 до 18 часов», «с 8 по 18 часов» and «от 6 до 10 часов» are the same
-    # kind of hour, on both ends. A duration still owns its range:
+    # «с 8 до 18 часов», «с 8 по 18 часов», «от 6 до 10 часов» and
+    # «с 8 часов до 18» are the same kind of hour, on both ends.
+    # A duration still owns its range:
     # «наработка от 6 до 10 часов» and «наработка с 8 по 18 часов».
     # «давление с 8 по 18 часов составляет 6» does not, so 8 and 18 must not
-    # hide 6. «с 8 по 18 бар» stays a reading: a range needs an hour word.
+    # hide 6. «с 8 по 18 бар» and «с 8 часов до 18 бар» stay readings.
     # «6.5» and «14.30 бар» stay readings: a dot is a time only after a time preposition.
     # «в 14 часов 30 минут» and «в 14 ч 30 мин» are the same clock: 30 is not
     # the reading. «часть» and «минутный» are not those units.
@@ -942,6 +964,8 @@ def _clock_number(text, start, end):
         rf"(?<![0-9a-zа-яё])(?:от|с|со)\s*$", before, re.IGNORECASE
     ):
         return True
+    if _hour_range_before(before) and not _hour_range_end_unit(after):
+        return True
     if not re.match(rf"\s*{_HOUR_WORD.pattern}", _case(after)):
         return False
     return re.search(rf"(?<![0-9a-zа-яё]){_TIME_PREP}\s*$", before, re.IGNORECASE) is not None
@@ -949,15 +973,18 @@ def _clock_number(text, start, end):
 
 def _clock_dot(text, index):
     # A dot after «ч», «час», «мин» or «сек» continues the same clause when
-    # a minute, a second, or a linking verb follows. «ч. 12 насосов» and
-    # «мин. давление» stay separate facts.
+    # a minute, a second, or a linking verb follows. «с 8 ч. до 18» is the
+    # same window: the abbreviation sits before the other end.
+    # «ч. 12 насосов» and «мин. давление» stay separate facts.
     if re.search(r"(?<![0-9a-zа-яё])(?:час|мин|сек|ч)$", _case(text[:index])) is None:
         return False
     rest = _case(text[index + 1:])
     links = "|".join(re.escape(word) for word in sorted(_LINKS, key=len, reverse=True))
     if re.match(rf"\s*(?:{links})(?![0-9a-zа-яё])", rest):
         return True
-    return re.match(rf"\s*\d{{1,2}}\s+(?:{_MINUTE_STEM}|{_SECOND_STEM})(?![0-9a-zа-яё])", rest) is not None
+    if re.match(rf"\s*\d{{1,2}}\s+(?:{_MINUTE_STEM}|{_SECOND_STEM})(?![0-9a-zа-яё])", rest):
+        return True
+    return re.match(r"\s*(?:до|по)\s+\d{1,2}(?!\d)", rest) is not None
 
 
 def _part_hour_at(span, start):
@@ -1351,9 +1378,7 @@ def _keeps(span, stem, token):
 def _from_question(fact, asked):
     token = fact[1]
     if any(ch.isdigit() for ch in token) and not any(ch.isalpha() for ch in token):
-        # «версия 1.0» in the question is not a measurement the fragments must repeat.
-        # A lone «6» is not this case: it still has to sit in a fragment.
-        return len(token) >= 3 and _flat(token) in _flat(asked)
+        return False
     return _grounded(fact, asked)
 
 
