@@ -41,6 +41,32 @@ def test_answer_copies_overview_list_without_model(monkeypatch):
     assert calls == [1]
 
 
+def test_overview_scores_column_label_not_other_cells(monkeypatch):
+    mixed = {
+        "text": (
+            "Организационный периметр\nТаблица 2\nОрганизация | Роль | Статус\n"
+            "Разных значений в столбце «Роль»: 2. Список: заказчик, подрядчик."
+        ),
+        "document_name": "orgs.txt",
+    }
+    calls = []
+    monkeypatch.setattr(agents, "count_tokens", _words)
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: calls.append(1) or "В периметре две организации [1].")
+    answer = agents.answer_agent("Какие организации входят в периметр?", "Какие организации входят в периметр?", [mixed], [])
+    assert calls == [1]
+    assert answer != "заказчик, подрядчик [1]."
+    both = {
+        "text": (
+            "Организационный периметр\nТаблица 2\nОрганизация | Роль | Статус\n"
+            "Разных значений в столбце «Роль»: 2. Список: заказчик, подрядчик.\n"
+            "Разных значений в столбце «Организация»: 2. Список: Север, Юг."
+        ),
+        "document_name": "orgs.txt",
+    }
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("complete")))
+    assert agents.answer_agent("Какие организации входят в периметр?", "Какие организации входят в периметр?", [both], []) == "Север, Юг [1]."
+
+
 def test_overview_skips_unrelated_column(monkeypatch):
     monkeypatch.setattr(agents, "count_tokens", _words)
     monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: "Ландшафты: TEST и PROD [1].")
@@ -100,6 +126,47 @@ def test_overview_prefers_section_about_the_asked_list(monkeypatch):
     query = "Какие потоки данных есть между СПА и ИМПУС?"
     answer = agents.answer_agent(query, query, [connections, flows], [])
     assert answer == "COUNT_1.1, COUNT_1.2, COUNT_2.1, COUNT_2.2 [2]."
+
+
+def test_overview_yields_to_feedback(monkeypatch):
+    halls = {
+        "text": "Библиотека > Залы\nРазных значений в столбце «Зал»: 3. Список: Читальный, Детский, Архивный.",
+        "document_name": "library.txt",
+    }
+    calls = []
+    monkeypatch.setattr(agents, "count_tokens", _words)
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: calls.append(1) or "В библиотеке три зала [1].")
+    answer = agents.answer_agent("Какие залы есть в библиотеке?", "Какие залы есть в библиотеке?", [halls], [], feedback=agents.COPIED)
+    assert calls == [1]
+    assert answer == "В библиотеке три зала [1]."
+
+
+def test_neskolko_does_not_copy_overview_count(monkeypatch):
+    halls = {
+        "text": "Библиотека > Залы\nРазных значений в столбце «Зал»: 3. Список: Читальный, Детский, Архивный.",
+        "document_name": "library.txt",
+    }
+    calls = []
+    monkeypatch.setattr(agents, "count_tokens", _words)
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: calls.append(1) or "Есть несколько читальных мест [1].")
+    answer = agents.answer_agent("Есть ли несколько залов в библиотеке?", "Есть ли несколько залов в библиотеке?", [halls], [])
+    assert calls == [1]
+    assert answer != "3 значений [1]."
+
+
+def test_inflected_skolko_copies_overview_count(monkeypatch):
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("complete")))
+    halls = {
+        "text": "Библиотека > Залы\nРазных значений в столбце «Зал»: 3. Список: Читальный, Детский, Архивный.",
+        "document_name": "library.txt",
+    }
+    counted = "3 значений [1]."
+    for query in (
+        "Из скольких залов состоит библиотека?",
+        "Сколькими залами располагает библиотека?",
+        "К скольким залам есть доступ?",
+    ):
+        assert agents.answer_agent(query, query, [halls], []) == counted
 
 
 def test_answer_appends_citation_when_model_omits_it(monkeypatch):
