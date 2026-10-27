@@ -170,6 +170,14 @@ EXAMPLES = [_example(*example) for example in _EXAMPLES]
 _OVERVIEW_LINE = re.compile(r"Разных значений в столбце «([^»]+)»: (\d+)\. Список: (.+)", re.IGNORECASE)
 _LIST_MARK = re.compile(r"(?<![а-яёa-z])(скольк(?:о|их|ими|им)|какие|перечисли)", re.IGNORECASE)
 _COUNT_MARK = re.compile(r"(?<![а-яёa-z])скольк(?:о|их|ими|им)(?![а-яёa-z])", re.IGNORECASE)
+_ENDINGS = (
+    "иями", "ями", "ами", "ого", "его", "ому", "ему",
+    "ыми", "ими", "ой", "ий", "ый", "ая", "яя", "ое", "ее",
+    "ия", "ие", "ые", "ию", "ии", "ых", "их",
+    "ом", "ем", "ах", "ях", "ов", "ев", "ам", "ям",
+    "а", "я", "ы", "и", "у", "ю", "е", "о",
+)
+_ASIDE = {"есть", "между", "входят", "находится", "используется", "используются"}
 
 
 def _list_ask(query):
@@ -187,6 +195,30 @@ def _chunk_score(query, text):
         if word in body or (len(word) >= 4 and word[:4] in body):
             score += 1
     return score
+
+
+def _word_stem(word):
+    for ending in _ENDINGS:
+        if len(word) > len(ending) + 2 and word.endswith(ending):
+            return word[:len(word) - len(ending)]
+    return word
+
+
+def _focus_words(query):
+    words = _words(query)
+    if words and words[0] == "перечисли":
+        words = words[1:]
+    focus = []
+    for word in words:
+        if word in _ASIDE:
+            break
+        focus.append(word)
+    return focus
+
+
+def _stem_hit(word, text):
+    stem = _word_stem(word)
+    return any(_word_stem(token) == stem for token in re.findall(r"[0-9a-zа-яё]+", _flat(text)))
 
 
 def _label_score(query, label):
@@ -207,17 +239,25 @@ def _label_score(query, label):
 def _from_overview(query, chunks):
     if not _list_ask(query) or not chunks:
         return None
+    focus = _focus_words(query)
+    if not focus:
+        return None
     ranked = []
     for number, chunk in enumerate(chunks, 1):
         text = chunk.get("text") or ""
+        section = text.splitlines()[0] if text else ""
         for match in _OVERVIEW_LINE.finditer(text):
-            score = _label_score(query, match.group(1))
-            if score:
-                ranked.append((score, number, match.group(2), match.group(3).rstrip(" .")))
+            section_hits = sum(_stem_hit(word, section) for word in focus)
+            column_hits = sum(_stem_hit(word, match.group(1)) for word in focus)
+            label_hits = 1 if _label_score(query, match.group(1)) else 0
+            column_score = column_hits or label_hits
+            if not section_hits and not column_score:
+                continue
+            ranked.append((section_hits + column_score, section_hits, number, match.group(2), match.group(3).rstrip(" .")))
     if not ranked:
         return None
-    ranked.sort(key=lambda item: (-item[0], item[1]))
-    _, number, count, items = ranked[0]
+    ranked.sort(key=lambda item: (-item[0], -item[1], item[2]))
+    _, _, number, count, items = ranked[0]
     if _count_ask(query):
         if any(ch.isdigit() for ch in query):
             return None

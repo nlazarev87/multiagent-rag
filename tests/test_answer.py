@@ -22,6 +22,7 @@ def test_answer_copies_overview_list_without_model(monkeypatch):
     assert agents.answer_agent("Какие залы есть в библиотеке?", "Какие залы есть в библиотеке?", [halls, extra], []) == "Читальный, Детский, Архивный [1]."
     assert agents.answer_agent("Сколько залов в библиотеке?", "Сколько залов в библиотеке?", [halls], []) == "3 значений [1]."
     size_calls = []
+    monkeypatch.setattr(agents, "count_tokens", _words)
     monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: size_calls.append(1) or "Около 1 Мб [1].")
     assert "1 Мб" in agents.answer_agent("Сколько данных в потоке X_9.2?", "Сколько данных в потоке X_9.2?", [halls], [])
     assert size_calls == [1]
@@ -49,6 +50,7 @@ def test_overview_scores_column_label_not_other_cells(monkeypatch):
         "document_name": "orgs.txt",
     }
     calls = []
+    monkeypatch.setattr(agents, "count_tokens", _words)
     monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: calls.append(1) or "В периметре две организации [1].")
     answer = agents.answer_agent("Какие организации входят в периметр?", "Какие организации входят в периметр?", [mixed], [])
     assert calls == [1]
@@ -65,12 +67,74 @@ def test_overview_scores_column_label_not_other_cells(monkeypatch):
     assert agents.answer_agent("Какие организации входят в периметр?", "Какие организации входят в периметр?", [both], []) == "Север, Юг [1]."
 
 
+def test_overview_skips_unrelated_column(monkeypatch):
+    monkeypatch.setattr(agents, "count_tokens", _words)
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: "Ландшафты: TEST и PROD [1].")
+    characteristics = {
+        "text": (
+            "ТРЕБОВАНИЯ К ИНТЕГРАЦИИ > Характеристики ИС > Характеристики ИМПУС\n"
+            "Таблица 4 – Характеристики ИМПУС\n"
+            "Перечень системных ландшафтов: TEST, PROD\n"
+            "Разных значений в столбце «Характеристика»: 19. Список: Наименование, Перечень системных ландшафтов."
+        ),
+        "document_name": "impus.docx",
+    }
+    connections = {
+        "text": (
+            "ТЕХНИЧЕСКОЕ ОПИСАНИЕ > Параметры межсистемных соединений\n"
+            "Таблица 16 – Параметры межсистемных соединений\n"
+            "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ: ИМПУС\n"
+            "Разных значений в столбце «ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ»: 3. Список: ИМПУС, Локальная шина SAP PI, СПА."
+        ),
+        "document_name": "impus.docx",
+    }
+    query = "Какие системные ландшафты есть у ИМПУС?"
+    assert agents.answer_agent(query, query, [characteristics, connections], []) == "Ландшафты: TEST и PROD [1]."
+    fields = {
+        "text": (
+            "ТРЕБОВАНИЯ К ИНТЕГРАЦИИ > Характеристики ИС > Характеристики ИМПУС\n"
+            "Таблица 4\n"
+            "Разных значений в столбце «Характеристика»: 2. Список: Наименование, Организация-владелец."
+        ),
+        "document_name": "impus.docx",
+    }
+    calls = []
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: calls.append(1) or "Росэнергоатом, БелАЭС [2].")
+    orgs = {"text": "Организационный периметр\nРосэнергоатом, БелАЭС, НовАЭС.", "document_name": "impus.docx"}
+    agents.answer_agent("Какие организации входят в периметр интеграции СПА и ИМПУС?", "Какие организации входят в периметр интеграции СПА и ИМПУС?", [fields, orgs], [])
+    assert calls == [1]
+
+
+def test_overview_prefers_section_about_the_asked_list(monkeypatch):
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("complete")))
+    connections = {
+        "text": (
+            "Параметры межсистемных соединений\n"
+            "Таблица 16\n"
+            "Разных значений в столбце «ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ»: 3. Список: ИМПУС, Локальная шина SAP PI, СПА."
+        ),
+        "document_name": "impus.docx",
+    }
+    flows = {
+        "text": (
+            "ТРЕБОВАНИЯ К ИНТЕГРАЦИИ > Характеристики потоков данных\n"
+            "Таблица 6 – Перечень потоков данных\n"
+            "Разных значений в столбце «ИД»: 4. Список: COUNT_1.1, COUNT_1.2, COUNT_2.1, COUNT_2.2."
+        ),
+        "document_name": "impus.docx",
+    }
+    query = "Какие потоки данных есть между СПА и ИМПУС?"
+    answer = agents.answer_agent(query, query, [connections, flows], [])
+    assert answer == "COUNT_1.1, COUNT_1.2, COUNT_2.1, COUNT_2.2 [2]."
+
+
 def test_overview_yields_to_feedback(monkeypatch):
     halls = {
         "text": "Библиотека > Залы\nРазных значений в столбце «Зал»: 3. Список: Читальный, Детский, Архивный.",
         "document_name": "library.txt",
     }
     calls = []
+    monkeypatch.setattr(agents, "count_tokens", _words)
     monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: calls.append(1) or "В библиотеке три зала [1].")
     answer = agents.answer_agent("Какие залы есть в библиотеке?", "Какие залы есть в библиотеке?", [halls], [], feedback=agents.COPIED)
     assert calls == [1]
@@ -83,6 +147,7 @@ def test_neskolko_does_not_copy_overview_count(monkeypatch):
         "document_name": "library.txt",
     }
     calls = []
+    monkeypatch.setattr(agents, "count_tokens", _words)
     monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: calls.append(1) or "Есть несколько читальных мест [1].")
     answer = agents.answer_agent("Есть ли несколько залов в библиотеке?", "Есть ли несколько залов в библиотеке?", [halls], [])
     assert calls == [1]
@@ -105,6 +170,7 @@ def test_inflected_skolko_copies_overview_count(monkeypatch):
 
 
 def test_answer_appends_citation_when_model_omits_it(monkeypatch):
+    monkeypatch.setattr(agents, "count_tokens", _words)
     monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: "Давление равно 6 бар.")
     assert agents.answer_agent("Какое давление у насоса?", "Какое давление у насоса?", [PUMP, SHOP], []) == "Давление равно 6 бар. [1]"
 
