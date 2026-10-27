@@ -329,8 +329,11 @@ def _negated(text, start):
     # range: «6-10» still has both ends. A spaced dash is punctuation, not a
     # sign: «давление - 6» and «давление – 6» still mean 6. The signed matcher
     # already requires the hyphen to touch the digits, so a space must not
-    # swallow the bare number.
+    # swallow the bare number. The minus in «50+-0,2» belongs to the tolerance
+    # sign, so 0,2 is not a negative value.
     prefix = text[:start]
+    if re.search(r"(?:±|\+/-|\+-)\s*$", prefix):
+        return False
     if re.search(r"(?<![0-9a-zа-яё])минус\s*$", prefix, re.IGNORECASE):
         return True
     if re.search(r"(?<!\d)\u2212\s?$", prefix):
@@ -403,7 +406,19 @@ def _facts(answer):
                 # to 80. «от 6 до 10» has no name of its own, so 10 keeps давление.
                 local = _number_stems(sentence, previous, origin, finish)
                 context = tuple(local) if local else wide
+                # «равно 50 ± 0,2» claims 50, and 0,2 only as its half-width.
+                # «равно 0,2» is a different claim: there the half-width is the value.
+                base = _number_before_tolerance(sentence, origin)
+                attached = bool(base) and previous >= len(base) and sentence[previous - len(base):previous] == base
                 previous = finish
+                if attached:
+                    parent = context
+                    for earlier in reversed(facts):
+                        if earlier[0] == "near" and earlier[1].lstrip("-−\u2212") == base:
+                            parent = earlier[2]
+                            break
+                    facts.append(("near", token, parent, True))
+                    continue
                 # 1–3 digit values have to sit with the claim. A longer exact match is how
                 # «выпущен в 2019» still meets the line «Год выпуска: 2019».
                 short = sum(ch.isdigit() for ch in token) <= 3
@@ -431,7 +446,7 @@ def _case(text):
     return (text or "").lower().replace("ё", "е")
 
 
-def _span(text, start):
+def _bounds(text, start):
     # The next line's number is a different fact. A fixed 80-character window
     # still reaches it after newlines are flattened, and then "номер: 4" confirms
     # "давление равно 4".
@@ -452,6 +467,11 @@ def _span(text, start):
         if cuts(index):
             right = index
             break
+    return left, right
+
+
+def _span(text, start):
+    left, right = _bounds(text, start)
     return text[left:right]
 
 
@@ -823,6 +843,30 @@ def _stated_condition(middle):
     return re.fullmatch(pattern, middle or "") is not None
 
 
+def _number_before_tolerance(span, number_start):
+    # «6 ± 0,5», «50+/-0,2» and «50+-0,2» put the half-width after the value.
+    # «6 бар ± 0,5» may keep a unit in between. «погрешность: ±0,5» has no
+    # value before the sign, so 0,5 is the reading itself. A hyphen is a range
+    # or a dash, not this sign: «6-10» and «давление - 6» stay as they are.
+    if not span or number_start <= 0:
+        return ""
+    prefix = span[:number_start]
+    if re.search(r"(?:±|\+/-|\+-)\s*$", prefix) is None:
+        return ""
+    body = re.sub(r"(?:±|\+/-|\+-)\s*$", "", prefix)
+    found = None
+    for match in re.finditer(r"(?<!\d)\d{1,3}(?: \d{3})+(?:[,.]\d+)?|(?<!\d)\d+(?:[,.]\d+)?", body):
+        found = match
+    if not found:
+        return ""
+    tail = body[found.end():].strip()
+    if tail:
+        words = re.findall(r"[0-9a-zа-яё°%./]+", tail.lower().replace("ё", "е"))
+        if not words or len(words) > 3 or any(_kind_word(word) or _measure_word(word) for word in words):
+            return ""
+    return found.group(0)
+
+
 def _short_owns(span, number_start, stem):
     # «ток: 80» touches the name. «ход поршня: 80» and «угол поворота: 80» do not:
     # the object sits in between, but the short name still owns the number.
@@ -837,7 +881,10 @@ def _short_owns(span, number_start, stem):
 
 
 def _keeps(span, stem, token):
-    numbers = _hits(span, token)
+    # The half-width in «диаметр: 50 ± 0,2» is not диаметр 0,2. The value in
+    # front of the sign still is. «погрешность: ±0,5» keeps 0,5: nothing numeric
+    # stands before the sign.
+    numbers = [number for number in _hits(span, token) if not _number_before_tolerance(span, number.start())]
     if len(stem) < 5:
         return any(_short_owns(span, number.start(), stem) for number in numbers)
     # «давление: 6 бар и температура: 80» is one clause, so the line window still
@@ -908,10 +955,26 @@ def _from_question(fact, asked):
     return _grounded(fact, asked)
 
 
+def _tolerance_grounded(token, stems, text):
+    # «диаметр равен 50 ± 0,2» is grounded when 50 belongs to диаметр and the
+    # same clause carries ± 0,2. A different half-width, or a bare 0,2, is not.
+    for match in _hits(text, token):
+        base = _number_before_tolerance(text, match.start())
+        if not base:
+            continue
+        left, right = _bounds(text, match.start())
+        nearby = text[left:right]
+        if any(_keeps(nearby, stem, base) for stem in stems):
+            return True
+    return False
+
+
 def _grounded(fact, text):
     kind, token = fact[0], _flat(fact[1])
     if kind == "stem":
         return re.search(rf"(?<![0-9a-zа-я]){re.escape(token[:5])}", text) is not None
+    if len(fact) > 3 and fact[3]:
+        return _tolerance_grounded(token, fact[2], text)
     places = [match.start() for match in _hits(text, token)]
     if kind == "exact" or not places:
         return bool(places)
