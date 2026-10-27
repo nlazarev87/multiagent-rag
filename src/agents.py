@@ -793,16 +793,57 @@ def _measure_label(words, stem):
     return len(names) >= 2 and _kind_noun(names[-2]) and not names[-2].startswith(stem)
 
 
+def _date_number(text, start, end):
+    # «с 2019 года», «в 2019 году» and «до 2019» name a date. That year is not
+    # the reading, so «давление с 2019 года составляет 6» is давление 6, and
+    # «с 2019 года давление составляет 6» is not давление 2019. «2019 бар» and
+    # «от 2000 до 2019 бар» are readings: a unit or a range keeps the number.
+    token = text[start:end]
+    after = text[end:]
+    before = text[:start]
+    year = bool(re.fullmatch(r"(?:19|20)\d{2}", token))
+    if year and re.match(r"\s*(?:года|году|годом|год|г\.?)(?![0-9a-zа-яё])", after, re.IGNORECASE):
+        return True
+    if re.match(
+        r"\s*(?:бар|мпа|кпа|атм|мм|см|дм|кг|гц|квт|мвт|мин|сек|час|шт|мл|вт|па|м|л|%)(?![0-9a-zа-яё])",
+        _case(after),
+    ):
+        return False
+    if not year:
+        return False
+    if re.search(r"(?<![0-9a-zа-яё])от\s*$", before, re.IGNORECASE) and re.match(
+        r"\s*до(?![0-9a-zа-яё])", after, re.IGNORECASE
+    ):
+        return False
+    if re.search(r"(?<![0-9a-zа-яё])до\s*$", before, re.IGNORECASE) and re.search(
+        r"(?<![0-9a-zа-яё])от\s+\d", before, re.IGNORECASE
+    ):
+        return False
+    return re.search(r"(?<![0-9a-zа-яё])(?:в|во|с|со|до|от|к|ко|по)\s*$", before, re.IGNORECASE) is not None
+
+
+def _reading(text):
+    # A date between a name and its value is not another measurement.
+    if not text:
+        return None
+    for match in re.finditer(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", text):
+        if _date_number(text, match.start(), match.end()):
+            continue
+        return match
+    return None
+
+
 def _other_label(span, number_start, stem_at):
     # «при температуре 80 рабочее давление составляет 6» is one clause. 80 is
     # labeled by «температуре», and the pressure is the later 6. The same is
     # true of «номер 6», «частота 50» and «4 насоса» written before the
     # attribute. A value with no label of its own still belongs to the name
     # that follows: «6 бар — рабочее давление». «от 6 до 10» is not this case:
-    # both numbers follow the attribute.
+    # both numbers follow the attribute. «1600 — давление с 2019 года» keeps
+    # 1600: the year is not a second reading of давление.
     # These sit between a name and its number. They are not another measurement.
     tail = span[stem_at.end():]
-    if re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", tail) is None:
+    if _reading(tail) is None:
         return False
     stem = stem_at.group(0)
     if _other_name(span, number_start, stem):
@@ -988,7 +1029,11 @@ def _keeps(span, stem, token):
     # The half-width in «диаметр: 50 ± 0,2» is not диаметр 0,2. The value in
     # front of the sign still is. «погрешность: ±0,5» keeps 0,5: nothing numeric
     # stands before the sign.
-    numbers = [number for number in _hits(span, token) if not _number_before_tolerance(span, number.start())]
+    numbers = [
+        number
+        for number in _hits(span, token)
+        if not _number_before_tolerance(span, number.start()) and not _date_number(span, number.start(), number.end())
+    ]
     if len(stem) < 5:
         return any(_short_owns(span, number.start(), stem) for number in numbers)
     # «давление: 6 бар и температура: 80» is one clause, so the line window still
@@ -1021,7 +1066,7 @@ def _keeps(span, stem, token):
                 # «на входе и 6»: the qualifier before «и» names the earlier
                 # value, so it must not confirm the later one. «давление 16 бар
                 # и 6» still keeps давление, because another number sits in the gap.
-                if _split_gap(middle) and re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", middle) is None:
+                if _split_gap(middle) and _reading(middle) is None:
                     continue
                 # «насос номер 6 ... давление 8» and «6 бар — давление и
                 # температура 80». The number's own name is another measurement.
@@ -1041,9 +1086,7 @@ def _keeps(span, stem, token):
                         )
                     ):
                         continue
-                    if _other_name(span, number.start(), stem) and (
-                        re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", middle) or _split_gap(middle)
-                    ):
+                    if _other_name(span, number.start(), stem) and (_reading(middle) or _split_gap(middle)):
                         continue
             elif number.end() <= found.start():
                 if _other_label(span, number.start(), found):
@@ -1055,7 +1098,7 @@ def _keeps(span, stem, token):
                 middle = span[number.end():found.start()]
             else:
                 continue
-            other = re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", middle)
+            other = _reading(middle)
             label = re.search(r"[a-zа-яё]{5,}", middle)
             if other and label and not (found.end() <= number.start() and _stated_condition(middle)):
                 continue

@@ -906,6 +906,32 @@ def test_check_rejects_a_long_number_taken_from_another_measurement():
     assert agents.check_agent("Масса равна 1000 кг [1].", [radius])["missing"] == ["1000"]
 
 
+def test_check_rejects_a_year_taken_as_its_measurement():
+    since = {"text": "С 2019 года давление составляет 6 бар.", "document_name": "pump.md"}
+    during = {"text": "В 2019 году рабочее давление: 6 бар.", "document_name": "pump.md"}
+    until = {"text": "До 2019 давление было 6 бар.", "document_name": "pump.md"}
+    dated = {"text": "Давление с 2019 года составляет 6 бар.", "document_name": "pump.md"}
+    marked = {"text": "1600 — рабочее давление с 2019 года.", "document_name": "pump.md"}
+    ranged = {"text": "Давление от 2000 до 2019 бар.", "document_name": "pump.md"}
+    real = {"text": "Рабочее давление: 2019 бар.", "document_name": "pump.md"}
+    issued = {"text": "Насос > Характеристики\nГод выпуска: 2019", "document_name": "pump.md"}
+    assert agents.check_agent("Давление равно 2019 бар [1].", [since])["missing"] == ["2019"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [since])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 2019 бар [1].", [during])["missing"] == ["2019"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [during])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 2019 бар [1].", [until])["missing"] == ["2019"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [until])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 2019 бар [1].", [dated])["missing"] == ["2019"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [dated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 2019 бар [1].", [marked])["missing"] == ["2019"]
+    assert agents.check_agent("Рабочее давление равно 1600 бар [1].", [marked])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 2000 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 2019 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 2019 бар [1].", [real])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Насос выпущен в 2019 году [1].", [issued])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Год выпуска равен 2019 [1].", [issued])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_a_long_number_of_another_value():
     ends = {"text": "Давление на входе: 2000 бар. Давление на выходе: 6000 бар.", "document_name": "pump.md"}
     joined = {"text": "Давление на входе 2000 бар и давление на выходе 6000 бар.", "document_name": "pump.md"}
