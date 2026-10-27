@@ -167,12 +167,17 @@ def _example(query, fragments, reply):
 EXAMPLES = [_example(*example) for example in _EXAMPLES]
 
 
-_OVERVIEW_LINE = re.compile(r"Разных значений в столбце «[^»]+»: (\d+)\. Список: (.+)", re.IGNORECASE)
+_OVERVIEW_LINE = re.compile(r"Разных значений в столбце «([^»]+)»: (\d+)\. Список: (.+)", re.IGNORECASE)
+_LIST_MARK = re.compile(r"(?<![а-яёa-z])(сколько|какие|перечисли)", re.IGNORECASE)
+_COUNT_MARK = re.compile(r"(?<![а-яёa-z])сколько(?![а-яёa-z])", re.IGNORECASE)
 
 
 def _list_ask(query):
-    asked = query.lower()
-    return any(marker in asked for marker in ("сколько", "какие", "перечисли"))
+    return bool(_LIST_MARK.search(query or ""))
+
+
+def _count_ask(query):
+    return bool(_COUNT_MARK.search(query or ""))
 
 
 def _chunk_score(query, text):
@@ -184,29 +189,44 @@ def _chunk_score(query, text):
     return score
 
 
+def _label_score(query, label):
+    asked = _flat(query)
+    name = _flat(label)
+    score = 0
+    for word in _words(query):
+        stem = word[:4] if len(word) >= 4 else word
+        if stem in name:
+            score += 1
+    for token in re.findall(r"[0-9a-zа-яё]+", name):
+        stem = token[:4] if len(token) >= 4 else token
+        if len(stem) >= 3 and stem in asked:
+            score += 1
+    return score
+
+
 def _from_overview(query, chunks):
     if not _list_ask(query) or not chunks:
         return None
     ranked = []
     for number, chunk in enumerate(chunks, 1):
         text = chunk.get("text") or ""
-        match = _OVERVIEW_LINE.search(text)
-        if not match:
-            continue
-        head = " ".join(text.splitlines()[:3])
-        label = match.group(0).split("Список:")[0]
-        score = _chunk_score(query, head + " " + label)
-        if score:
-            ranked.append((score, number, match.group(1), match.group(2).rstrip(" .")))
+        for match in _OVERVIEW_LINE.finditer(text):
+            score = _label_score(query, match.group(1))
+            if score:
+                ranked.append((score, number, match.group(2), match.group(3).rstrip(" .")))
     if not ranked:
         return None
     ranked.sort(key=lambda item: (-item[0], item[1]))
     _, number, count, items = ranked[0]
-    if "сколько" in query.lower() and not any(ch.isdigit() for ch in query):
-        return f"{count} значений [{number}]."
-    if "сколько" in query.lower():
+    if _count_ask(query):
+        if any(ch.isdigit() for ch in query):
+            return None
+        listed = f"{count} значений [{number}]."
+    else:
+        listed = f"{items} [{number}]."
+    if len(_flat(re.sub(r"\[[\d,\s]+\]", " ", listed)).split()) >= SPAN:
         return None
-    return f"{items} [{number}]."
+    return listed
 
 
 def _with_cite(answer, chunks):
@@ -241,9 +261,10 @@ def build_prompt(query, chunks, previous=None, feedback=None, count=None, budget
 def answer_agent(query, clear_query, chunks, work_turns, feedback=None):
     if not chunks:
         return NO_ANSWER
-    listed = _from_overview(query, chunks)
-    if listed:
-        return listed
+    if not feedback:
+        listed = _from_overview(query, chunks)
+        if listed:
+            return listed
     previous = work_turns[-1] if work_turns and clear_query != query else None
     return _with_cite(complete(SYSTEM, build_prompt(query, chunks, previous, feedback), examples=EXAMPLES), chunks)
 
@@ -332,8 +353,7 @@ def _inverted(query, answer, flats):
 
 
 def _list_gap(query, answer, flats, cited=None):
-    asked = query.lower()
-    if not any(marker in asked for marker in ("сколько", "какие", "перечисли")):
+    if not _list_ask(query):
         return False
     indices = cited or list(range(1, len(flats) + 1))
     body = _flat(re.sub(r"\[[\d,\s]+\]", " ", answer))
