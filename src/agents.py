@@ -206,9 +206,14 @@ def _whole_number(text, start):
 def _hits(text, token):
     if _pure_number(token):
         grouped = r"(?<!\d )" if re.fullmatch(r"\d{3}", token) else ""
+        # «Н-12», «9/299419» and «6:00» are one value. The digit scan otherwise
+        # keeps 12, 9, or 6, and that piece confirms the whole value.
         pattern = (
-            rf"(?<![0-9a-zа-я_]){grouped}(?<!\d[,.]){re.escape(token)}"
+            rf"(?<![0-9a-zа-я_]){grouped}(?<!\d[,.])"
+            rf"(?<![a-zа-я][\-/])(?<!\d[:/])"
+            rf"{re.escape(token)}"
             rf"(?![0-9a-zа-я_])(?!,\d)(?!\.\d)(?! \d{{3}}(?!\d))"
+            rf"(?![\-/][a-zа-я])(?![:/]\d)"
         )
     else:
         pattern = rf"(?<![0-9a-zа-я_]){re.escape(token)}(?![0-9a-zа-я_])"

@@ -116,6 +116,40 @@ def test_check_rejects_a_piece_of_a_decimal_or_grouped_number():
     assert agents.check_agent("В фонде 12 книг [1].", [dozen])["status"] == agents.CONFIRMED
 
 
+def test_check_rejects_a_number_taken_from_a_designation_or_compound():
+    named = {"text": "Насос имеет обозначение Н-12. Рабочее давление равно 6 бар.", "document_name": "pump.md"}
+    coded = {"text": "Насос ХН-7 рабочее давление: 6 бар.", "document_name": "pump.md"}
+    stock = {"text": "Инвентарный код Н-180. Рабочее давление равно 6 бар.", "document_name": "pump.md"}
+    contract = {"text": "Договор от 22.03.2024 № 9/299419-Д.", "document_name": "contract.docx"}
+    dated = {"text": "По договору от 22/03/2024 рабочее давление равно 6 бар.", "document_name": "pump.md"}
+    clock = {"text": "С 6:00 рабочее давление держится на уровне 8 бар.", "document_name": "pump.md"}
+    shift = {"text": "Начало смены в 6:00.", "document_name": "pump.md"}
+    width = {"text": "Диаметр патрубка 1/2 дюйма.", "document_name": "pump.md"}
+    tight = {"text": "Рабочее давление:6 бар.", "document_name": "pump.md"}
+    ranged = {"text": "Рабочее давление: 6-10 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Рабочее давление насоса равно 12 бар [1].", [named])["missing"] == ["12"]
+    assert agents.check_agent("Рабочее давление насоса равно 6 бар [1].", [named])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Обозначение насоса Н-12 [1].", [named])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление насоса равно 7 бар [1].", [coded])["missing"] == ["7"]
+    assert agents.check_agent("Рабочее давление насоса ХН-7 равно 6 бар [1].", [coded])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление насоса равно 180 бар [1].", [stock])["missing"] == ["180"]
+    assert agents.check_agent("Номер договора равен 9 [1].", [contract], "Какой номер договора?")["missing"] == ["9"]
+    assert agents.check_agent("Номер договора 299419 [1].", [contract], "Какой номер договора?")["missing"] == ["299419"]
+    assert agents.check_agent("Номер договора 9/299419-Д [1].", [contract], "Какой номер договора?")["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 22 бар [1].", [dated])["missing"] == ["22"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [dated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [clock])["missing"] == ["6"]
+    assert agents.check_agent("Рабочее давление равно 8 бар [1].", [clock])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Начало смены в 6:00 [1].", [shift])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Диаметр патрубка равен 2 дюйма [1].", [width])["missing"] == ["2"]
+    assert agents.check_agent("Диаметр патрубка равен 1 дюйм [1].", [width])["missing"] == ["1"]
+    assert agents.check_agent("Диаметр патрубка 1/2 дюйма [1].", [width])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [tight])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 10 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление 6-10 бар [1].", [ranged])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}
