@@ -328,10 +328,61 @@ def _span(text, start):
     return text[left:right]
 
 
+def _plain_number(text):
+    # A clock, a fraction, a designation and a grouped figure are one value.
+    # The digit inside them is not a second measurement.
+    return re.search(
+        r"(?<![0-9a-zа-я_])(?<!\d[,.])(?<![a-zа-я][\-/])(?<!\d[:/])"
+        r"\d+(?:[,.]\d+)?"
+        r"(?![0-9a-zа-я_])(?!,\d)(?!\.\d)(?! \d{3}(?!\d))"
+        r"(?![\-/][a-zа-я])(?![:/]\d)",
+        text or "",
+    )
+
+
+def _measure_label(words, stem):
+    # The nearest name of a number. A genitive such as «контура» is not a
+    # different measurement; «номер», «массой» and «температура» are.
+    # «на уровне» restates the attribute already named.
+    links = {"равно", "равна", "равен", "равны", "составляет", "составляют", "имеет", "имеют", "около", "примерно", "порядка"}
+    kinds = ("номер", "давлен", "темпера", "частот", "масс", "подач", "мощнос", "диамет", "расход", "напор", "объем", "плотнос", "вязкост", "скорост", "количес")
+    bridges = ("уров", "значен", "показател", "величин")
+    names = [word for word in words if word not in links]
+    if not names or names[-1].startswith(stem):
+        return False
+    label = names[-1]
+    if any(label.startswith(bridge) for bridge in bridges):
+        return False
+    return any(label.startswith(kind) for kind in kinds)
+
+
+def _other_label(span, number_start, stem_at):
+    # «при температуре 80 рабочее давление составляет 6» is one clause. 80 is
+    # labeled by «температуре», and the pressure is the later 6. The same is
+    # true of «номер 6», «частота 50» and «4 насоса» written before the
+    # attribute. A value with no label of its own still belongs to the name
+    # that follows: «6 бар — рабочее давление». «от 6 до 10» is not this case:
+    # both numbers follow the attribute.
+    # These sit between a name and its number. They are not another measurement.
+    links = {"равно", "равна", "равен", "равны", "составляет", "составляют", "имеет", "имеют", "около", "примерно", "порядка"}
+    tail = span[stem_at.end():]
+    if re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", tail) is None:
+        return False
+    stem = stem_at.group(0)
+    labels = re.findall(r"[a-zа-яё]{5,}", span[:number_start])
+    while labels and labels[-1] in links:
+        labels.pop()
+    if labels and not labels[-1].startswith(stem):
+        return True
+    middle = re.sub(r"[a-zа-яё]+\s*$", "", span[number_start:stem_at.start()])
+    return any(word not in links for word in re.findall(r"[a-zа-яё]{5,}", middle))
+
+
 def _keeps(span, stem, token):
     # «давление: 6 бар и температура: 80» is one clause, so the line window still
     # sees both numbers. 80 belongs to давление only when no other value with its
-    # own label sits between them. «от 6 до 10» has no such label.
+    # own label sits between them. «от 6 до 10» has no such label. A value that
+    # stands before the attribute is kept only when it is not someone else's.
     stems = list(re.finditer(rf"(?<![0-9a-zа-я]){re.escape(stem)}", span))
     numbers = _hits(span, token)
     for number in numbers:
@@ -342,7 +393,14 @@ def _keeps(span, stem, token):
                     while left < number.start() and span[left].isalpha():
                         left += 1
                 middle = span[left:number.start()]
+                # «насос номер 6 ... давление 8» and «6 бар — давление и
+                # температура 80». The number's own name is another measurement.
+                names = re.findall(r"[a-zа-яё]{5,}", middle)
+                if _measure_label(names, stem) and (_plain_number(span[number.end():]) or _plain_number(span[:found.start()])):
+                    continue
             elif number.end() <= found.start():
+                if _other_label(span, number.start(), found):
+                    continue
                 middle = span[number.end():found.start()]
             else:
                 continue

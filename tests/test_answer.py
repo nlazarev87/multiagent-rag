@@ -204,6 +204,41 @@ def test_check_accepts_a_number_after_a_spaced_dash():
     assert agents.check_agent("Рабочее давление равно 10 бар [1].", [wide])["status"] == agents.CONFIRMED
 
 
+def test_check_rejects_a_measurement_written_before_the_attribute():
+    heated = {"text": "Насос > Режим\nПри температуре 80 градусов рабочее давление составляет 6 бар.", "document_name": "pump.md"}
+    numbered = {"text": "Насос номер 6 имеет рабочее давление 8 бар.", "document_name": "pump.md"}
+    counted = {"text": "В цехе 4 насоса с рабочим давлением 8 бар.", "document_name": "pump.md"}
+    speed = {"text": "При частоте 50 Гц рабочее давление равно 6 бар.", "document_name": "pump.md"}
+    mass = {"text": "Насос массой 5 кг развивает рабочее давление 6 бар.", "document_name": "pump.md"}
+    yield_ = {"text": "КПД 85 процентов при рабочем давлении 6 бар.", "document_name": "pump.md"}
+    flow = {"text": "Подача 12 м3/ч при рабочем давлении 6 бар.", "document_name": "pump.md"}
+    leading = {"text": "6 бар — рабочее давление насоса.", "document_name": "pump.md"}
+    both = {"text": "6 бар — рабочее давление и температура 80 градусов.", "document_name": "pump.md"}
+    level = {"text": "При температуре 20 градусов рабочее давление держится на уровне 8 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [heated])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление составляет 6 бар [1].", [heated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура равна 80 градусов, рабочее давление составляет 6 бар [1].", [heated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление насоса равно 6 бар [1].", [numbered])["missing"] == ["6"]
+    assert agents.check_agent("Номер насоса равен 6, рабочее давление равно 8 бар [1].", [numbered])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление насоса равно 8 бар [1].", [numbered])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 4 бар [1].", [counted])["missing"] == ["4"]
+    assert agents.check_agent("Рабочее давление равно 8 бар [1].", [counted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 50 бар [1].", [speed])["missing"] == ["50"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [speed])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление насоса равно 5 бар [1].", [mass])["missing"] == ["5"]
+    assert agents.check_agent("Рабочее давление насоса равно 6 бар [1].", [mass])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 85 бар [1].", [yield_])["missing"] == ["85"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [yield_])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 12 бар [1].", [flow])["missing"] == ["12"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [flow])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [leading])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [both])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [both])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление контура составляет 6 бар [1].", [{"text": "Рабочее давление контура составляет 6 бар и температура 80 градусов.", "document_name": "pump.md"}])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 20 бар [1].", [level])["missing"] == ["20"]
+    assert agents.check_agent("Рабочее давление равно 8 бар [1].", [level])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}
