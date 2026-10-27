@@ -906,6 +906,33 @@ def test_check_rejects_a_long_number_taken_from_another_measurement():
     assert agents.check_agent("Масса равна 1000 кг [1].", [radius])["missing"] == ["1000"]
 
 
+def test_check_rejects_a_long_number_of_another_value():
+    ends = {"text": "Давление на входе: 2000 бар. Давление на выходе: 6000 бар.", "document_name": "pump.md"}
+    joined = {"text": "Давление на входе 2000 бар и давление на выходе 6000 бар.", "document_name": "pump.md"}
+    limits = {"text": "Минимальное давление: 2000 бар. Максимальное давление: 6000 бар.", "document_name": "pump.md"}
+    fluids = {"text": "Давление воды: 2000 бар. Давление масла: 6000 бар.", "document_name": "pump.md"}
+    year = {"text": "Насос > Характеристики\nРабочее давление на выходе: 6 бар\nГод выпуска: 2019", "document_name": "pump.md"}
+    named = {"text": "Год выпуска: 2019\nРабочее давление: 1600 бар.", "document_name": "pump.md"}
+    books = {"text": "Давление на входе: 12 000 бар. Давление на выходе: 6 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("На выходе значение равно 2000 бар [1].", [ends])["missing"] == ["2000"]
+    assert agents.check_agent("На выходе значение равно 6000 бар [1].", [ends])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Показатель на выходе равен 2000 бар [1].", [ends])["missing"] == ["2000"]
+    assert agents.check_agent("На выходе значение равно 2000 бар [1].", [joined])["missing"] == ["2000"]
+    assert agents.check_agent("На выходе значение равно 6000 бар [1].", [joined])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное значение равно 2000 бар [1].", [limits])["missing"] == ["2000"]
+    assert agents.check_agent("Максимальное значение равно 6000 бар [1].", [limits])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Минимальное значение равно 2000 бар [1].", [limits])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Значение масла равно 2000 бар [1].", [fluids])["missing"] == ["2000"]
+    assert agents.check_agent("Значение масла равно 6000 бар [1].", [fluids])["status"] == agents.CONFIRMED
+    assert agents.check_agent("На выходе значение равно 2019 бар [1].", [year])["missing"] == ["2019"]
+    assert agents.check_agent("На выходе значение равно 6 бар [1].", [year])["status"] == agents.CONFIRMED
+    assert agents.check_agent("По данным завода 2019 — рабочее давление [1].", [named])["missing"] == ["2019"]
+    assert agents.check_agent("По данным завода 1600 — рабочее давление [1].", [named])["status"] == agents.CONFIRMED
+    assert agents.check_agent("2019 — год выпуска [1].", [named])["status"] == agents.CONFIRMED
+    assert agents.check_agent("На выходе значение равно 12 000 бар [1].", [books])["missing"] == ["12 000"]
+    assert agents.check_agent("На выходе значение равно 6 бар [1].", [books])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}

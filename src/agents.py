@@ -405,6 +405,13 @@ def _facts(answer):
                 # word in the sentence. «давление 6 и ток 80» must not lend давление
                 # to 80. «от 6 до 10» has no name of its own, so 10 keeps давление.
                 window = _number_window(sentence, previous, origin, finish)
+                # «по данным завода 1600 — рабочее давление». The words in front
+                # are not the measurement; the name after the dash is.
+                # «2019 — давление 6» is the other way: давление names 6.
+                if not _names_measurement(window):
+                    trail = _trailing_name(sentence, finish)
+                    if _names_measurement(trail):
+                        window = trail
                 local = _stems_in(window)
                 context = tuple(local) if local else wide
                 # «равно 50 ± 0,2» claims 50, and 0,2 only as its half-width.
@@ -426,7 +433,16 @@ def _facts(answer):
                 # the year, and «давление равно 1000» must not take the density.
                 short = sum(ch.isdigit() for ch in token) <= 3
                 bound = bool(context) and (short or _names_measurement(window))
-                facts.append(("near", token, context) if bound else ("exact", token))
+                # A year can match by its digits: «выпущен в 2019» meets
+                # «Год выпуска: 2019». A qualifier still belongs to this
+                # occurrence. «на выходе значение 2000» must not take the inlet,
+                # so the words in front travel with the exact number.
+                if bound:
+                    facts.append(("near", token, context))
+                elif local and not short:
+                    facts.append(("exact", token, tuple(local)))
+                else:
+                    facts.append(("exact", token))
             elif sum(ch.isupper() for ch in token) >= 2:
                 facts.append(("exact", token))
             elif token[:1].isupper() and len(token) >= 4 and not start:
@@ -484,6 +500,14 @@ def _span(text, start):
 _PLAIN_NUMBER = re.compile(
     r"(?<![0-9a-zа-я_])(?<!\d[,.])(?<![a-zа-я][\-/])(?<!\d[:/])"
     r"\d+(?:[,.]\d+)?"
+    r"(?![0-9a-zа-я_])(?!,\d)(?!\.\d)(?! \d{3}(?!\d))"
+    r"(?![\-/][a-zа-я])(?![:/]\d)"
+)
+# «12 000» is one value. The plain scan keeps only «000», and a qualifier check
+# then looks at the wrong place.
+_VALUE = re.compile(
+    r"(?<![0-9a-zа-я_])(?<!\d[,.])(?<![a-zа-я][\-/])(?<!\d[:/])"
+    r"(?:\d{1,3}(?: \d{3})+(?:[,.]\d+)?|\d+(?:[,.]\d+)?)"
     r"(?![0-9a-zа-я_])(?!,\d)(?!\.\d)(?! \d{3}(?!\d))"
     r"(?![\-/][a-zа-я])(?![:/]\d)"
 )
@@ -716,6 +740,17 @@ def _number_window(sentence, previous, start, finish):
         if _stems_in(inherited):
             return inherited
     return sentence[finish:_next_number_at(sentence, finish)]
+
+
+def _trailing_name(sentence, finish):
+    # «1600 — рабочее давление» and «1600 бар — рабочее давление» name 1600.
+    # A later number owns the words in front of it: «2019 — давление 6».
+    if _next_number_at(sentence, finish) != len(sentence):
+        return ""
+    rest = sentence[finish:]
+    if re.match(r"(?:\s+[a-zа-яё°%]{1,8}){0,2}\s*[:—–\-]\s+\S", _case(rest)):
+        return rest
+    return ""
 
 
 def _names_measurement(region):
@@ -1156,6 +1191,29 @@ def _qualifier_conflict(text, start, answer_stems):
     return False
 
 
+def _borrowed(text, start, end, stems):
+    # An exact digit match. «на выходе значение равно 2000» is not the inlet,
+    # and not the year, when «выходе» is written on another number.
+    # «выпущен в 2019» stays: «выпущен» labels neither the year nor the pressure.
+    signed = _signs(text or "")
+    labels = []
+    for match in _VALUE.finditer(signed):
+        left, right = _bounds(signed, match.start())
+        span = signed[left:right]
+        words = _label_words(span, match.start() - left, match.end() - left)
+        labels.append((match.start(), match.end(), {word[:5] for word in words}))
+    current = next((keys for pos, stop, keys in labels if pos <= start < stop or start <= pos < end), None)
+    if current is None:
+        return False
+    wanted = {stem[:5] for stem in stems if len(stem) >= 3}
+    for pos, stop, keys in labels:
+        if pos <= start < stop or start <= pos < end:
+            continue
+        if any(stem in keys and stem not in current for stem in wanted):
+            return True
+    return False
+
+
 def _tolerance_grounded(token, stems, text):
     # «диаметр равен 50 ± 0,2» is grounded when 50 belongs to диаметр and the
     # same clause carries ± 0,2. A different half-width, or a bare 0,2, is not.
@@ -1178,6 +1236,8 @@ def _grounded(fact, text):
         return _tolerance_grounded(token, fact[2], text)
     places = list(_hits(text, token))
     if kind == "exact" or not places:
+        if places and kind == "exact" and len(fact) > 2 and not any(ch.isalpha() for ch in token):
+            return any(not _borrowed(text, match.start(), match.end(), fact[2]) for match in places)
         return bool(places)
     for match in places:
         nearby = _span(text, match.start())
