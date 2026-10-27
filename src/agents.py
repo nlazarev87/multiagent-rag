@@ -938,6 +938,50 @@ def _clause(text, start):
     return text[left + 1:right]
 
 
+_PREPOSITIONS = {"у", "в", "во", "на", "для", "от", "из", "с", "со", "к", "ко", "по", "о", "об", "при", "за", "до", "без", "под", "над", "про", "через"}
+_INFLECTION = {"ен", "на", "но", "ны", "ая", "ое", "ые", "ий", "ый", "ой", "яя", "ее"}
+_PREDICATE_ENDINGS = ("", "а", "о", "е", "ы", "и", "у", "я", "й", "н", "ен", "на", "но", "ны", "ный", "ная", "ное", "ные")
+
+
+def _forms(word):
+    # нужно/нужна/нужен and должен/должна differ inside the first five letters,
+    # so a fixed five-letter prefix misses the negation and a false «Да» passes.
+    forms = {word}
+    if len(word) < 4:
+        return forms
+    bases = []
+    if word[-1] in "аеёиоуыэюя":
+        bases.append(word[:-1])
+    if len(word) >= 5 and word[-2:] in _INFLECTION:
+        bases.append(word[:-2])
+    for base in bases:
+        if len(base) < 3:
+            continue
+        for ending in _PREDICATE_ENDINGS:
+            form = base + ending
+            if len(form) >= 4:
+                forms.add(form)
+    return forms
+
+
+def _focus_stem(query):
+    tokens = re.findall(r"[а-яёa-z]+", _flat(query))
+    if "ли" not in tokens:
+        return ""
+    for token in tokens[tokens.index("ли") + 1:]:
+        if token in _PREPOSITIONS or len(token) <= 2:
+            continue
+        return token[:5]
+    return ""
+
+
+def _in_clause(clause, stem):
+    key = stem[:5]
+    if len(key) < 3:
+        return False
+    return re.search(rf"(?<![0-9a-zа-я]){re.escape(key)}", clause) is not None
+
+
 def _denied(query, flats):
     stems = []
     for word in _words(query):
@@ -946,16 +990,25 @@ def _denied(query, flats):
             stems.append(stem)
     if not stems:
         return False
-    predicate = _predicate(query)[:5]
-    subjects = [stem for stem in stems if stem != predicate]
+    predicate = _predicate(query)
+    subjects = [stem for stem in stems if stem != predicate[:5]]
+    focus = _focus_stem(query)
     text = "\n".join(flats)
     cues = [rf"(?<![0-9a-zа-я])не {re.escape(stem)}" for stem in stems]
-    cues.append(r"(?<![0-9a-zа-я])(?:нет|нельзя)(?![0-9a-zа-я])")
-    for pattern in cues:
+    for form in _forms(predicate):
+        cues.append(rf"(?<![0-9a-zа-я])не {re.escape(form)}(?![0-9a-zа-я])")
+    for pattern in dict.fromkeys(cues):
         for match in re.finditer(pattern, text):
             clause = _clause(text, match.start())
-            if not subjects or any(re.search(rf"(?<![0-9a-zа-я]){re.escape(stem)}", clause) for stem in subjects):
+            if not subjects or any(_in_clause(clause, stem) for stem in subjects):
                 return True
+    for match in re.finditer(r"(?<![0-9a-zа-я])(?:нет|нельзя)(?![0-9a-zа-я])", text):
+        clause = _clause(text, match.start())
+        # «нет» next to another noun from the question is not a negation of the asked thing.
+        if focus and not _in_clause(clause, focus):
+            continue
+        if not subjects or any(_in_clause(clause, stem) for stem in subjects):
+            return True
     return False
 
 

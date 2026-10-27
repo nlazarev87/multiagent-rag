@@ -684,6 +684,15 @@ def test_check_rejects_yes_when_fragment_negates():
     other = {"text": "Замена фильтра не требуется.", "document_name": "filter.md"}
     assert agents.check_agent("Да, охлаждение требуется [1].", [cooling, other], "Требуется ли охлаждение?")["status"] == agents.CONFIRMED
     assert agents.check_agent("Нет, охлаждение не требуется [2].", [cooling, other], "Требуется ли охлаждение?")["feedback"] == agents.INVERT
+    library = {"text": "Запись заранее не нужна. Вход свободный.", "document_name": "rules.md"}
+    assert agents.check_agent("Да, записываться заранее нужно [1].", [library], "Нужно ли записываться заранее?")["feedback"] == agents.INVERT
+    assert agents.check_agent("Нет, запись заранее не нужна [1].", [library], "Нужно ли записываться заранее?")["status"] == agents.CONFIRMED
+    permit = {"text": "Допуск не нужен. Вход свободный.", "document_name": "rules.md"}
+    assert agents.check_agent("Да, допуск нужен [1].", [permit], "Нужно ли получать допуск?")["feedback"] == agents.INVERT
+    assert agents.check_agent("Нет, допуск не нужен [1].", [permit], "Нужно ли получать допуск?")["status"] == agents.CONFIRMED
+    installed = {"text": "Фильтр установлен на входе. Запасного насоса нет.", "document_name": "pump.md"}
+    assert agents.check_agent("Да, фильтр есть [1].", [installed], "Есть ли фильтр у насоса?")["status"] == agents.CONFIRMED
+    assert agents.check_agent("Нет, фильтра нет [1].", [installed], "Есть ли фильтр у насоса?")["feedback"] == agents.INVERT
 
 
 def test_check_rejects_incomplete_list():
