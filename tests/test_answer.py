@@ -329,6 +329,48 @@ def test_check_rejects_a_measurement_with_a_short_name():
     assert agents.check_agent("Рабочее давление равно 80 бар [1].", [amperage])["missing"] == ["80"]
 
 
+def test_check_rejects_a_number_owned_by_another_noun():
+    oil = {"text": "Насос > Режим\nТемпература масла: 80 градусов.", "document_name": "pump.md"}
+    both = {"text": "Насос > Режим\nТемпература масла: 80 градусов. Давление масла: 6 бар.", "document_name": "pump.md"}
+    flow = {"text": "Подача насоса: 6 м3/ч.", "document_name": "pump.md"}
+    power = {"text": "Мощность насоса: 5 кВт.", "document_name": "pump.md"}
+    speed = {"text": "Частота двигателя: 5 Гц.", "document_name": "pump.md"}
+    bore = {"text": "Диаметр патрубка: 50 мм.", "document_name": "pump.md"}
+    length = {"text": "Длина патрубка: 50 мм.", "document_name": "pump.md"}
+    accuracy = {"text": "Класс точности: 80.", "document_name": "pump.md"}
+    shield = {"text": "Степень защиты двигателя: 8.", "document_name": "pump.md"}
+    efficiency = {"text": "Коэффициент полезного действия равен 1,5.", "document_name": "pump.md"}
+    aside = {"text": "Рабочее давление при температуре составляет 6 бар.", "document_name": "pump.md"}
+    outlet = {"text": "Рабочее давление на выходе: 6 бар.", "document_name": "pump.md"}
+    opening = {"text": "Высота проема: 50 мм.", "document_name": "pump.md"}
+    assert agents.check_agent("Давление масла равно 80 бар [1].", [oil])["missing"] == ["80"]
+    assert agents.check_agent("Температура масла равна 80 градусов [1].", [oil])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление масла равно 80 бар [1].", [both])["missing"] == ["80"]
+    assert agents.check_agent("Давление масла равно 6 бар [1].", [both])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура масла равна 80 градусов [1].", [both])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Напор насоса равен 6 м [1].", [flow])["missing"] == ["6"]
+    assert agents.check_agent("Подача насоса равна 6 м3/ч [1].", [flow])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Масса насоса равна 5 кг [1].", [power])["missing"] == ["5"]
+    assert agents.check_agent("Мощность насоса равна 5 кВт [1].", [power])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Мощность двигателя равна 5 кВт [1].", [speed])["missing"] == ["5"]
+    assert agents.check_agent("Частота двигателя равна 5 Гц [1].", [speed])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Длина патрубка равна 50 мм [1].", [bore])["missing"] == ["50"]
+    assert agents.check_agent("Диаметр патрубка равен 50 мм [1].", [bore])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Диаметр патрубка равен 50 мм [1].", [length])["missing"] == ["50"]
+    assert agents.check_agent("Длина патрубка равна 50 мм [1].", [length])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Класс давления равен 80 [1].", [accuracy])["missing"] == ["80"]
+    assert agents.check_agent("Класс точности равен 80 [1].", [accuracy])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Степень сжатия равна 8 [1].", [shield])["missing"] == ["8"]
+    assert agents.check_agent("Степень защиты равна 8 [1].", [shield])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Коэффициент запаса равен 1,5 [1].", [efficiency])["missing"] == ["1,5"]
+    assert agents.check_agent("Коэффициент полезного действия равен 1,5 [1].", [efficiency])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура составляет 6 градусов [1].", [aside])["missing"] == ["6"]
+    assert agents.check_agent("Рабочее давление составляет 6 бар [1].", [aside])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [outlet])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ширина проема равна 50 мм [1].", [opening])["missing"] == ["50"]
+    assert agents.check_agent("Высота проема равна 50 мм [1].", [opening])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}

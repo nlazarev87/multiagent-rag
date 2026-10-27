@@ -359,7 +359,10 @@ _LINKS = {
     "соответствует", "соответствуют",
     "держится", "держатся", "находится", "находятся",
 }
-_KINDS = ("номер", "давлен", "темпера", "частот", "масс", "подач", "мощнос", "диамет", "расход", "напор", "объем", "плотнос", "вязкост", "скорост", "количес")
+_KINDS = (
+    "номер", "давлен", "темпера", "частот", "масс", "подач", "мощнос", "диамет", "расход", "напор",
+    "объем", "плотнос", "вязкост", "скорост", "количес", "длин", "ширин", "высот",
+)
 _BRIDGES = ("уров", "значен", "показател", "величин")
 # Prepositions, conjunctions and units. They stand next to a number without naming it.
 _GLUE = {
@@ -373,6 +376,12 @@ _ASKED = {
     "какой", "какая", "какое", "какие", "какова", "каков", "каком", "сколько",
     "такое", "такой", "такая", "такие", "этом",
 }
+# Endings of adjectives. «рабочее» and «полезного» do not name a measurement.
+# «давление» and «действие» do not end this way.
+_ADJECTIVE = re.compile(
+    r"(?:ый|ий|ой|ая|ое|ее|ые|ого|его|ому|ему|ым|им|ом|ем|ую|юю|ых|их|ыми|ими|ей)$"
+)
+_CONJUNCTIONS = {"и", "а", "или", "либо", "но", "да"}
 
 
 def _word_at(span, start):
@@ -531,6 +540,87 @@ def _other_label(span, number_start, stem_at):
     return any(word not in _LINKS for word in re.findall(r"[a-zа-яё]{5,}", middle))
 
 
+def _matches(word, stem):
+    if not word or not stem:
+        return False
+    # «давление» matches «давлен», «точности» matches «точно».
+    # The stem must not swallow a shorter different word: «параметр» is not «пар».
+    if word.startswith(stem):
+        return True
+    return _inflected(word, stem)
+
+
+def _naming_nouns(span, number_start):
+    # Nouns of the phrase that names this number, nearest first.
+    # «температура масла: 80» → масла, температура.
+    # «класс точности: 80» → точности, класс.
+    # «давление на выходе: 6» stops at «на» and keeps «выходе».
+    # «при температуре составляет 6» drops температуре: the verb shows that
+    # 6 belongs to the head before «при».
+    pos = number_start
+    nouns = []
+    dropped = []
+    saw_verb = False
+    for _ in range(8):
+        prefix = span[:pos].rstrip(" \t:;—–-\u2212()«»\",")
+        found = re.search(r"([a-zа-яё]{2,})$", prefix)
+        if not found:
+            break
+        between = prefix[found.end():]
+        if nouns and re.search(r"(?<![a-zа-яё])(?:и|а)(?![a-zа-яё])", between):
+            break
+        word = found.group(1)
+        pos = found.start()
+        if word in _LINKS:
+            saw_verb = True
+            continue
+        if word in _ASKED or _bridge_word(word):
+            continue
+        if word in _GLUE:
+            if not nouns:
+                continue
+            if word in _CONJUNCTIONS:
+                break
+            if saw_verb:
+                dropped.append(nouns[0])
+                nouns.clear()
+                saw_verb = False
+                continue
+            break
+        if _ADJECTIVE.search(word) and not _kind_noun(word):
+            continue
+        nouns.append(word)
+        if len(nouns) >= 3:
+            break
+    return nouns, dropped
+
+
+def _phrase_owner(nouns):
+    if not nouns:
+        return ""
+    if len(nouns) == 1:
+        return nouns[0]
+    # «давление масла» and «диаметр патрубка»: the kind is the measurement.
+    # «класс точности» and «степень защиты»: the word next to the generic head is.
+    head = nouns[-1]
+    if _kind_word(head):
+        return head
+    return nouns[-2]
+
+
+def _foreign_phrase(span, number_start, stem):
+    # «масла» in «температура масла: 80» does not make the number a pressure.
+    # «класс» in «класс точности: 80» does not make it «класс давления».
+    # «температуре» in «давление при температуре составляет 6» does not own 6.
+    nouns, dropped = _naming_nouns(span, number_start)
+    owner = _phrase_owner(nouns)
+    if not owner:
+        return False
+    if _matches(owner, stem):
+        return False
+    return any(_matches(word, stem) for word in nouns) or any(_matches(word, stem) for word in dropped)
+
+
 def _keeps(span, stem, token):
     numbers = _hits(span, token)
     if len(stem) < 5:
@@ -580,6 +670,12 @@ def _keeps(span, stem, token):
             other = re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", middle)
             label = re.search(r"[a-zа-яё]{5,}", middle)
             if other and label:
+                continue
+            # The stem has to be the noun that owns the number. A shared object
+            # («масла», «насоса», «патрубка»), a generic head («класс», «степень»,
+            # «коэффициент») or a side mention («при температуре составляет»)
+            # does not.
+            if found.end() <= number.start() and _foreign_phrase(span, number.start(), stem):
                 continue
             return True
     return False
