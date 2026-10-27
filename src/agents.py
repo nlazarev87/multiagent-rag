@@ -1136,24 +1136,35 @@ def _answers_head(stem, heads):
     return any(stem == head or stem == head[:5] for head in heads)
 
 
-def _qualifier_conflict(text, start, answer_stems):
+def _qualifier_conflict(text, start, answer_stems, end=None):
     # «давление на выходе равно 2» is not the inlet pressure, and
     # «максимальное давление равно 6» is not the minimum. The head is the
     # same measurement, so the word that picks the value has to sit with
     # the number. «давление насоса» may still be 6 when the pump is named
     # on another line, and «рабочее давление» may still be 6 beside
     # «рабочая температура»: those are different measurements.
+    # «12 000» is one value. A plain scan starts at «000», misses the hit,
+    # and then «давление на выходе 12 000» takes the inlet. A signed hit
+    # starts on the minus while the digits start one character later, so
+    # «давление на выходе -12» would take the inlet the same way. The hit
+    # and the value overlap in both cases.
     signed = _signs(text or "")
     found = []
-    for match in _PLAIN_NUMBER.finditer(signed):
+    for match in _VALUE.finditer(signed):
         left, right = _bounds(signed, match.start())
         span = signed[left:right]
         words = _label_words(span, match.start() - left, match.end() - left)
-        found.append((match.start(), match.group(0), span, words))
-    current = next((item for item in found if item[0] == start), None)
+        # The magnitude of «-12» is not that value. The keep-check has to see
+        # the sign, or the inlet's «-12» looks like a different number.
+        number = match.group(0)
+        if _negated(text or "", match.start()):
+            number = "-" + number
+        found.append((match.start(), match.end(), number, span, words))
+    stop = start + 1 if end is None else end
+    current = next((item for item in found if item[0] < stop and item[1] > start), None)
     if current is None:
         return False
-    _, token, span, words = current
+    current_at, _, token, span, words = current
     # «максимальное давление 16 бар и 6 бар»: 6 has no words of its own,
     # so it still carries максимальное. A different word, as in
     # «и на выходе 6», is another value and must not inherit.
@@ -1161,8 +1172,8 @@ def _qualifier_conflict(text, start, answer_stems):
         return False
     here_stems = {word[:5] for word in words}
     here_heads = {key for word in words if (key := _head_key(word))}
-    for other_start, other_token, other_span, other_words in found:
-        if other_start == start:
+    for other_start, _, other_token, other_span, other_words in found:
+        if other_start == current_at:
             continue
         other_heads = {key for word in other_words if (key := _head_key(word))}
         shared = {
@@ -1243,7 +1254,7 @@ def _grounded(fact, text):
         nearby = _span(text, match.start())
         if not any(_keeps(nearby, stem, token) for stem in fact[2]):
             continue
-        if _qualifier_conflict(text, match.start(), fact[2]):
+        if _qualifier_conflict(text, match.start(), fact[2], match.end()):
             continue
         return True
     return False

@@ -933,6 +933,60 @@ def test_check_rejects_a_long_number_of_another_value():
     assert agents.check_agent("На выходе значение равно 6 бар [1].", [books])["status"] == agents.CONFIRMED
 
 
+def test_check_rejects_a_grouped_or_signed_number_of_another_value():
+    ends = {"text": "Давление на входе: 12 000 бар. Давление на выходе: 6 бар.", "document_name": "pump.md"}
+    both = {"text": "Давление на входе: 12 000 бар. Давление на выходе: 16 000 бар.", "document_name": "pump.md"}
+    joined = {"text": "Давление на входе 12 000 бар и давление на выходе 16 000 бар.", "document_name": "pump.md"}
+    limits = {"text": "Минимальное давление: 12 000 бар. Максимальное давление: 16 000 бар.", "document_name": "pump.md"}
+    fluids = {"text": "Давление воды: 12 000 бар. Давление масла: 6 бар.", "document_name": "pump.md"}
+    duties = {"text": "Испытательное давление: 12 000 бар.\nРабочее давление: 6 бар.", "document_name": "pump.md"}
+    radii = {"text": "Радиус крышки: 12 000 мм. Радиус поршня: 80 мм.", "document_name": "pump.md"}
+    strokes = {"text": "Ход поршня: 12 000 мм. Ход клапана: 40 мм.", "document_name": "pump.md"}
+    ranged = {"text": "Давление от 12 000 до 16 000 бар.", "document_name": "pump.md"}
+    decimal = {"text": "Давление на входе: 12 000,5 бар. Давление на выходе: 6 бар.", "document_name": "pump.md"}
+    signed = {"text": "Давление на входе: -12 бар. Давление на выходе: 6 бар.", "document_name": "pump.md"}
+    minus = {"text": "Давление на входе: −12 бар. Давление на выходе: 6 бар.", "document_name": "pump.md"}
+    word = {"text": "Давление на входе: минус 12 бар. Давление на выходе: 6 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Давление на выходе равно 12 000 бар [1].", [ends])["missing"] == ["12 000"]
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [ends])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на входе равно 12 000 бар [1].", [ends])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 12 000 бар [1].", [both])["missing"] == ["12 000"]
+    assert agents.check_agent("Давление на входе равно 16 000 бар [1].", [both])["missing"] == ["16 000"]
+    assert agents.check_agent("Давление на выходе равно 16 000 бар [1].", [both])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на входе равно 12 000 бар [1].", [both])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 12 000 бар [1].", [joined])["missing"] == ["12 000"]
+    assert agents.check_agent("Давление на выходе равно 16 000 бар [1].", [joined])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное давление равно 12 000 бар [1].", [limits])["missing"] == ["12 000"]
+    assert agents.check_agent("Минимальное давление равно 16 000 бар [1].", [limits])["missing"] == ["16 000"]
+    assert agents.check_agent("Максимальное давление равно 16 000 бар [1].", [limits])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Минимальное давление равно 12 000 бар [1].", [limits])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление масла равно 12 000 бар [1].", [fluids])["missing"] == ["12 000"]
+    assert agents.check_agent("Давление воды равно 12 000 бар [1].", [fluids])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление масла равно 6 бар [1].", [fluids])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 12 000 бар [1].", [duties])["missing"] == ["12 000"]
+    assert agents.check_agent("Испытательное давление равно 12 000 бар [1].", [duties])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [duties])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Радиус поршня равен 12 000 мм [1].", [radii])["missing"] == ["12 000"]
+    assert agents.check_agent("Радиус крышки равен 12 000 мм [1].", [radii])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Радиус поршня равен 80 мм [1].", [radii])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ход клапана равен 12 000 мм [1].", [strokes])["missing"] == ["12 000"]
+    assert agents.check_agent("Ход поршня равен 12 000 мм [1].", [strokes])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ход клапана равен 40 мм [1].", [strokes])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 12 000 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 16 000 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 12 000,5 бар [1].", [decimal])["missing"] == ["12 000,5"]
+    assert agents.check_agent("Давление на входе равно 12 000,5 бар [1].", [decimal])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [decimal])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно -12 бар [1].", [signed])["missing"] == ["-12"]
+    assert agents.check_agent("Давление на входе равно -12 бар [1].", [signed])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [signed])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно −12 бар [1].", [minus])["missing"] == ["-12"]
+    assert agents.check_agent("Давление на входе равно −12 бар [1].", [minus])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно минус 12 бар [1].", [word])["missing"] == ["-12"]
+    assert agents.check_agent("Давление на входе равно минус 12 бар [1].", [word])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [word])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}
