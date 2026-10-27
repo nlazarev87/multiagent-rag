@@ -395,7 +395,8 @@ def _facts(answer):
                 # A short number belongs to the words written with it, not to every
                 # word in the sentence. «давление 6 и ток 80» must not lend давление
                 # to 80. «от 6 до 10» has no name of its own, so 10 keeps давление.
-                local = _number_stems(sentence, previous, origin, finish)
+                window = _number_window(sentence, previous, origin, finish)
+                local = _stems_in(window)
                 context = tuple(local) if local else wide
                 # «равно 50 ± 0,2» claims 50, and 0,2 only as its half-width.
                 # «равно 0,2» is a different claim: there the half-width is the value.
@@ -411,9 +412,12 @@ def _facts(answer):
                     facts.append(("near", token, parent, True))
                     continue
                 # 1–3 digit values have to sit with the claim. A longer exact match is how
-                # «выпущен в 2019» still meets the line «Год выпуска: 2019».
+                # «выпущен в 2019» still meets the line «Год выпуска: 2019». A measurement
+                # claim does not get that shortcut: «давление равно 2019» must not take
+                # the year, and «давление равно 1000» must not take the density.
                 short = sum(ch.isdigit() for ch in token) <= 3
-                facts.append(("near", token, context) if short and context else ("exact", token))
+                bound = bool(context) and (short or _names_measurement(window))
+                facts.append(("near", token, context) if bound else ("exact", token))
             elif sum(ch.isupper() for ch in token) >= 2:
                 facts.append(("exact", token))
             elif token[:1].isupper() and len(token) >= 4 and not start:
@@ -693,15 +697,26 @@ def _next_number_at(sentence, finish):
     return finish + found.start() if found else len(sentence)
 
 
-def _number_stems(sentence, previous, start, finish):
-    stems = _stems_in(sentence[previous:start])
-    if stems:
-        return stems
+def _number_window(sentence, previous, start, finish):
+    window = sentence[previous:start]
+    if _stems_in(window):
+        return window
     if previous:
-        inherited = _stems_in(_tail_label(sentence[:previous]))
-        if inherited:
+        inherited = _tail_label(sentence[:previous])
+        if _stems_in(inherited):
             return inherited
-    return _stems_in(sentence[finish:_next_number_at(sentence, finish)])
+    return sentence[finish:_next_number_at(sentence, finish)]
+
+
+def _names_measurement(region):
+    # «давление», «ход», «радиус» and «перепад» name the number beside them.
+    # «выпущен», «год» and «фонд» do not, so a bare year can still match exactly.
+    for word in re.findall(r"[a-zа-яё]{2,}", _case(region)):
+        if word in _GLUE or word in _LINKS or word in _PRONOUNS or word in _ASKED or _bridge_word(word):
+            continue
+        if _kind_noun(word) or _measure_noun(word) or _size_word(word) or _delta_word(word):
+            return True
+    return False
 
 
 def _restates_earlier_kind(span, start, stem):

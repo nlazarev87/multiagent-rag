@@ -879,6 +879,33 @@ def test_check_rejects_another_value_of_the_same_measurement():
     assert agents.check_agent("Температура равна 80 градусов [1].", [conditioned])["status"] == agents.CONFIRMED
 
 
+def test_check_rejects_a_long_number_taken_from_another_measurement():
+    year = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nГод выпуска: 2019", "document_name": "pump.md"}
+    dense = {"text": "Плотность 1000 кг/м3. Давление 6 бар.", "document_name": "pump.md"}
+    books = {"text": "Библиотека > Фонд\nВ фонде 12 000 книг.", "document_name": "lib.txt"}
+    stock = {"text": "Инвентарный номер: 1800\nРабочее давление: 6 бар", "document_name": "pump.md"}
+    stroke = {"text": "Масса 1000 кг. Ход поршня: 80 мм.", "document_name": "pump.md"}
+    radius = {"text": "Радиус поршня: 1000 мм. Масса: 80 кг.", "document_name": "pump.md"}
+    real = {"text": "Рабочее давление: 1600 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Рабочее давление равно 2019 бар [1].", [year])["missing"] == ["2019"]
+    assert agents.check_agent("Год выпуска равен 2019 [1].", [year])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Насос выпущен в 2019 году [1].", [year])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [year])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1000 бар [1].", [dense])["missing"] == ["1000"]
+    assert agents.check_agent("Плотность равна 1000 кг/м3 [1].", [dense])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 6 бар [1].", [dense])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 12 000 бар [1].", [books])["missing"] == ["12 000"]
+    assert agents.check_agent("В фонде 12 000 книг [1].", [books])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 1800 бар [1].", [stock])["missing"] == ["1800"]
+    assert agents.check_agent("Инвентарный номер равен 1800 [1].", [stock])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ход поршня равен 1000 мм [1].", [stroke])["missing"] == ["1000"]
+    assert agents.check_agent("Масса равна 1000 кг [1].", [stroke])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ход поршня равен 80 мм [1].", [stroke])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 1600 бар [1].", [real])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Радиус поршня равен 1000 мм [1].", [radius])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Масса равна 1000 кг [1].", [radius])["missing"] == ["1000"]
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}
