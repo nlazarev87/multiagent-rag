@@ -431,7 +431,7 @@ def _case(text):
     return (text or "").lower().replace("ё", "е")
 
 
-def _span(text, start):
+def _bounds(text, start):
     # The next line's number is a different fact. A fixed 80-character window
     # still reaches it after newlines are flattened, and then "номер: 4" confirms
     # "давление равно 4".
@@ -452,19 +452,26 @@ def _span(text, start):
         if cuts(index):
             right = index
             break
+    return left, right
+
+
+def _span(text, start):
+    left, right = _bounds(text, start)
     return text[left:right]
 
 
+# A clock, a fraction, a designation and a grouped figure are one value.
+# The digit inside them is not a second measurement.
+_PLAIN_NUMBER = re.compile(
+    r"(?<![0-9a-zа-я_])(?<!\d[,.])(?<![a-zа-я][\-/])(?<!\d[:/])"
+    r"\d+(?:[,.]\d+)?"
+    r"(?![0-9a-zа-я_])(?!,\d)(?!\.\d)(?! \d{3}(?!\d))"
+    r"(?![\-/][a-zа-я])(?![:/]\d)"
+)
+
+
 def _plain_number(text):
-    # A clock, a fraction, a designation and a grouped figure are one value.
-    # The digit inside them is not a second measurement.
-    return re.search(
-        r"(?<![0-9a-zа-я_])(?<!\d[,.])(?<![a-zа-я][\-/])(?<!\d[:/])"
-        r"\d+(?:[,.]\d+)?"
-        r"(?![0-9a-zа-я_])(?!,\d)(?!\.\d)(?! \d{3}(?!\d))"
-        r"(?![\-/][a-zа-я])(?![:/]\d)",
-        text or "",
-    )
+    return _PLAIN_NUMBER.search(text or "")
 
 
 # Verbs and adverbs that sit next to any measurement. They are not its name.
@@ -931,17 +938,136 @@ def _from_question(fact, asked):
     return _grounded(fact, asked)
 
 
+def _content_words(region):
+    # Words that can tell two values of one measurement apart.
+    # «на выходе» keeps «выходе», «максимальное» keeps «максимальное».
+    # A unit, a preposition or a linking verb does not.
+    words = []
+    for word in re.findall(r"[a-zа-яё]{3,}", (region or "").lower().replace("ё", "е")):
+        if word in _GLUE or word in _LINKS or word in _PRONOUNS or word in _ASKED or _bridge_word(word):
+            continue
+        words.append(word)
+    return words
+
+
+def _label_words(span, start, end):
+    # Words written with this number, up to the neighboring number.
+    # «давление на входе 2 бар и давление на выходе 6» gives «входе» to 2
+    # and «выходе» to 6. «6 бар — давление» has nothing before it, so the
+    # name after the dash belongs to 6.
+    previous = 0
+    for match in _PLAIN_NUMBER.finditer(span):
+        if match.start() >= start:
+            break
+        previous = match.end()
+    words = _content_words(span[previous:start])
+    if words:
+        return words
+    nxt = len(span)
+    for match in _PLAIN_NUMBER.finditer(span):
+        if match.start() >= end:
+            nxt = match.start()
+            break
+    # «от 6 до 10 градусов»: «градусов» is only a unit, so 10 keeps the name
+    # before the range. «6 бар — давление» has the name after the number.
+    forward = _content_words(span[end:nxt])
+    if any(_head_key(word) for word in forward):
+        return forward
+    return []
+
+
+def _head_key(word):
+    # The measurement itself, not the qualifier that picks one of its values.
+    # «давлении» is «давлен», «ходе» is «ход», «радиусе» is «радиус».
+    folded = _fold(word)
+    if _kind_noun(word):
+        for kind in _KINDS:
+            if folded.startswith(kind):
+                return kind
+    if _measure_noun(word):
+        for stem in _MEASURES:
+            if _inflected(word, stem) or folded.startswith(stem):
+                return stem
+    if _size_word(word):
+        for stem in _SIZES:
+            if word.startswith(stem):
+                return stem
+    return ""
+
+
+def _answers_head(stem, heads):
+    return any(stem == head or stem == head[:5] for head in heads)
+
+
+def _qualifier_conflict(text, start, answer_stems):
+    # «давление на выходе равно 2» is not the inlet pressure, and
+    # «максимальное давление равно 6» is not the minimum. The head is the
+    # same measurement, so the word that picks the value has to sit with
+    # the number. «давление насоса» may still be 6 when the pump is named
+    # on another line, and «рабочее давление» may still be 6 beside
+    # «рабочая температура»: those are different measurements.
+    signed = _signs(text or "")
+    found = []
+    for match in _PLAIN_NUMBER.finditer(signed):
+        left, right = _bounds(signed, match.start())
+        span = signed[left:right]
+        words = _label_words(span, match.start() - left, match.end() - left)
+        found.append((match.start(), match.group(0), span, words))
+    current = next((item for item in found if item[0] == start), None)
+    if current is None:
+        return False
+    _, token, span, words = current
+    # «максимальное давление 16 бар и 6 бар»: 6 has no words of its own,
+    # so it still carries максимальное. A different word, as in
+    # «и на выходе 6», is another value and must not inherit.
+    if not words:
+        return False
+    here_stems = {word[:5] for word in words}
+    here_heads = {key for word in words if (key := _head_key(word))}
+    for other_start, other_token, other_span, other_words in found:
+        if other_start == start:
+            continue
+        other_heads = {key for word in other_words if (key := _head_key(word))}
+        shared = {
+            head for head in here_heads | other_heads
+            if _keeps(span, head, token) and _keeps(other_span, head, other_token)
+        }
+        # «давление на входе 2 бар и на выходе 6» leaves the second value
+        # without its own head. Those words still belong to the same measurement.
+        # A headless number earlier in the clause does not: «в цехе 4 насоса
+        # с давлением 8» may still be давление 8.
+        elided = (
+            not shared
+            and span == other_span
+            and other_start > start
+            and not other_heads
+            and bool(other_words)
+        )
+        if not shared and not elided:
+            continue
+        other_stems = {word[:5] for word in other_words}
+        for stem in answer_stems:
+            if _answers_head(stem, shared):
+                continue
+            if stem in other_stems and stem not in here_stems:
+                return True
+    return False
+
+
 def _grounded(fact, text):
     kind, token = fact[0], _flat(fact[1])
     if kind == "stem":
         return re.search(rf"(?<![0-9a-zа-я]){re.escape(token[:5])}", text) is not None
-    places = [match.start() for match in _hits(text, token)]
+    places = list(_hits(text, token))
     if kind == "exact" or not places:
         return bool(places)
-    for place in places:
-        nearby = _span(text, place)
-        if any(_keeps(nearby, stem, token) for stem in fact[2]):
-            return True
+    for match in places:
+        nearby = _span(text, match.start())
+        if not any(_keeps(nearby, stem, token) for stem in fact[2]):
+            continue
+        if _qualifier_conflict(text, match.start(), fact[2]):
+            continue
+        return True
     return False
 
 
