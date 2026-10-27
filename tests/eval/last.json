@@ -443,5 +443,41 @@
     "n": 20,
     "direction": "higher",
     "hits": 10
+  },
+  "code_knowledge_leakage": {
+    "now": 0.0,
+    "best": 0.0,
+    "room": 0.0,
+    "floor": 0.0,
+    "n": 1,
+    "direction": "lower",
+    "hits": 0
+  },
+  "document_swap_pass_rate": {
+    "now": 1.0,
+    "best": 1.0,
+    "room": 0.0,
+    "floor": 1.0,
+    "n": 2,
+    "direction": "higher",
+    "hits": 2
+  },
+  "citation_coverage": {
+    "now": 1.0,
+    "best": 1.0,
+    "room": 0.0,
+    "floor": 1.0,
+    "n": 2,
+    "direction": "higher",
+    "hits": 2
+  },
+  "config_only_change_success": {
+    "now": 1.0,
+    "best": 1.0,
+    "room": 0.0,
+    "floor": 1.0,
+    "n": 1,
+    "direction": "higher",
+    "hits": 1
   }
 }

@@ -33,15 +33,17 @@ HIGHER = {
     "check_status_exact", "check_source_doc", "check_feedback_type",
     "coord_order", "coord_retry_cap", "coord_empty_skip", "coord_retry_help", "coord_status_exact",
     "e2e_dev", "e2e_holdout", "e2e_dialog",
+    "document_swap_pass_rate", "citation_coverage", "config_only_change_success",
 }
 LOWER = {
     "select_false_attach", "select_false_drop",
     "clarify_overrewrite",
     "check_false_confirm", "check_false_reject", "check_false_missing",
     "coord_discard_good",
+    "code_knowledge_leakage",
 }
 TIME_KEYS = {"search_latency_ms", "answer_latency_s", "e2e_latency_s"}
-FAST_NODES = ("select", "clarify", "search", "check", "coord")
+FAST_NODES = ("select", "clarify", "search", "check", "coord", "univ")
 SLOW_NODES = ("answer", "e2e")
 OVERVIEW_MARKERS = ("сколько", "какие", "перечисли")
 NO_ANSWER = "В документах нет ответа."
@@ -763,6 +765,18 @@ def measure_e2e(holdout=False, only_holdout=False):
         dialog.reset()
 
 
+def measure_universality():
+    import universality
+
+    measured = universality.measure_universality()
+    cards = {}
+    cards.update(card("code_knowledge_leakage", measured["leakage"]["now"], measured["leakage"]["n"], hits=measured["leakage"]["hits"]))
+    cards.update(card("document_swap_pass_rate", measured["swap"]["now"], measured["swap"]["n"], hits=measured["swap"]["hits"]))
+    cards.update(card("citation_coverage", measured["citation"]["now"], measured["citation"]["n"], hits=measured["citation"]["hits"]))
+    cards.update(card("config_only_change_success", measured["config"]["now"], measured["config"]["n"], hits=measured["config"]["hits"]))
+    return cards
+
+
 def measure(nodes, holdout=False):
     cards = {}
     for node in nodes:
@@ -783,6 +797,8 @@ def measure(nodes, holdout=False):
             cards.update(measure_e2e(holdout=holdout))
         elif node == "holdout":
             cards.update(measure_e2e(holdout=True, only_holdout=True))
+        elif node == "univ":
+            cards.update(measure_universality())
         else:
             raise SystemExit(f"unknown node: {node}")
     return cards
@@ -855,6 +871,12 @@ def compare(floors, latest, keys=None):
                 slack = 5000.0
             if now - 1e-12 > floor + slack:
                 violations.append(f"{key}: {now} > floor {floor}+{slack}")
+    leakage = latest.get("code_knowledge_leakage", {}).get("now")
+    if leakage not in (None, 0, 0.0):
+        violations.append("code_knowledge_leakage: знания нельзя чинить кодом")
+    swap = latest.get("document_swap_pass_rate", {})
+    if swap.get("n") and swap.get("now", 1) + 1e-12 < 1.0:
+        violations.append("document_swap_pass_rate: знания нельзя чинить кодом")
     return violations
 
 

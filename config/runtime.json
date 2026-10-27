@@ -1,0 +1,15 @@
+{
+  "candidates": 30,
+  "context": 260,
+  "rrf": 5,
+  "tokens": 250,
+  "overlap": 40,
+  "intro": 120,
+  "attempts": 2,
+  "n_ctx": 4096,
+  "max_tokens": 200,
+  "temperature": 0.0,
+  "prompt_tokens": 1500,
+  "span": 30,
+  "search_limit": 4
+}

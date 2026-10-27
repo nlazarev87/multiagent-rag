@@ -7,11 +7,37 @@ import tempfile
 from functools import lru_cache
 from pathlib import Path
 
+from settings import runtime
+
 SUFFIXES = {".txt", ".md", ".doc", ".docx"}
 VERSION = 2
 TOKENS = 250
 OVERLAP = 40
 INTRO = 120
+
+
+def _bind_runtime():
+    global TOKENS, OVERLAP, INTRO
+    data = runtime()
+    TOKENS = data.get("tokens", TOKENS)
+    OVERLAP = data.get("overlap", OVERLAP)
+    INTRO = data.get("intro", INTRO)
+
+
+def _tokens():
+    return runtime().get("tokens", TOKENS)
+
+
+def _overlap():
+    return runtime().get("overlap", OVERLAP)
+
+
+def _intro():
+    return runtime().get("intro", INTRO)
+
+
+_bind_runtime()
+
 MODEL = Path(os.environ.get("EMBED_PATH", Path(__file__).resolve().parents[1] / "data" / "models" / "multilingual-e5-small"))
 _HEADING = re.compile(r"^(heading|заголовок)\s*(\d)", re.IGNORECASE)
 _TOC = re.compile(r"^(toc|оглавление)\s*\d", re.IGNORECASE)
@@ -218,7 +244,7 @@ def _cut(words, budget):
         if end >= len(words):
             break
         back, size = end, 0
-        while back > start + 1 and size + _word_tokens(words[back - 1]) <= OVERLAP:
+        while back > start + 1 and size + _word_tokens(words[back - 1]) <= _overlap():
             back -= 1
             size += _word_tokens(words[back])
         start = back
@@ -246,7 +272,7 @@ def _pack(lines, budget, overlap=True):
             continue
         if current and size + cost > budget:
             pieces.append(current)
-            tail = _tail("\n".join(current), OVERLAP) if overlap else ""
+            tail = _tail("\n".join(current), _overlap()) if overlap else ""
             current, size = ([tail], count_tokens(tail)) if tail and count_tokens(tail) + cost <= budget else ([], 0)
         current.append(line)
         size += cost
@@ -275,7 +301,7 @@ def _table_pieces(block, section):
     if keyvalue and any(block["labels"]):
         head.append(" | ".join(block["labels"]))
     head_text = "\n".join(head)
-    room = max(60, TOKENS - (count_tokens(head_text) if head_text else 0))
+    room = max(60, _tokens() - (count_tokens(head_text) if head_text else 0))
     lines = []
     for pairs in block["rows"]:
         lines += _row_parts(pairs, keyvalue, room)
@@ -285,7 +311,7 @@ def _table_pieces(block, section):
         ("table", f"{head_text}\n{group}" if head_text else group, head_text, f"{title}\n{group}" if title else group)
         for group in groups
     ]
-    if len(block["rows"]) > 1 and sum(count_tokens(line) for line in lines) > TOKENS:
+    if len(block["rows"]) > 1 and sum(count_tokens(line) for line in lines) > _tokens():
         label, values = _distinct_column(block)
         if values:
             # The count is the full column, so the list must stay complete. Cutting it to the
@@ -307,7 +333,7 @@ def chunks_from_blocks(blocks, document_name=""):
         if not buffer:
             return
         head = section()
-        room = max(60, TOKENS - (count_tokens(head) if head else 0))
+        room = max(60, _tokens() - (count_tokens(head) if head else 0))
         for body in _pack(buffer, room):
             text = f"{head}\n{body}" if head else body
             pieces.append((head, "text", text, "", "", text))
@@ -327,7 +353,7 @@ def chunks_from_blocks(blocks, document_name=""):
             tables += 1
             group = f"t{tables}"
             last = pieces[-1] if len(pieces) > before else None
-            if last and last[1] == "text" and count_tokens(last[2]) <= INTRO:
+            if last and last[1] == "text" and count_tokens(last[2]) <= _intro():
                 pieces[-1] = (last[0], "intro", last[2], group, "", last[5])
             for kind, text, head, embed in _table_pieces(block, section()):
                 pieces.append((section(), kind, text, group, head, embed))
