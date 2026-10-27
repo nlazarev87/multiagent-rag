@@ -1,0 +1,58 @@
+[
+  {
+    "id": "independent-pressure",
+    "query": "Какое давление у насоса?",
+    "work": [
+      {"query": "Какой номер у цеха?", "answer": "4", "document_names": ["charter.txt"]}
+    ],
+    "independent": true,
+    "gold": "Какое давление у насоса?"
+  },
+  {
+    "id": "independent-master",
+    "query": "Как зовут мастера?",
+    "work": [
+      {"query": "Какой номер у цеха?", "answer": "Смена длится 8 часов.", "document_names": ["charter.txt"]}
+    ],
+    "independent": true,
+    "gold": "Как зовут мастера?"
+  },
+  {
+    "id": "dependent-pronoun",
+    "query": "Сколько она длится?",
+    "work": [
+      {"query": "Какой номер у цеха?", "answer": "Смена длится 8 часов.", "document_names": ["charter.txt"]}
+    ],
+    "independent": false,
+    "must_contain": ["номер", "цеха"],
+    "evidence": ["8 часов"]
+  },
+  {
+    "id": "dependent-empty-words",
+    "query": "А как?",
+    "work": [
+      {"query": "Какой номер у цеха?", "answer": "4", "document_names": ["charter.txt"]}
+    ],
+    "independent": false,
+    "must_contain": ["номер", "цеха"]
+  },
+  {
+    "id": "dependent-year-search",
+    "query": "В каком году его выпустили?",
+    "work": [
+      {"query": "Какое давление у насоса?", "answer": "6 бар", "document_names": ["pump.md"]}
+    ],
+    "independent": false,
+    "must_contain": ["давление", "насоса"],
+    "evidence": ["2019"]
+  },
+  {
+    "id": "dependent-anchors",
+    "query": "Сколько она длится?",
+    "work": [
+      {"query": "Какой номер у цеха?", "answer": "Цех имеет номер 4. Обозначение Н-12.", "document_names": ["charter.txt"]}
+    ],
+    "independent": false,
+    "must_contain": ["номер", "цеха", "4", "Н-12"]
+  }
+]
