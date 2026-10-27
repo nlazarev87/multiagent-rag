@@ -192,16 +192,47 @@ def answer_agent(query, clear_query, chunks, work_turns, feedback=None):
     return complete(SYSTEM, build_prompt(query, chunks, previous, feedback), examples=EXAMPLES)
 
 
+def _pure_number(token):
+    return bool(token) and any(ch.isdigit() for ch in token) and all(ch.isdigit() or ch in " ,." for ch in token)
+
+
+def _whole_number(text, start):
+    # «6,5» and «12 000» are one measurement. The token scan otherwise keeps
+    # 5 and 12, and either piece is enough to confirm the whole value.
+    found = re.match(r"\d{1,3}(?: \d{3})+(?:[,.]\d+)?|\d+(?:[,.]\d+)?", text[start:])
+    return found.group(0) if found else ""
+
+
+def _hits(text, token):
+    if _pure_number(token):
+        grouped = r"(?<!\d )" if re.fullmatch(r"\d{3}", token) else ""
+        pattern = (
+            rf"(?<![0-9a-zа-я_]){grouped}(?<!\d[,.]){re.escape(token)}"
+            rf"(?![0-9a-zа-я_])(?!,\d)(?!\.\d)(?! \d{{3}}(?!\d))"
+        )
+    else:
+        pattern = rf"(?<![0-9a-zа-я_]){re.escape(token)}(?![0-9a-zа-я_])"
+    return list(re.finditer(pattern, text))
+
+
 def _facts(answer):
     text = re.sub(r"\[[\d,\s]+\]", " ", answer)
     facts = []
     for sentence in re.split(r"(?<=[.!?])\s+", text):
         context = tuple(word[:5] for word in _words(sentence) if len(word) >= 5)
+        covered = 0
         for match in _TOKEN.finditer(sentence):
+            if match.start() < covered:
+                continue
             token = match.group(0)
             before = sentence[:match.start()].rstrip()
             start = not before or before[-1] in ".!?:\n«\"("
             if any(ch.isdigit() for ch in token):
+                if _pure_number(token):
+                    whole = _whole_number(sentence, match.start())
+                    if len(whole) > len(token):
+                        token = whole
+                        covered = match.start() + len(token)
                 # 1–3 digit values have to sit with the claim. A longer exact match is how
                 # «выпущен в 2019» still meets the line «Год выпуска: 2019».
                 short = sum(ch.isdigit() for ch in token) <= 3
@@ -237,7 +268,7 @@ def _span(text, start):
         char = text[index]
         if char not in ".!?,;\n":
             return False
-        decimal = char == "," and 0 < index < len(text) - 1 and text[index - 1].isdigit() and text[index + 1].isdigit()
+        decimal = char in ",." and 0 < index < len(text) - 1 and text[index - 1].isdigit() and text[index + 1].isdigit()
         return not decimal
 
     left = 0
@@ -258,7 +289,7 @@ def _keeps(span, stem, token):
     # sees both numbers. 80 belongs to давление only when no other value with its
     # own label sits between them. «от 6 до 10» has no such label.
     stems = list(re.finditer(rf"(?<![0-9a-zа-я]){re.escape(stem)}", span))
-    numbers = list(re.finditer(rf"(?<![0-9a-zа-я_]){re.escape(token)}(?![0-9a-zа-я_])", span))
+    numbers = _hits(span, token)
     for number in numbers:
         for found in stems:
             if found.end() <= number.start():
@@ -290,7 +321,7 @@ def _grounded(fact, text):
     kind, token = fact[0], _flat(fact[1])
     if kind == "stem":
         return re.search(rf"(?<![0-9a-zа-я]){re.escape(token[:5])}", text) is not None
-    places = [match.start() for match in re.finditer(rf"(?<![0-9a-zа-я_]){re.escape(token)}(?![0-9a-zа-я_])", text)]
+    places = [match.start() for match in _hits(text, token)]
     if kind == "exact" or not places:
         return bool(places)
     for place in places:

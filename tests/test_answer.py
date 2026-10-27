@@ -98,6 +98,24 @@ def test_check_rejects_number_from_another_fact_in_the_same_sentence():
     assert agents.check_agent("Рабочее давление насоса ХН-7 равно 6 бар [1].", [coded], "Какое давление у насоса ХН-7?")["status"] == agents.CONFIRMED
 
 
+def test_check_rejects_a_piece_of_a_decimal_or_grouped_number():
+    decimal = {"text": "Насос > Характеристики\nРабочее давление: 6,5 бар", "document_name": "pump.md"}
+    dotted = {"text": "Насос > Характеристики\nРабочее давление: 6.5 бар", "document_name": "pump.md"}
+    tenths = {"text": "Насос > Характеристики\nРабочее давление: 10,5 бар", "document_name": "pump.md"}
+    books = {"text": "Библиотека > Фонд\nВ фонде 12 000 книг.", "document_name": "lib.txt"}
+    dozen = {"text": "Библиотека > Фонд\nВ фонде 12 книг.", "document_name": "lib.txt"}
+    assert agents.check_agent("Рабочее давление насоса равно 6 бар [1].", [decimal])["missing"] == ["6"]
+    assert agents.check_agent("Рабочее давление насоса равно 5 бар [1].", [decimal])["missing"] == ["5"]
+    assert agents.check_agent("Рабочее давление насоса равно 10 бар [1].", [tenths])["missing"] == ["10"]
+    assert agents.check_agent("Рабочее давление насоса равно 6,5 бар [1].", [decimal])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление насоса равно 6 бар [1].", [dotted])["missing"] == ["6"]
+    assert agents.check_agent("Рабочее давление насоса равно 6.5 бар [1].", [dotted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("В фонде 12 книг [1].", [books])["missing"] == ["12"]
+    assert agents.check_agent("В фонде 000 книг [1].", [books])["missing"] == ["000"]
+    assert agents.check_agent("В фонде 12 000 книг [1].", [books])["status"] == agents.CONFIRMED
+    assert agents.check_agent("В фонде 12 книг [1].", [dozen])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}
