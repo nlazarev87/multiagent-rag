@@ -142,9 +142,9 @@
     "hits": 3
   },
   "search_latency_ms": {
-    "now": 143.55912727346137,
+    "now": 189.8757908916609,
     "best": 143.55912727346137,
-    "room": 0.0,
+    "room": 46.31666361819953,
     "floor": 143.55912727346137,
     "n": 22,
     "direction": "lower"
@@ -267,13 +267,13 @@
     "hits": 5
   },
   "answer_facts_dev": {
-    "now": 0.7727272727272727,
+    "now": 0.8181818181818182,
     "best": 1.0,
-    "room": 0.2272727272727273,
-    "floor": 0.7727272727272727,
+    "room": 0.18181818181818177,
+    "floor": 0.8181818181818182,
     "n": 22,
     "direction": "higher",
-    "hits": 17
+    "hits": 18
   },
   "answer_starts_dev": {
     "now": 1.0,
@@ -294,13 +294,13 @@
     "hits": 9
   },
   "answer_cite_dev": {
-    "now": 0.6363636363636364,
+    "now": 1.0,
     "best": 1.0,
-    "room": 0.36363636363636365,
-    "floor": 0.6363636363636364,
+    "room": 0.0,
+    "floor": 1.0,
     "n": 22,
     "direction": "higher",
-    "hits": 14
+    "hits": 22
   },
   "answer_noanswer_dev": {
     "now": 1.0,
@@ -330,13 +330,13 @@
     "hits": 15
   },
   "answer_by_type_list": {
-    "now": 0.0,
+    "now": 0.5,
     "best": 1.0,
-    "room": 1.0,
-    "floor": 0.0,
+    "room": 0.5,
+    "floor": 0.5,
     "n": 2,
     "direction": "higher",
-    "hits": 0
+    "hits": 1
   },
   "answer_by_type_noanswer": {
     "now": 1.0,
@@ -365,13 +365,13 @@
     "direction": "lower"
   },
   "e2e_dev": {
-    "now": 0.782608695652174,
+    "now": 0.8260869565217391,
     "best": 1.0,
-    "room": 0.21739130434782605,
-    "floor": 0.782608695652174,
+    "room": 0.17391304347826086,
+    "floor": 0.8260869565217391,
     "n": 23,
     "direction": "higher",
-    "hits": 18
+    "hits": 19
   },
   "e2e_by_type_count": {
     "now": 1.0,
@@ -392,13 +392,13 @@
     "hits": 15
   },
   "e2e_by_type_list": {
-    "now": 0.0,
+    "now": 0.5,
     "best": 1.0,
-    "room": 1.0,
-    "floor": 0.0,
+    "room": 0.5,
+    "floor": 0.5,
     "n": 2,
     "direction": "higher",
-    "hits": 0
+    "hits": 1
   },
   "e2e_by_type_noanswer": {
     "now": 1.0,
@@ -419,10 +419,10 @@
     "hits": 1
   },
   "e2e_latency_s": {
-    "now": 40.417513017431304,
-    "best": 40.417513017431304,
+    "now": 35.32916813480425,
+    "best": 35.32916813480425,
     "room": 0.0,
-    "floor": 40.417513017431304,
+    "floor": 35.32916813480425,
     "n": 23,
     "direction": "lower"
   },
@@ -436,12 +436,12 @@
     "hits": 8
   },
   "e2e_holdout": {
-    "now": 0.4,
+    "now": 0.5,
     "best": 1.0,
-    "room": 0.6,
-    "floor": 0.4,
+    "room": 0.5,
+    "floor": 0.5,
     "n": 20,
     "direction": "higher",
-    "hits": 8
+    "hits": 10
   }
 }

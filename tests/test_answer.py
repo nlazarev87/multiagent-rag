@@ -12,6 +12,39 @@ def test_answer_refuses_empty_chunks():
     assert agents.answer_agent("цвет", "цвет насоса", [], []) == agents.NO_ANSWER
 
 
+def test_answer_copies_overview_list_without_model(monkeypatch):
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("complete")))
+    halls = {
+        "text": "Библиотека > Залы\nРазных значений в столбце «Зал»: 3. Список: Читальный, Детский, Архивный.",
+        "document_name": "library.txt",
+    }
+    extra = {"text": "В залах соблюдается тишина.", "document_name": "rules.txt"}
+    assert agents.answer_agent("Какие залы есть в библиотеке?", "Какие залы есть в библиотеке?", [halls, extra], []) == "Читальный, Детский, Архивный [1]."
+    assert agents.answer_agent("Сколько залов в библиотеке?", "Сколько залов в библиотеке?", [halls], []) == "3 значений [1]."
+    size_calls = []
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: size_calls.append(1) or "Около 1 Мб [1].")
+    assert "1 Мб" in agents.answer_agent("Сколько данных в потоке X_9.2?", "Сколько данных в потоке X_9.2?", [halls], [])
+    assert size_calls == [1]
+    size_calls = []
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: size_calls.append(1) or "Около 1 Мб [1].")
+    assert "1 Мб" in agents.answer_agent("Сколько данных в потоке X_9.2?", "Сколько данных в потоке X_9.2?", [halls], [])
+    assert size_calls == [1]
+    glossary = {
+        "text": "Термины\nТаблица 1 – Сокращения\nРазных значений в столбце «Термин»: 3. Список: АО, ИС, ПО.",
+        "document_name": "terms.txt",
+    }
+    calls = []
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: calls.append(1) or "В периметре три организации [1].")
+    perimeter = {"text": "Организационный периметр\nТаблица 2\nАО «Север»: полный\nАО «Юг»: полный", "document_name": "orgs.txt"}
+    agents.answer_agent("Какие организации входят в периметр?", "Какие организации входят в периметр?", [glossary, perimeter], [])
+    assert calls == [1]
+
+
+def test_answer_appends_citation_when_model_omits_it(monkeypatch):
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: "Давление равно 6 бар.")
+    assert agents.answer_agent("Какое давление у насоса?", "Какое давление у насоса?", [PUMP, SHOP], []) == "Давление равно 6 бар. [1]"
+
+
 def test_answer_calls_model_once_with_numbered_fragments(monkeypatch):
     calls = []
     monkeypatch.setattr(agents, "count_tokens", _words)
@@ -90,6 +123,13 @@ def test_check_rejects_incomplete_list():
     chunk = {"text": "Цех > Смены\nРазных значений в столбце «Смена»: 3. Список: Утренняя, Дневная, Ночная.", "document_name": "charter.txt"}
     assert agents.check_agent("В цехе есть Утренняя и Дневная смены [1].", [chunk], "Какие смены есть в цехе?")["feedback"] == agents.LIST_GAP
     assert agents.check_agent("В цехе три смены: Утренняя, Дневная и Ночная [1].", [chunk], "Какие смены есть в цехе?")["status"] == agents.CONFIRMED
+
+
+def test_check_list_uses_cited_fragment_only():
+    halls = {"text": "Залы\nРазных значений в столбце «Зал»: 3. Список: Читальный, Детский, Архивный.", "document_name": "library.txt"}
+    other = {"text": "Шины\nРазных значений в столбце «Шина»: 2. Список: ALPHA, BETA.", "document_name": "bus.txt"}
+    verdict = agents.check_agent("Читальный, Детский, Архивный [1].", [halls, other], "Какие залы есть в библиотеке?")
+    assert verdict["status"] == agents.CONFIRMED
 
 
 def test_check_rejects_empty_and_broken_answers():

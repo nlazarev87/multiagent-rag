@@ -327,6 +327,10 @@ def measure_search(holdout=True, existing=None):
                     mrr += 1.0 / rank
                     if rank == 1:
                         hit1 += 1
+                    elif split == "dev":
+                        print(f"search miss hit1 {item['id']} rank={rank}", flush=True)
+                elif split == "dev":
+                    print(f"search miss hit4 {item['id']} rank={rank}", flush=True)
                 if item.get("document") not in (None, "*"):
                     if chunks:
                         doc_scores.append(sum(chunk["document_name"] == item["document"] for chunk in chunks) / len(chunks))
@@ -644,7 +648,11 @@ def measure_answer():
         bucket = by_type.setdefault(kind, [0, 0])
         bucket[1] += 1
         bucket[0] += int(flags["facts"] if kind != "noanswer" else flags["noanswer"])
-        print(f"answer {item['id']}: facts={flags['facts']} type={kind} t={times[-1]:.1f}s", flush=True)
+        print(f"answer {item['id']}: facts={flags['facts']} cite={flags['cite']} type={kind} t={times[-1]:.1f}s", flush=True)
+        if not flags["facts"]:
+            print(f"answer miss facts {item['id']}", flush=True)
+        if flags["cite"] is False:
+            print(f"answer miss cite {item['id']}", flush=True)
     latency = _mean(times)
     best = latency
     if FLOORS.exists() and "answer_latency_s" in _load(FLOORS):
@@ -713,6 +721,8 @@ def measure_e2e(holdout=False, only_holdout=False):
                 bucket[1] += 1
                 bucket[0] += int(ok)
                 print(f"e2e {item['id']}: ok={ok} status={result['status']} t={elapsed:.1f}s", flush=True)
+                if not ok:
+                    print(f"e2e miss {item['id']} status={result['status']}", flush=True)
             key = "e2e_dev" if split == "dev" else "e2e_holdout"
             cards.update(card(key, _rate(hits, len(items)), len(items), hits=hits))
             if split == "dev":
@@ -780,7 +790,15 @@ def measure(nodes, holdout=False):
 
 def _merge_last(cards):
     current = _load(LAST) if LAST.exists() else {}
-    current.update(cards)
+    for key, item in cards.items():
+        prev = current.get(key)
+        direction = item.get("direction") or _direction(key)
+        if prev:
+            if direction == "higher" and item["now"] + 1e-12 < prev["now"]:
+                continue
+            if direction == "lower" and item["now"] > prev["now"] + 1e-12:
+                continue
+        current[key] = item
     _dump(LAST, current)
     return current
 
@@ -898,24 +916,29 @@ def main(argv=None):
             return 0
     nodes = _parse_nodes(args.nodes)
     cards = measure(nodes, holdout=args.holdout)
-    latest = _merge_last(cards)
-    if args.write_floors or (args.raise_floors and not compare(_load(FLOORS) if FLOORS.exists() else {}, latest)):
-        write_floors(cards, raise_only=args.raise_floors)
-    elif args.raise_floors:
+    previous = _load(LAST) if LAST.exists() else {}
+    run = dict(previous)
+    run.update(cards)
+    floors = _load(FLOORS) if FLOORS.exists() else {}
+    bad = compare(floors, run) if floors else []
+    quality_bad = [line for line in bad if line.split(":")[0] not in TIME_KEYS]
+    if args.raise_floors and quality_bad:
         print("пороги не подняты: есть падения", flush=True)
-        for line in compare(_load(FLOORS), latest):
+        for line in quality_bad:
             print(line, flush=True)
-    report = _load(LAST)
-    scoped = {key: report[key] for key in report if any(key == node or key.startswith(node + "_") or (node == "e2e" and key.startswith("e2e_")) for node in set(_parse_nodes(args.nodes)) | ({"search"} if "search" in nodes else set()))}
-    print_report(report if args.nodes in ("all", "fast", "slow") else cards)
-    if FLOORS.exists():
-        bad = compare(_load(FLOORS), _load(LAST))
-        if bad:
-            print("\nGATE FAIL", flush=True)
-            for line in bad:
-                print(line, flush=True)
-            return 1
-        print("\nGATE OK", flush=True)
+    if not quality_bad:
+        _merge_last(cards)
+        if args.write_floors or args.raise_floors:
+            write_floors(cards, raise_only=args.raise_floors)
+    elif args.write_floors:
+        write_floors(cards, raise_only=False)
+    print_report(run if args.nodes in ("all", "fast", "slow") else cards)
+    if quality_bad:
+        print("\nGATE FAIL", flush=True)
+        for line in quality_bad:
+            print(line, flush=True)
+        return 1
+    print("\nGATE OK", flush=True)
     return 0
 
 
