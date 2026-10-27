@@ -877,12 +877,92 @@ def _date_number(text, start, end):
     return re.search(r"(?<![0-9a-zа-яё])(?:в|во|с|со|до|от|к|ко|по)\s*$", before, re.IGNORECASE) is not None
 
 
+# «в 6 часов», «к 8 часам», «с 6:00». «часового» is not «час», and «часть» is not either.
+_HOUR_WORD = re.compile(r"час(?:а|ов|ам|у|ах|ами|ом|е)?(?![0-9a-zа-яё])")
+_TIME_PREP = r"(?:около|во|ко|со|от|до|в|к|с)"
+
+
+def _clock_number(text, start, end):
+    # «в 6 часов», «к 8 часам», «до 18 часов» and «в 14:30» name a time of day.
+    # That hour is not the reading, so «давление в 6 часов составляет 10» is
+    # давление 10, and «в 18 часов рабочее давление: 6» is not давление 18.
+    # «наработка от 6 до 10 часов» is a range of a duration, not a clock.
+    # «6.5» and «14.30 бар» stay readings: a dot is a time only after «в».
+    token = text[start:end]
+    after = text[end:]
+    before = text[:start]
+    if re.fullmatch(r"\d{2}", token) and re.search(r"(?<!\d)\d{1,2}:$", before):
+        return True
+    if re.fullmatch(r"\d{1,2}", token) and re.match(r":\d{2}(?!\d)", after):
+        return True
+    if re.fullmatch(r"\d{2}", token) and re.search(
+        rf"(?<![0-9a-zа-яё]){_TIME_PREP}\s+\d{{1,2}}\.$", before, re.IGNORECASE
+    ):
+        return True
+    if (
+        re.fullmatch(r"\d{1,2}", token)
+        and re.match(r"\.\d{2}(?!\d)", after)
+        and re.search(rf"(?<![0-9a-zа-яё]){_TIME_PREP}\s*$", before, re.IGNORECASE)
+    ):
+        return True
+    if not re.fullmatch(r"\d{1,2}", token) or int(token) > 24:
+        return False
+    if not re.match(rf"\s*{_HOUR_WORD.pattern}", _case(after)):
+        return False
+    if re.search(rf"(?<![0-9a-zа-яё])(?:от|с|со)\s*$", before, re.IGNORECASE) and re.match(
+        r"\s*до(?![0-9a-zа-яё])", after, re.IGNORECASE
+    ):
+        return False
+    if re.search(r"(?<![0-9a-zа-яё])до\s*$", before, re.IGNORECASE) and re.search(
+        r"(?<![0-9a-zа-яё])(?:от|с|со)\s+\d", before, re.IGNORECASE
+    ):
+        return False
+    return re.search(rf"(?<![0-9a-zа-яё]){_TIME_PREP}\s*$", before, re.IGNORECASE) is not None
+
+
+def _hour_owner(span, start):
+    # The noun a duration measures: «срок службы в 6 часов» → срок,
+    # «наработка до 6 часов» → наработка. A leading «в 6 часов» has none.
+    pos = start
+    for _ in range(6):
+        prefix = span[:pos].rstrip(" \t:;—–-\u2212()«»\",")
+        found = re.search(r"([a-zа-яё]+)$", prefix)
+        if not found:
+            return ""
+        word = found.group(1)
+        if word in _GLUE or word in _LINKS or word in _ASKED or word in {"в", "к", "с", "о", "у"}:
+            pos = found.start()
+            continue
+        nouns, _dropped = _naming_nouns(span, found.end())
+        return _phrase_owner(nouns)
+    return ""
+
+
+def _owns_hours(span, start, stem):
+    # «смена в 8 часов», «срок службы в 6 часов» and «наработка до 6 часов»
+    # belong to that noun. «давление в 6 часов» and «ток в 6 часов» do not:
+    # a physical kind is not measured in hours. «количество до 6 часов» is
+    # the count of those hours, and «время в 6 часов» is the duration itself.
+    owner = _hour_owner(span, start)
+    if not owner or not _matches(owner, stem):
+        return False
+    if _kind_noun(owner) and not owner.startswith("количеств"):
+        return False
+    if _measure_noun(owner) and not _matches(owner, "время"):
+        return False
+    if _delta_word(owner):
+        return False
+    if _size_word(owner) and not (owner.startswith("ресурс") or owner.startswith("срок")):
+        return False
+    return True
+
+
 def _reading(text):
-    # A date between a name and its value is not another measurement.
+    # A date or a clock between a name and its value is not another measurement.
     if not text:
         return None
     for match in re.finditer(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", text):
-        if _date_number(text, match.start(), match.end()):
+        if _date_number(text, match.start(), match.end()) or _clock_number(text, match.start(), match.end()):
             continue
         return match
     return None
@@ -1087,10 +1167,20 @@ def _keeps(span, stem, token):
     numbers = [
         number
         for number in _hits(span, token)
-        if not _number_before_tolerance(span, number.start()) and not _date_number(span, number.start(), number.end())
+        if not _number_before_tolerance(span, number.start())
+        and not _date_number(span, number.start(), number.end())
+        and not (
+            _clock_number(span, number.start(), number.end())
+            and not _owns_hours(span, number.start(), stem)
+        )
     ]
     if len(stem) < 5:
-        return any(_short_owns(span, number.start(), stem) for number in numbers)
+        # «срок службы в 6 часов»: срок is shorter than five letters, and «в»
+        # hides it from the short-name walk. The duration still belongs to срок.
+        return any(
+            _owns_hours(span, number.start(), stem) or _short_owns(span, number.start(), stem)
+            for number in numbers
+        )
     # «давление: 6 бар и температура: 80» is one clause, so the line window still
     # sees both numbers. 80 belongs to давление only when no other value with its
     # own label sits between them. «от 6 до 10» has no such label. A value that
