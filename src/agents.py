@@ -403,6 +403,24 @@ def _kind_noun(word):
     ) is None
 
 
+# A condition after «при» can name its number with a word outside _KINDS.
+# «ходе» is «ход» and «угле» is «угол». «холод» is not «ход», «параметр» is not «пар».
+_MEASURES = ("ход", "ток", "вес", "пар", "тип", "кпд", "зазор", "угл", "напряж", "времен")
+
+
+def _measure_word(word):
+    if not word:
+        return False
+    for stem in _MEASURES:
+        if len(stem) >= 5:
+            if word.startswith(stem):
+                return True
+            continue
+        if _inflected(word, stem):
+            return True
+    return False
+
+
 def _kind_stem(stem):
     return any(kind.startswith(stem) or stem.startswith(kind) for kind in _KINDS)
 
@@ -620,8 +638,12 @@ def _foreign_phrase(span, number_start, stem):
         return False
     if any(_matches(word, stem) for word in nouns) or any(_matches(word, stem) for word in dropped):
         return True
-    # «давление при температуре 80»: температуре owns 80, so the head before
-    # «при» does not. «давление на выходе: 6» names no other measurement.
+    # «давление при температуре 80» and «давление при ходе 80»: the condition
+    # owns the number, so the head before «при» does not. The same is true of
+    # «ток», «зазор», «угол», «кпд», «напряжение» and «ход поршня».
+    # «давление на выходе: 6» and «давление при работе: 6» name no other measurement.
+    if any(_measure_word(word) and not _matches(word, stem) for word in nouns):
+        return True
     return _kind_noun(owner)
 
 

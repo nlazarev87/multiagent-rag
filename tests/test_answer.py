@@ -410,6 +410,40 @@ def test_check_rejects_a_measurement_taken_from_its_condition():
     assert agents.check_agent("Рабочее давление на выходе равно 6 бар [1].", [outlet])["status"] == agents.CONFIRMED
 
 
+def test_check_rejects_a_measurement_taken_from_a_short_condition():
+    stroke = {"text": "Насос > Режим\nРабочее давление при ходе 80 мм.", "document_name": "pump.md"}
+    piston = {"text": "Насос > Режим\nРабочее давление при ходе поршня 80 мм.", "document_name": "pump.md"}
+    current = {"text": "Насос > Режим\nРабочее давление при токе 80 А составляет 6 бар.", "document_name": "pump.md"}
+    gap = {"text": "Насос > Режим\nРабочее давление при зазоре 80 мкм составляет 6 бар.", "document_name": "pump.md"}
+    weight = {"text": "Насос > Режим\nДавление при весе 5 кг.", "document_name": "pump.md"}
+    steam = {"text": "Насос > Режим\nДавление при паре 80 градусов.", "document_name": "pump.md"}
+    angle = {"text": "Насос > Режим\nРабочее давление при угле 80 градусов.", "document_name": "pump.md"}
+    efficiency = {"text": "Насос > Режим\nДавление при кпд 85 процентов.", "document_name": "pump.md"}
+    kind = {"text": "Насос > Режим\nДавление при типе 80.", "document_name": "pump.md"}
+    voltage = {"text": "Мощность при напряжении 220 В равна 5 кВт.", "document_name": "pump.md"}
+    hours = {"text": "Давление при времени работы 80 часов.", "document_name": "pump.md"}
+    running = {"text": "Насос > Режим\nРабочее давление при работе: 6 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [stroke])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [piston])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [current])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление составляет 6 бар [1].", [current])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ток равен 80 А, рабочее давление составляет 6 бар [1].", [current])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [gap])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление составляет 6 бар [1].", [gap])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Зазор равен 80 мкм, рабочее давление составляет 6 бар [1].", [gap])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 5 бар [1].", [weight])["missing"] == ["5"]
+    assert agents.check_agent("Давление равно 80 бар [1].", [steam])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [angle])["missing"] == ["80"]
+    assert agents.check_agent("Давление равно 85 бар [1].", [efficiency])["missing"] == ["85"]
+    assert agents.check_agent("Давление равно 80 бар [1].", [kind])["missing"] == ["80"]
+    assert agents.check_agent("Мощность равна 220 кВт [1].", [voltage])["missing"] == ["220"]
+    assert agents.check_agent("Мощность равна 5 кВт [1].", [voltage])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Напряжение равно 220 В [1].", [voltage])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 80 бар [1].", [hours])["missing"] == ["80"]
+    assert agents.check_agent("Время работы равно 80 часов [1].", [hours])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [running])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}
