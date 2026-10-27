@@ -167,7 +167,15 @@ def _example(query, fragments, reply):
 EXAMPLES = [_example(*example) for example in _EXAMPLES]
 
 
-_OVERVIEW_LINE = re.compile(r"Разных значений в столбце «[^»]+»: (\d+)\. Список: (.+)", re.IGNORECASE)
+_OVERVIEW_LINE = re.compile(r"Разных значений в столбце «([^»]+)»: (\d+)\. Список: (.+)", re.IGNORECASE)
+_ENDINGS = (
+    "иями", "ями", "ами", "ого", "его", "ому", "ему",
+    "ыми", "ими", "ой", "ий", "ый", "ая", "яя", "ое", "ее",
+    "ия", "ие", "ые", "ию", "ии", "ых", "их",
+    "ом", "ем", "ах", "ях", "ов", "ев", "ам", "ям",
+    "а", "я", "ы", "и", "у", "ю", "е", "о",
+)
+_ASIDE = {"есть", "между", "входят", "находится", "используется", "используются"}
 
 
 def _list_ask(query):
@@ -184,8 +192,37 @@ def _chunk_score(query, text):
     return score
 
 
+def _stem(word):
+    for ending in _ENDINGS:
+        if len(word) > len(ending) + 2 and word.endswith(ending):
+            return word[:len(word) - len(ending)]
+    return word
+
+
+def _focus_words(query):
+    words = _words(query)
+    if words and words[0] == "перечисли":
+        words = words[1:]
+    focus = []
+    for word in words:
+        if word in _ASIDE:
+            break
+        focus.append(word)
+    return focus
+
+
+def _stem_hit(word, text):
+    stem = _stem(word)
+    return any(_stem(token) == stem for token in re.findall(r"[0-9a-zа-я]+", _flat(text)))
+
+
 def _from_overview(query, chunks):
     if not _list_ask(query) or not chunks:
+        return None
+    if "сколько" in query.lower() and any(ch.isdigit() for ch in query):
+        return None
+    focus = _focus_words(query)
+    if not focus:
         return None
     ranked = []
     for number, chunk in enumerate(chunks, 1):
@@ -193,19 +230,18 @@ def _from_overview(query, chunks):
         match = _OVERVIEW_LINE.search(text)
         if not match:
             continue
-        head = " ".join(text.splitlines()[:3])
-        label = match.group(0).split("Список:")[0]
-        score = _chunk_score(query, head + " " + label)
-        if score:
-            ranked.append((score, number, match.group(1), match.group(2).rstrip(" .")))
+        section = text.splitlines()[0]
+        section_hits = sum(_stem_hit(word, section) for word in focus)
+        column_hits = sum(_stem_hit(word, match.group(1)) for word in focus)
+        if not section_hits and not column_hits:
+            continue
+        ranked.append((section_hits + column_hits, section_hits, number, match.group(2), match.group(3).rstrip(" .")))
     if not ranked:
         return None
-    ranked.sort(key=lambda item: (-item[0], item[1]))
-    _, number, count, items = ranked[0]
-    if "сколько" in query.lower() and not any(ch.isdigit() for ch in query):
-        return f"{count} значений [{number}]."
+    ranked.sort(key=lambda item: (-item[0], -item[1], item[2]))
+    _, _, number, count, items = ranked[0]
     if "сколько" in query.lower():
-        return None
+        return f"{count} значений [{number}]."
     return f"{items} [{number}]."
 
 
