@@ -880,6 +880,16 @@ def _date_number(text, start, end):
 # «в 6 часов», «к 8 часам», «с 6:00». «часового» is not «час», and «часть» is not either.
 _HOUR_WORD = re.compile(r"час(?:а|ов|ам|у|ах|ами|ом|е)?(?![0-9a-zа-яё])")
 _TIME_PREP = r"(?:около|во|ко|со|от|до|в|к|с)"
+# «30 минут», «1 минуту», «15 секунд». «минутный» is not «минут».
+_CLOCK_PART_WORD = re.compile(
+    r"(?:минут|секунд)(?:а|ы|у|е|ой|ою|ам|ах|ами)?(?![0-9a-zа-яё])"
+)
+# The hour this minute or second belongs to: «в 14 часов 30 минут»,
+# «к 8 часам 15 секунд», «в 14 часов 30 минут 15 секунд».
+_CLOCK_PART_BEFORE = re.compile(
+    rf"(?<![0-9a-zа-яё]){_TIME_PREP}\s+(\d{{1,2}})\s+{_HOUR_WORD.pattern}"
+    rf"(?:\s+\d{{1,2}}\s+минут(?:а|ы|у|е|ой|ою|ам|ах|ами)?)?\s*$"
+)
 
 
 def _clock_number(text, start, end):
@@ -888,9 +898,12 @@ def _clock_number(text, start, end):
     # давление 10, and «в 18 часов рабочее давление: 6» is not давление 18.
     # «наработка от 6 до 10 часов» is a range of a duration, not a clock.
     # «6.5» and «14.30 бар» stay readings: a dot is a time only after «в».
+    # «в 14 часов 30 минут» is the same clock: 30 is not the reading.
     token = text[start:end]
     after = text[end:]
     before = text[:start]
+    if _clock_part(token, before, after):
+        return True
     if re.fullmatch(r"\d{2}", token) and re.search(r"(?<!\d)\d{1,2}:$", before):
         return True
     if re.fullmatch(r"\d{1,2}", token) and re.match(r":\d{2}(?!\d)", after):
@@ -920,6 +933,28 @@ def _clock_number(text, start, end):
     return re.search(rf"(?<![0-9a-zа-яё]){_TIME_PREP}\s*$", before, re.IGNORECASE) is not None
 
 
+def _part_hour_at(span, start):
+    # Start of the clock hour that «30» continues in «в 14 часов 30 минут».
+    # A duration with no time preposition, «составляет 6 часов 30 минут», has none.
+    found = _CLOCK_PART_BEFORE.search(_case(span[:start]))
+    if not found or int(found.group(1)) > 24:
+        return None
+    return found.start(1)
+
+
+def _clock_part(token, before, after):
+    # «в 14 часов 30 минут» and «в 14 часов 30 минут 15 секунд» name a time of
+    # day. That minute is not the reading, so «давление в 14 часов 30 минут
+    # составляет 6» is давление 6, and not давление 30. «время в 6 часов 30
+    # минут» still belongs to время: the hour does, so the minute does too.
+    # «наработка составляет 6 часов 30 минут» has no time preposition.
+    if not re.fullmatch(r"\d{1,2}", token or "") or int(token) > 59:
+        return False
+    if not re.match(rf"\s*{_CLOCK_PART_WORD.pattern}", _case(after)):
+        return False
+    return _part_hour_at(before, len(before)) is not None
+
+
 def _hour_owner(span, start):
     # The noun a duration measures: «срок службы в 6 часов» → срок,
     # «наработка до 6 часов» → наработка. A leading «в 6 часов» has none.
@@ -943,6 +978,10 @@ def _owns_hours(span, start, stem):
     # belong to that noun. «давление в 6 часов» and «ток в 6 часов» do not:
     # a physical kind is not measured in hours. «количество до 6 часов» is
     # the count of those hours, and «время в 6 часов» is the duration itself.
+    # «время в 6 часов 30 минут»: the minute belongs to whoever owns the hour.
+    hour_at = _part_hour_at(span, start)
+    if hour_at is not None and hour_at != start:
+        return _owns_hours(span, hour_at, stem)
     owner = _hour_owner(span, start)
     if not owner or not _matches(owner, stem):
         return False
