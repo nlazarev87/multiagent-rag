@@ -289,6 +289,46 @@ def test_check_rejects_a_measurement_sharing_only_an_adjective_or_a_verb():
     assert agents.check_agent("Температура равна 20 градусов [1].", [both])["status"] == agents.CONFIRMED
 
 
+def test_check_rejects_a_measurement_with_a_short_name():
+    current = {"text": "Насос > Режим\nРабочее давление: 6 бар и ток: 80 А.", "document_name": "pump.md"}
+    stroke = {"text": "Ход 80 мм при рабочем давлении 6 бар.", "document_name": "pump.md"}
+    efficiency = {"text": "КПД 85% при рабочем давлении 6 бар.", "document_name": "pump.md"}
+    kind = {"text": "Тип 80 и рабочее давление 6 бар.", "document_name": "pump.md"}
+    steam = {"text": "Давление 6 бар и пар 80 градусов.", "document_name": "pump.md"}
+    weight = {"text": "Вес 5 кг при рабочем давлении 6 бар.", "document_name": "pump.md"}
+    paren = {"text": "Рабочее давление: 6 бар (ток 80 А).", "document_name": "pump.md"}
+    joined = {"text": "Рабочее давление и ток: 80 А.", "document_name": "pump.md"}
+    outlet = {"text": "Рабочее давление на выходе: 6 бар.", "document_name": "pump.md"}
+    circuit = {"text": "Рабочее давление контура: 6 бар и температура 80 градусов.", "document_name": "pump.md"}
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [current])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [current])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар и ток равен 80 А [1].", [current])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [stroke])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [stroke])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ход равен 80 мм, рабочее давление равно 6 бар [1].", [stroke])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 85 бар [1].", [efficiency])["missing"] == ["85"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [efficiency])["status"] == agents.CONFIRMED
+    assert agents.check_agent("КПД равен 85%, рабочее давление равно 6 бар [1].", [efficiency])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [kind])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [kind])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 80 бар [1].", [steam])["missing"] == ["80"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [steam])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 5 бар [1].", [weight])["missing"] == ["5"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [weight])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [paren])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [paren])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [joined])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление на выходе равно 6 бар [1].", [outlet])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление контура равно 6 бар [1].", [circuit])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление контура равно 80 бар [1].", [circuit])["missing"] == ["80"]
+    verbal = {"text": "Рабочее давление и ток равен 80 А.", "document_name": "pump.md"}
+    amperage = {"text": "Сила тока равна 80 А. Рабочее давление равно 6 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [verbal])["missing"] == ["80"]
+    assert agents.check_agent("Сила тока равна 80 А [1].", [amperage])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [amperage])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [amperage])["missing"] == ["80"]
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}

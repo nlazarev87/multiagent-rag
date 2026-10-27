@@ -261,8 +261,9 @@ def _facts(answer):
     text = re.sub(r"\[[\d,\s]+\]", " ", answer)
     facts = []
     for sentence in re.split(r"(?<=[.!?])\s+", text):
-        context = tuple(word[:5] for word in _words(sentence) if len(word) >= 5)
+        wide = tuple(word[:5] for word in _words(sentence) if len(word) >= 5)
         covered = 0
+        previous = 0
         for match in _TOKEN.finditer(sentence):
             if match.start() < covered:
                 continue
@@ -270,13 +271,22 @@ def _facts(answer):
             before = sentence[:match.start()].rstrip()
             start = not before or before[-1] in ".!?:\n«\"("
             if any(ch.isdigit() for ch in token):
+                origin = match.start()
+                finish = match.end()
                 if _pure_number(token):
                     whole = _whole_number(sentence, match.start())
                     if len(whole) > len(token):
                         token = whole
-                        covered = match.start() + len(token)
+                        finish = match.start() + len(token)
+                        covered = finish
                     if _negated(sentence, match.start()):
                         token = "-" + token
+                # A short number belongs to the words written with it, not to every
+                # word in the sentence. «давление 6 и ток 80» must not lend давление
+                # to 80. «от 6 до 10» has no name of its own, so 10 keeps давление.
+                local = _number_stems(sentence, previous, origin, finish)
+                context = tuple(local) if local else wide
+                previous = finish
                 # 1–3 digit values have to sit with the claim. A longer exact match is how
                 # «выпущен в 2019» still meets the line «Год выпуска: 2019».
                 short = sum(ch.isdigit() for ch in token) <= 3
@@ -351,6 +361,18 @@ _LINKS = {
 }
 _KINDS = ("номер", "давлен", "темпера", "частот", "масс", "подач", "мощнос", "диамет", "расход", "напор", "объем", "плотнос", "вязкост", "скорост", "количес")
 _BRIDGES = ("уров", "значен", "показател", "величин")
+# Prepositions, conjunctions and units. They stand next to a number without naming it.
+_GLUE = {
+    "от", "до", "из", "за", "по", "на", "при", "для", "или", "над", "под", "без", "про",
+    "не", "ни", "но", "да", "же", "ко", "об", "со", "во", "то", "как", "это", "либо",
+    "между", "через", "после", "перед", "около", "свыше", "менее", "более",
+    "бар", "мпа", "кпа", "атм", "мм", "см", "дм", "кг", "гц", "квт", "мвт",
+    "мин", "сек", "час", "шт", "рад", "град", "мл", "вт", "па",
+}
+_ASKED = {
+    "какой", "какая", "какое", "какие", "какова", "каков", "каком", "сколько",
+    "такое", "такой", "такая", "такие", "этом",
+}
 
 
 def _word_at(span, start):
@@ -378,6 +400,83 @@ def _kind_stem(stem):
 
 def _bridge_word(word):
     return any(word.startswith(bridge) for bridge in _BRIDGES)
+
+
+def _name_before(span, number_start):
+    # The name of a number may sit behind a linking verb: «ток равен 80».
+    # Stop at another digit, so «от 6 до 10» does not walk back to давление.
+    pos = number_start
+    for _ in range(6):
+        prefix = span[:pos].rstrip(" \t:;—–-\u2212()«»\",")
+        found = re.search(r"([a-zа-яё]{2,})$", prefix)
+        if not found:
+            return ""
+        word = found.group(1)
+        if word in _GLUE or word in _LINKS or word in _ASKED or _bridge_word(word):
+            pos = found.start()
+            continue
+        return word
+    return ""
+
+
+def _inflected(word, stem):
+    # «ток» and «тока» are one name. «холод» is not «ход», and «параметр» is not «пар».
+    if not word or not stem:
+        return False
+    if word == stem:
+        return True
+    longer, shorter = (word, stem) if len(word) >= len(stem) else (stem, word)
+    if not longer.startswith(shorter):
+        return False
+    extra = longer[len(shorter):]
+    return 0 < len(extra) <= 3 and extra[0] in "аеёиоуыэюя"
+
+
+def _other_name(span, number_start, stem):
+    # The word naming the number. «ток», «ход», «тип» and «кпд» are shorter than
+    # five letters, so the gap scan never sees them. «ток равен 80» hides ток
+    # behind the verb.
+    word = _name_before(span, number_start)
+    if not word or word.startswith(stem):
+        return False
+    return True
+
+
+def _split_gap(middle):
+    # «давление и ток: 80» coordinates two names. «давление на выходе: 6» does not.
+    return re.search(r"(?<![0-9a-zа-яё])(?:или|либо|но|и|а)(?![0-9a-zа-яё])", middle or "") is not None
+
+
+def _stems_in(region):
+    stems = []
+    for word in re.findall(r"[a-zа-яё]{3,}", (region or "").lower().replace("ё", "е")):
+        if word in _GLUE or word in _LINKS or word in _PRONOUNS or word in _ASKED or _bridge_word(word):
+            continue
+        stem = word[:5]
+        if stem not in stems:
+            stems.append(stem)
+    return stems
+
+
+def _tail_label(head):
+    without = re.sub(r"\d[\d ,.]*$", "", head or "")
+    return re.split(r"\d[\d ,.]*", without)[-1]
+
+
+def _next_number_at(sentence, finish):
+    found = re.search(r"\d", sentence[finish:])
+    return finish + found.start() if found else len(sentence)
+
+
+def _number_stems(sentence, previous, start, finish):
+    stems = _stems_in(sentence[previous:start])
+    if stems:
+        return stems
+    if previous:
+        inherited = _stems_in(_tail_label(sentence[:previous]))
+        if inherited:
+            return inherited
+    return _stems_in(sentence[finish:_next_number_at(sentence, finish)])
 
 
 def _restates_earlier_kind(span, start, stem):
@@ -421,6 +520,8 @@ def _other_label(span, number_start, stem_at):
     if re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", tail) is None:
         return False
     stem = stem_at.group(0)
+    if _other_name(span, number_start, stem):
+        return True
     labels = re.findall(r"[a-zа-яё]{5,}", span[:number_start])
     while labels and labels[-1] in _LINKS:
         labels.pop()
@@ -431,6 +532,10 @@ def _other_label(span, number_start, stem_at):
 
 
 def _keeps(span, stem, token):
+    numbers = _hits(span, token)
+    if len(stem) < 5:
+        # A short name only keeps the number it touches: «ток: 80», not «ток ... 6».
+        return any(_inflected(_name_before(span, number.start()), stem) for number in numbers)
     # «давление: 6 бар и температура: 80» is one clause, so the line window still
     # sees both numbers. 80 belongs to давление only when no other value with its
     # own label sits between them. «от 6 до 10» has no such label. A value that
@@ -438,9 +543,10 @@ def _keeps(span, stem, token):
     # «рабочая температура: 80» shares «рабоч» with «рабочее давление», and
     # «температура составляет 80» shares the verb. Those words do not name 80.
     # «давление при температуре составляет 6» still keeps 6, because давление
-    # itself is the measurement and 6 is its only value.
+    # itself is the measurement and 6 is its only value. «ток», «ход», «тип»
+    # and «кпд» name the other number even though they are shorter than five
+    # letters: «давление: 6 бар и ток: 80» is not давление 80.
     stems = list(re.finditer(rf"(?<![0-9a-zа-я]){re.escape(stem)}", span))
-    numbers = _hits(span, token)
     for number in numbers:
         for found in stems:
             word = _word_at(span, found.start())
@@ -459,6 +565,10 @@ def _keeps(span, stem, token):
                 names = re.findall(r"[a-zа-яё]{5,}", middle)
                 if _measure_label(names, stem) and (
                     not _kind_stem(stem) or _plain_number(span[number.end():]) or _plain_number(span[:found.start()])
+                ):
+                    continue
+                if _other_name(span, number.start(), stem) and (
+                    re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", middle) or _split_gap(middle)
                 ):
                     continue
             elif number.end() <= found.start():
