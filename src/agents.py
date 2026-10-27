@@ -168,8 +168,8 @@ EXAMPLES = [_example(*example) for example in _EXAMPLES]
 
 
 _OVERVIEW_LINE = re.compile(r"Разных значений в столбце «([^»]+)»: (\d+)\. Список: (.+)", re.IGNORECASE)
-_LIST_MARK = re.compile(r"(?<![а-яёa-z])(сколько|какие|перечисли)", re.IGNORECASE)
-_COUNT_MARK = re.compile(r"(?<![а-яёa-z])сколько(?![а-яёa-z])", re.IGNORECASE)
+_LIST_MARK = re.compile(r"(?<![а-яёa-z])(скольк(?:о|их|ими|им)|какие|перечисли)", re.IGNORECASE)
+_COUNT_MARK = re.compile(r"(?<![а-яёa-z])скольк(?:о|их|ими|им)(?![а-яёa-z])", re.IGNORECASE)
 
 
 def _list_ask(query):

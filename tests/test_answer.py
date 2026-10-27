@@ -89,6 +89,21 @@ def test_neskolko_does_not_copy_overview_count(monkeypatch):
     assert answer != "3 значений [1]."
 
 
+def test_inflected_skolko_copies_overview_count(monkeypatch):
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("complete")))
+    halls = {
+        "text": "Библиотека > Залы\nРазных значений в столбце «Зал»: 3. Список: Читальный, Детский, Архивный.",
+        "document_name": "library.txt",
+    }
+    counted = "3 значений [1]."
+    for query in (
+        "Из скольких залов состоит библиотека?",
+        "Сколькими залами располагает библиотека?",
+        "К скольким залам есть доступ?",
+    ):
+        assert agents.answer_agent(query, query, [halls], []) == counted
+
+
 def test_answer_appends_citation_when_model_omits_it(monkeypatch):
     monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: "Давление равно 6 бар.")
     assert agents.answer_agent("Какое давление у насоса?", "Какое давление у насоса?", [PUMP, SHOP], []) == "Давление равно 6 бар. [1]"
