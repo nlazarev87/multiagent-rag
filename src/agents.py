@@ -523,6 +523,15 @@ def _kind_noun(word):
 # A condition after «при» can name its number with a word outside _KINDS.
 # «ходе» is «ход» and «угле» is «угол». «холод» is not «ход», «параметр» is not «пар».
 _MEASURES = ("ход", "ток", "вес", "пар", "тип", "кпд", "зазор", "угл", "напряж", "времен")
+# A condition after «при» can also name its number with a longer unlisted word.
+# «радиусе» is «радиус» and «площади» is «площадь». The ending has to be a case
+# ending: «площадке» is not «площадь», and «шагать» is not «шаг».
+_SIZES = ("радиус", "толщин", "ресурс", "производительност", "площад", "глубин", "емкост", "шаг", "срок")
+_CASE_ENDINGS = {
+    "", "а", "я", "у", "ю", "е", "и", "ы", "о", "ь",
+    "ом", "ем", "ой", "ою", "ей", "ею", "ью", "ов", "ев",
+    "ам", "ям", "ах", "ях", "ами", "ями",
+}
 
 
 def _brief(extra):
@@ -538,6 +547,15 @@ def _fold(word):
     if word == "угол" or (word.startswith("угл") and _brief(word[3:])):
         return "угл"
     return word
+
+
+def _size_word(word):
+    if not word:
+        return False
+    for stem in _SIZES:
+        if word.startswith(stem) and word[len(stem):] in _CASE_ENDINGS:
+            return True
+    return False
 
 
 def _measure_word(word):
@@ -806,9 +824,14 @@ def _foreign_phrase(span, number_start, stem):
         return True
     # «давление при температуре 80» and «давление при ходе 80»: the condition
     # owns the number, so the head before «при» does not. The same is true of
-    # «ток», «зазор», «угол», «кпд», «напряжение» and «ход поршня».
-    # «давление на выходе: 6» and «давление при работе: 6» name no other measurement.
+    # «ток», «зазор», «угол», «кпд», «напряжение», «ход поршня», «радиус»,
+    # «толщина», «ресурс», «производительность», «шаг», «емкость», «срок»,
+    # «площадь» and «глубина».
+    # «давление на выходе: 6», «давление на площадке: 6» and «давление при работе: 6»
+    # name no other measurement.
     if any(_measure_word(word) and not _matches(word, stem) for word in nouns):
+        return True
+    if _size_word(owner):
         return True
     return _kind_noun(owner)
 
