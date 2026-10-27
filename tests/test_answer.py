@@ -932,6 +932,53 @@ def test_check_rejects_a_year_taken_as_its_measurement():
     assert agents.check_agent("Год выпуска равен 2019 [1].", [issued])["status"] == agents.CONFIRMED
 
 
+def test_check_rejects_a_calendar_day_taken_as_its_measurement():
+    dated = {"text": "Давление с 1 января 2019 года составляет 6 бар.", "document_name": "pump.md"}
+    may = {"text": "Давление с 12 мая 2019 года составляет 6 бар.", "document_name": "pump.md"}
+    winter = {"text": "Давление с 31 декабря 2019 года составляет 6 бар.", "document_name": "pump.md"}
+    bare = {"text": "Давление с 1 января 2019 составляет 6 бар.", "document_name": "pump.md"}
+    month = {"text": "Давление в январе 2019 составляет 6 бар.", "document_name": "pump.md"}
+    leading = {"text": "1 января давление составляет 6 бар.", "document_name": "pump.md"}
+    cold = {"text": "Температура 1 января составила 20 градусов.", "document_name": "pump.md"}
+    spanned = {"text": "Давление с 1 по 6 января составляет 10 бар.", "document_name": "pump.md"}
+    numeric = {"text": "Давление с 01.01.2019 составляет 6 бар.", "document_name": "pump.md"}
+    ranged = {"text": "Давление от 1 до 6 бар.", "document_name": "pump.md"}
+    unit = {"text": "Диаметр 1 мм.", "document_name": "pump.md"}
+    january = {"text": "Давление 1 бар в январе.", "document_name": "pump.md"}
+    major = {"text": "Номер 1 майора.", "document_name": "pump.md"}
+    real = {"text": "Рабочее давление: 2019 бар.", "document_name": "pump.md"}
+    season = {"text": "Подача в мае: 6.", "document_name": "pump.md"}
+    assert agents.check_agent("Давление равно 1 бар [1].", [dated])["missing"] == ["1"]
+    assert agents.check_agent("Давление равно 2019 бар [1].", [dated])["missing"] == ["2019"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [dated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 12 бар [1].", [may])["missing"] == ["12"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [may])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 31 бар [1].", [winter])["missing"] == ["31"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [winter])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [bare])["missing"] == ["1"]
+    assert agents.check_agent("Давление равно 2019 бар [1].", [bare])["missing"] == ["2019"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [bare])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 2019 бар [1].", [month])["missing"] == ["2019"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [month])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [leading])["missing"] == ["1"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [leading])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура равна 1 градус [1].", [cold])["missing"] == ["1"]
+    assert agents.check_agent("Температура равна 20 градусов [1].", [cold])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [spanned])["missing"] == ["1"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [spanned])["missing"] == ["6"]
+    assert agents.check_agent("Давление равно 10 бар [1].", [spanned])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [numeric])["missing"] == ["1"]
+    assert agents.check_agent("Давление равно 2019 бар [1].", [numeric])["missing"] == ["2019"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [numeric])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 6 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Диаметр равен 1 мм [1].", [unit])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [january])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Номер равен 1 [1].", [major])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 2019 бар [1].", [real])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Подача равна 6 [1].", [season])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_a_long_number_of_another_value():
     ends = {"text": "Давление на входе: 2000 бар. Давление на выходе: 6000 бар.", "document_name": "pump.md"}
     joined = {"text": "Давление на входе 2000 бар и давление на выходе 6000 бар.", "document_name": "pump.md"}

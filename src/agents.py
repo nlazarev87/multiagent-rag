@@ -793,22 +793,75 @@ def _measure_label(words, stem):
     return len(names) >= 2 and _kind_noun(names[-2]) and not names[-2].startswith(stem)
 
 
+# «1 января», «в январе» and «12 мая». «майор» is not «май», and «маршрута» is not «март».
+_MONTH_NAME = re.compile(
+    r"январ(?:ь|я|е|ю|ем)|феврал(?:ь|я|е|ю|ем)|март(?:а|е|у|ом)?|"
+    r"апрел(?:ь|я|е|ю|ем)|ма(?:ем|й|я|е|ю)|июн(?:ь|я|е|ю|ем)|"
+    r"июл(?:ь|я|е|ю|ем)|август(?:а|е|у|ом)?|сентябр(?:ь|я|е|ю|ем)|"
+    r"октябр(?:ь|я|е|ю|ем)|ноябр(?:ь|я|е|ю|ем)|декабр(?:ь|я|е|ю|ем)"
+)
+
+
+def _month_word(word):
+    return _MONTH_NAME.fullmatch(word or "") is not None
+
+
+def _calendar_day(token):
+    return bool(re.fullmatch(r"\d{1,2}", token or "")) and 1 <= int(token) <= 31
+
+
+def _word_after(text):
+    found = re.match(r"\s*([a-zа-яё]+)", _case(text))
+    return found.group(1) if found else ""
+
+
+def _word_before(text):
+    found = re.search(r"([a-zа-яё]+)\s*$", _case(text))
+    return found.group(1) if found else ""
+
+
+def _numeric_date(text, start, end):
+    # «01.01.2019» is one date. The digit scan otherwise keeps 01 and 2019,
+    # and either piece hides the value written next to the measurement.
+    token = text[start:end]
+    before = text[:start]
+    after = text[end:]
+    if re.fullmatch(r"(?:19|20)\d{2}", token) and re.search(r"(?<!\d)\d{1,2}\.\d{1,2}\.$", before):
+        return True
+    if re.fullmatch(r"\d{1,2}", token) and re.search(r"(?<!\d)\d{1,2}\.$", before) and re.match(
+        r"\.(?:19|20)\d{2}(?!\d)", after
+    ):
+        return True
+    return bool(re.fullmatch(r"\d{1,2}", token) and re.match(r"\.\d{1,2}\.(?:19|20)\d{2}(?!\d)", after))
+
+
 def _date_number(text, start, end):
     # «с 2019 года», «в 2019 году» and «до 2019» name a date. That year is not
     # the reading, so «давление с 2019 года составляет 6» is давление 6, and
     # «с 2019 года давление составляет 6» is not давление 2019. «2019 бар» and
     # «от 2000 до 2019 бар» are readings: a unit or a range keeps the number.
+    # «с 1 января 2019 года составляет 6» is the same date. The day is not
+    # давление 1, and it must not hide 6. «в январе 2019» and «01.01.2019»
+    # are not readings either. «1 мм», «1 бар» and «от 1 до 6 бар» still are.
     token = text[start:end]
     after = text[end:]
     before = text[:start]
     year = bool(re.fullmatch(r"(?:19|20)\d{2}", token))
     if year and re.match(r"\s*(?:года|году|годом|год|г\.?)(?![0-9a-zа-яё])", after, re.IGNORECASE):
         return True
+    if _numeric_date(text, start, end):
+        return True
     if re.match(
         r"\s*(?:бар|мпа|кпа|атм|мм|см|дм|кг|гц|квт|мвт|мин|сек|час|шт|мл|вт|па|м|л|%)(?![0-9a-zа-яё])",
         _case(after),
     ):
         return False
+    if _calendar_day(token) and _month_word(_word_after(after)):
+        return True
+    if _calendar_day(token):
+        later = re.match(r"\s*(?:по|до)\s+(\d{1,2})\s+([a-zа-яё]+)", _case(after))
+        if later and _calendar_day(later.group(1)) and _month_word(later.group(2)):
+            return True
     if not year:
         return False
     if re.search(r"(?<![0-9a-zа-яё])от\s*$", before, re.IGNORECASE) and re.match(
@@ -819,6 +872,8 @@ def _date_number(text, start, end):
         r"(?<![0-9a-zа-яё])от\s+\d", before, re.IGNORECASE
     ):
         return False
+    if _month_word(_word_before(before)):
+        return True
     return re.search(r"(?<![0-9a-zа-яё])(?:в|во|с|со|до|от|к|ко|по)\s*$", before, re.IGNORECASE) is not None
 
 
