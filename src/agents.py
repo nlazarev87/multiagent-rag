@@ -340,20 +340,73 @@ def _plain_number(text):
     )
 
 
+# Verbs and adverbs that sit next to any measurement. They are not its name.
+_LINKS = {
+    "равно", "равна", "равен", "равны", "равняется",
+    "составляет", "составляют", "имеет", "имеют",
+    "около", "примерно", "порядка",
+    "достигает", "достигают", "превышает", "превышают",
+    "соответствует", "соответствуют",
+    "держится", "держатся", "находится", "находятся",
+}
+_KINDS = ("номер", "давлен", "темпера", "частот", "масс", "подач", "мощнос", "диамет", "расход", "напор", "объем", "плотнос", "вязкост", "скорост", "количес")
+_BRIDGES = ("уров", "значен", "показател", "величин")
+
+
+def _word_at(span, start):
+    found = re.match(r"[a-zа-яё]+", span[start:])
+    return found.group(0) if found else ""
+
+
+def _kind_word(word):
+    return any(word.startswith(kind) for kind in _KINDS)
+
+
+def _kind_noun(word):
+    # «температура» names the value; «температурных» only modifies another noun.
+    if not _kind_word(word):
+        return False
+    return re.search(
+        r"н(?:ый|ий|ой|ая|ое|ее|ые|ого|его|ому|ему|ым|им|ом|ем|ую|юю|ых|их|ыми|ими)$",
+        word,
+    ) is None
+
+
+def _kind_stem(stem):
+    return any(kind.startswith(stem) or stem.startswith(kind) for kind in _KINDS)
+
+
+def _bridge_word(word):
+    return any(word.startswith(bridge) for bridge in _BRIDGES)
+
+
+def _restates_earlier_kind(span, start, stem):
+    # «давление держится на уровне 80»: «уровне» repeats давление. It does not
+    # name a new measurement, so it must not confirm температура 80.
+    # «при температуре 20 уровень 8» is different: 20 already took температура.
+    for found in reversed(list(re.finditer(r"[a-zа-яё]{5,}", span[:start]))):
+        word = found.group(0)
+        if word in _LINKS or word.startswith(stem):
+            continue
+        if not _kind_word(word):
+            return False
+        return _plain_number(span[found.end():start]) is None
+    return False
+
+
 def _measure_label(words, stem):
     # The nearest name of a number. A genitive such as «контура» is not a
     # different measurement; «номер», «массой» and «температура» are.
-    # «на уровне» restates the attribute already named.
-    links = {"равно", "равна", "равен", "равны", "составляет", "составляют", "имеет", "имеют", "около", "примерно", "порядка"}
-    kinds = ("номер", "давлен", "темпера", "частот", "масс", "подач", "мощнос", "диамет", "расход", "напор", "объем", "плотнос", "вязкост", "скорост", "количес")
-    bridges = ("уров", "значен", "показател", "величин")
-    names = [word for word in words if word not in links]
+    # «на уровне» restates the name before it: «температура на уровне».
+    names = [word for word in words if word not in _LINKS]
+    while names and _bridge_word(names[-1]):
+        names.pop()
     if not names or names[-1].startswith(stem):
         return False
-    label = names[-1]
-    if any(label.startswith(bridge) for bridge in bridges):
-        return False
-    return any(label.startswith(kind) for kind in kinds)
+    if _kind_word(names[-1]):
+        return True
+    # «рабочая температура масла»: масла is a genitive, температура still names 80.
+    return len(names) >= 2 and _kind_noun(names[-2]) and not names[-2].startswith(stem)
 
 
 def _other_label(span, number_start, stem_at):
@@ -364,18 +417,17 @@ def _other_label(span, number_start, stem_at):
     # that follows: «6 бар — рабочее давление». «от 6 до 10» is not this case:
     # both numbers follow the attribute.
     # These sit between a name and its number. They are not another measurement.
-    links = {"равно", "равна", "равен", "равны", "составляет", "составляют", "имеет", "имеют", "около", "примерно", "порядка"}
     tail = span[stem_at.end():]
     if re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", tail) is None:
         return False
     stem = stem_at.group(0)
     labels = re.findall(r"[a-zа-яё]{5,}", span[:number_start])
-    while labels and labels[-1] in links:
+    while labels and labels[-1] in _LINKS:
         labels.pop()
     if labels and not labels[-1].startswith(stem):
         return True
     middle = re.sub(r"[a-zа-яё]+\s*$", "", span[number_start:stem_at.start()])
-    return any(word not in links for word in re.findall(r"[a-zа-яё]{5,}", middle))
+    return any(word not in _LINKS for word in re.findall(r"[a-zа-яё]{5,}", middle))
 
 
 def _keeps(span, stem, token):
@@ -383,10 +435,19 @@ def _keeps(span, stem, token):
     # sees both numbers. 80 belongs to давление only when no other value with its
     # own label sits between them. «от 6 до 10» has no such label. A value that
     # stands before the attribute is kept only when it is not someone else's.
+    # «рабочая температура: 80» shares «рабоч» with «рабочее давление», and
+    # «температура составляет 80» shares the verb. Those words do not name 80.
+    # «давление при температуре составляет 6» still keeps 6, because давление
+    # itself is the measurement and 6 is its only value.
     stems = list(re.finditer(rf"(?<![0-9a-zа-я]){re.escape(stem)}", span))
     numbers = _hits(span, token)
     for number in numbers:
         for found in stems:
+            word = _word_at(span, found.start())
+            if word in _LINKS:
+                continue
+            if _bridge_word(word) and _restates_earlier_kind(span, found.start(), stem):
+                continue
             if found.end() <= number.start():
                 left = found.end()
                 if 0 < left < number.start() and span[left - 1].isalpha() and span[left].isalpha():
@@ -396,7 +457,9 @@ def _keeps(span, stem, token):
                 # «насос номер 6 ... давление 8» and «6 бар — давление и
                 # температура 80». The number's own name is another measurement.
                 names = re.findall(r"[a-zа-яё]{5,}", middle)
-                if _measure_label(names, stem) and (_plain_number(span[number.end():]) or _plain_number(span[:found.start()])):
+                if _measure_label(names, stem) and (
+                    not _kind_stem(stem) or _plain_number(span[number.end():]) or _plain_number(span[:found.start()])
+                ):
                     continue
             elif number.end() <= found.start():
                 if _other_label(span, number.start(), found):

@@ -239,6 +239,56 @@ def test_check_rejects_a_measurement_written_before_the_attribute():
     assert agents.check_agent("Рабочее давление равно 8 бар [1].", [level])["status"] == agents.CONFIRMED
 
 
+def test_check_rejects_a_measurement_sharing_only_an_adjective_or_a_verb():
+    heated = {"text": "Насос > Режим\nРабочая температура: 80 градусов.", "document_name": "pump.md"}
+    stated = {"text": "Насос > Режим\nРабочая температура равна 80 градусов.", "document_name": "pump.md"}
+    oil = {"text": "Насос > Режим\nРабочая температура масла равна 80 градусов.", "document_name": "pump.md"}
+    maximal = {"text": "Насос > Режим\nМаксимальная температура равна 80 градусов.", "document_name": "pump.md"}
+    nominal = {"text": "Насос > Режим\nНоминальная температура: 80 градусов.", "document_name": "pump.md"}
+    critical = {"text": "Насос > Режим\nКритическая температура равна 80 градусов.", "document_name": "pump.md"}
+    verb = {"text": "Насос > Режим\nТемпература составляет 80 градусов.", "document_name": "pump.md"}
+    about = {"text": "Насос > Режим\nТемпература примерно 80 градусов.", "document_name": "pump.md"}
+    reaches = {"text": "Насос > Режим\nТемпература достигает 80 градусов.", "document_name": "pump.md"}
+    equals = {"text": "Насос > Режим\nТемпература равняется 80 градусов.", "document_name": "pump.md"}
+    level = {"text": "Насос > Режим\nДавление держится на уровне 80 бар.", "document_name": "pump.md"}
+    value = {"text": "Насос > Режим\nТемпература имеет значение 80 градусов.", "document_name": "pump.md"}
+    indicator = {"text": "Насос > Режим\nПоказатель температуры составляет 80 градусов.", "document_name": "pump.md"}
+    alongside = {"text": "Насос > Режим\nРабочее давление при температуре составляет 6 бар.", "document_name": "pump.md"}
+    held = {"text": "Насос > Режим\nРабочее давление держится на уровне 8 бар.", "document_name": "pump.md"}
+    plain = {"text": "Насос > Режим\nУровень: 8.", "document_name": "pump.md"}
+    hours = {"text": "Рабочее время температурных испытаний составляет 6 часов.", "document_name": "pump.md"}
+    both = {"text": "Насос > Режим\nПри температуре 20 уровень равен 8.", "document_name": "pump.md"}
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [heated])["missing"] == ["80"]
+    assert agents.check_agent("Рабочая температура равна 80 градусов [1].", [heated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [stated])["missing"] == ["80"]
+    assert agents.check_agent("Рабочая температура равна 80 градусов [1].", [stated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [oil])["missing"] == ["80"]
+    assert agents.check_agent("Рабочая температура масла равна 80 градусов [1].", [oil])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное давление равно 80 бар [1].", [maximal])["missing"] == ["80"]
+    assert agents.check_agent("Максимальная температура равна 80 градусов [1].", [maximal])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Номинальное давление равно 80 бар [1].", [nominal])["missing"] == ["80"]
+    assert agents.check_agent("Критическое давление равно 80 бар [1].", [critical])["missing"] == ["80"]
+    assert agents.check_agent("Критическая температура равна 80 градусов [1].", [critical])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление составляет 80 бар [1].", [verb])["missing"] == ["80"]
+    assert agents.check_agent("Температура составляет 80 градусов [1].", [verb])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление примерно 80 бар [1].", [about])["missing"] == ["80"]
+    assert agents.check_agent("Давление достигает 80 бар [1].", [reaches])["missing"] == ["80"]
+    assert agents.check_agent("Температура достигает 80 градусов [1].", [reaches])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равняется 80 бар [1].", [equals])["missing"] == ["80"]
+    assert agents.check_agent("Температура держится на уровне 80 градусов [1].", [level])["missing"] == ["80"]
+    assert agents.check_agent("Давление держится на уровне 80 бар [1].", [level])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление имеет значение 80 бар [1].", [value])["missing"] == ["80"]
+    assert agents.check_agent("Температура имеет значение 80 градусов [1].", [value])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Показатель давления составляет 80 бар [1].", [indicator])["missing"] == ["80"]
+    assert agents.check_agent("Показатель температуры составляет 80 градусов [1].", [indicator])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление при температуре составляет 6 бар [1].", [alongside])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление держится на уровне 8 бар [1].", [held])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Уровень равен 8 [1].", [plain])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее время температурных испытаний составляет 6 часов [1].", [hours])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Уровень равен 8 [1].", [both])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура равна 20 градусов [1].", [both])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}
