@@ -288,7 +288,9 @@ def _table_pieces(block, section):
     if len(block["rows"]) > 1 and sum(count_tokens(line) for line in lines) > TOKENS:
         label, values = _distinct_column(block)
         if values:
-            overview = _cut(f"Разных значений в столбце «{label}»: {len(values)}. Список: {', '.join(values)}.".split(), room)[0]
+            # The count is the full column, so the list must stay complete. Cutting it to the
+            # chunk budget drops later values while the line still claims to be exhaustive.
+            overview = f"Разных значений в столбце «{label}»: {len(values)}. Список: {', '.join(values)}."
             pieces.insert(0, ("overview", f"{head_text}\n{overview}" if head_text else overview, head_text, f"{title}\n{overview}" if title else overview))
     return pieces
 

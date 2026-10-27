@@ -919,6 +919,46 @@ def _verdict(status, missing=(), feedback="", sources=()):
     return {"status": status, "missing": list(missing), "feedback": feedback, "sources": list(sources)}
 
 
+def _predicate(query):
+    tokens = re.findall(r"[а-яё]+", _flat(query))
+    if "ли" not in tokens:
+        return ""
+    index = tokens.index("ли")
+    return tokens[index - 1] if index else ""
+
+
+def _clause(text, start):
+    marks = ".!?,;\n"
+    left = max(text.rfind(mark, 0, start) for mark in marks)
+    right = len(text)
+    for mark in marks:
+        pos = text.find(mark, start)
+        if pos != -1:
+            right = min(right, pos)
+    return text[left + 1:right]
+
+
+def _denied(query, flats):
+    stems = []
+    for word in _words(query):
+        stem = word[:5]
+        if stem not in stems:
+            stems.append(stem)
+    if not stems:
+        return False
+    predicate = _predicate(query)[:5]
+    subjects = [stem for stem in stems if stem != predicate]
+    text = "\n".join(flats)
+    cues = [rf"(?<![0-9a-zа-я])не {re.escape(stem)}" for stem in stems]
+    cues.append(r"(?<![0-9a-zа-я])(?:нет|нельзя)(?![0-9a-zа-я])")
+    for pattern in cues:
+        for match in re.finditer(pattern, text):
+            clause = _clause(text, match.start())
+            if not subjects or any(re.search(rf"(?<![0-9a-zа-я]){re.escape(stem)}", clause) for stem in subjects):
+                return True
+    return False
+
+
 def _inverted(query, answer, flats):
     if "ли" not in re.findall(r"[а-яё]+", query.lower()):
         return False
@@ -927,22 +967,18 @@ def _inverted(query, answer, flats):
     says_no = start.startswith("нет")
     if not says_yes and not says_no:
         return False
-    frag = " ".join(flats)
-    negated = False
-    for word in _words(query):
-        stem = word[:5]
-        if re.search(rf"(?<![0-9a-zа-я])не {re.escape(stem)}", frag):
-            negated = True
-            break
-    if negated and says_yes:
+    denied = _denied(query, flats)
+    if denied and says_yes:
         return True
-    if (not negated) and says_no:
+    if (not denied) and says_no:
         return True
     return False
 
 
 def _list_gap(query, answer, flats, cited=None):
-    if not _list_ask(query):
+    wants_count = _count_ask(query)
+    wants_items = _list_ask(query) and not wants_count
+    if not wants_items and not wants_count:
         return False
     indices = cited or list(range(1, len(flats) + 1))
     body = _flat(re.sub(r"\[[\d,\s]+\]", " ", answer))
@@ -956,9 +992,11 @@ def _list_gap(query, answer, flats, cited=None):
         saw = True
         items = [part.strip(" .;") for part in re.split(r",| и ", listed.group(1)) if part.strip(" .;")] if listed else []
         count = numbered.group(1) if numbered else None
-        if count and count in body:
+        items_hit = bool(items and all(_flat(item) in body for item in items))
+        count_hit = bool(count and re.search(rf"(?<!\d){re.escape(count)}(?!\d)", body))
+        if wants_items and items_hit:
             return False
-        if items and all(_flat(item) in body for item in items):
+        if wants_count and (count_hit or items_hit):
             return False
     return saw
 
