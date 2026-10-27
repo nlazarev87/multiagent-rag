@@ -371,6 +371,45 @@ def test_check_rejects_a_number_owned_by_another_noun():
     assert agents.check_agent("Высота проема равна 50 мм [1].", [opening])["status"] == agents.CONFIRMED
 
 
+def test_check_rejects_a_measurement_taken_from_its_condition():
+    heated = {"text": "Насос > Режим\nРабочее давление при температуре 80 градусов.", "document_name": "pump.md"}
+    pressed = {"text": "Насос > Режим\nТемпература при давлении 6 бар.", "document_name": "pump.md"}
+    motor = {"text": "Мощность при частоте вращения 50 Гц.", "document_name": "pump.md"}
+    pumped = {"text": "Напор при подаче 12 м3/ч.", "document_name": "pump.md"}
+    viscous = {"text": "Вязкость при температуре 80.", "document_name": "pump.md"}
+    celsius = {"text": "Максимальное давление при температуре 80 °C.", "document_name": "pump.md"}
+    both = {"text": "Рабочее давление при температуре 80 градусов составляет 6 бар.", "document_name": "pump.md"}
+    rated = {"text": "Рабочее давление при температуре 80 °C равно 6 бар.", "document_name": "pump.md"}
+    stated = {"text": "Температура при давлении 6 бар составляет 80 градусов.", "document_name": "pump.md"}
+    aside = {"text": "Рабочее давление при температуре составляет 6 бар.", "document_name": "pump.md"}
+    outlet = {"text": "Рабочее давление на выходе: 6 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [heated])["missing"] == ["80"]
+    assert agents.check_agent("Температура равна 80 градусов [1].", [heated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура равна 6 градусов [1].", [pressed])["missing"] == ["6"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [pressed])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Мощность равна 50 кВт [1].", [motor])["missing"] == ["50"]
+    assert agents.check_agent("Частота вращения равна 50 Гц [1].", [motor])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Напор равен 12 м [1].", [pumped])["missing"] == ["12"]
+    assert agents.check_agent("Подача равна 12 м3/ч [1].", [pumped])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Вязкость равна 80 [1].", [viscous])["missing"] == ["80"]
+    assert agents.check_agent("Температура равна 80 градусов [1].", [viscous])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное давление равно 80 бар [1].", [celsius])["missing"] == ["80"]
+    assert agents.check_agent("Температура равна 80 °C [1].", [celsius])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [both])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление составляет 6 бар [1].", [both])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура равна 80 градусов [1].", [both])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура составляет 6 градусов [1].", [both])["missing"] == ["6"]
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [rated])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [rated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура равна 6 градусов [1].", [stated])["missing"] == ["6"]
+    assert agents.check_agent("Температура составляет 80 градусов [1].", [stated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 6 бар [1].", [stated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление составляет 80 бар [1].", [stated])["missing"] == ["80"]
+    assert agents.check_agent("Рабочее давление составляет 6 бар [1].", [aside])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура составляет 6 градусов [1].", [aside])["missing"] == ["6"]
+    assert agents.check_agent("Рабочее давление на выходе равно 6 бар [1].", [outlet])["status"] == agents.CONFIRMED
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}

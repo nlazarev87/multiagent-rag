@@ -618,7 +618,21 @@ def _foreign_phrase(span, number_start, stem):
         return False
     if _matches(owner, stem):
         return False
-    return any(_matches(word, stem) for word in nouns) or any(_matches(word, stem) for word in dropped)
+    if any(_matches(word, stem) for word in nouns) or any(_matches(word, stem) for word in dropped):
+        return True
+    # «давление при температуре 80»: температуре owns 80, so the head before
+    # «при» does not. «давление на выходе: 6» names no other measurement.
+    return _kind_noun(owner)
+
+
+def _stated_condition(middle):
+    # «при температуре 80 градусов составляет» only qualifies the value that
+    # follows. The number inside it is not a second value of the head.
+    number = r"\d{1,3}(?: \d{3})+(?:[,.]\d+)?|\d+(?:[,.]\d+)?"
+    links = "|".join(re.escape(word) for word in sorted(_LINKS, key=len, reverse=True))
+    unit = r"(?:\s+[^\s]*[a-zа-яё°%][^\s]*){0,2}"
+    pattern = rf"\s*при(?:\s+[a-zа-яё]{{3,}}){{1,3}}\s+(?:{number}){unit}\s+(?:{links})\s*[:;—–\-]*\s*"
+    return re.fullmatch(pattern, middle or "") is not None
 
 
 def _keeps(span, stem, token):
@@ -632,8 +646,9 @@ def _keeps(span, stem, token):
     # stands before the attribute is kept only when it is not someone else's.
     # «рабочая температура: 80» shares «рабоч» with «рабочее давление», and
     # «температура составляет 80» shares the verb. Those words do not name 80.
-    # «давление при температуре составляет 6» still keeps 6, because давление
-    # itself is the measurement and 6 is its only value. «ток», «ход», «тип»
+    # «давление при температуре составляет 6» still keeps 6, and so does
+    # «давление при температуре 80 градусов составляет 6»: 80 belongs to
+    # температуре, and 6 is the only value of давление. «ток», «ход», «тип»
     # and «кпд» name the other number even though they are shorter than five
     # letters: «давление: 6 бар и ток: 80» is not давление 80.
     stems = list(re.finditer(rf"(?<![0-9a-zа-я]){re.escape(stem)}", span))
@@ -652,15 +667,18 @@ def _keeps(span, stem, token):
                 middle = span[left:number.start()]
                 # «насос номер 6 ... давление 8» and «6 бар — давление и
                 # температура 80». The number's own name is another measurement.
-                names = re.findall(r"[a-zа-яё]{5,}", middle)
-                if _measure_label(names, stem) and (
-                    not _kind_stem(stem) or _plain_number(span[number.end():]) or _plain_number(span[:found.start()])
-                ):
-                    continue
-                if _other_name(span, number.start(), stem) and (
-                    re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", middle) or _split_gap(middle)
-                ):
-                    continue
+                # «при температуре 80 градусов составляет» is not: it qualifies
+                # the value that follows.
+                if not _stated_condition(middle):
+                    names = re.findall(r"[a-zа-яё]{5,}", middle)
+                    if _measure_label(names, stem) and (
+                        not _kind_stem(stem) or _plain_number(span[number.end():]) or _plain_number(span[:found.start()])
+                    ):
+                        continue
+                    if _other_name(span, number.start(), stem) and (
+                        re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", middle) or _split_gap(middle)
+                    ):
+                        continue
             elif number.end() <= found.start():
                 if _other_label(span, number.start(), found):
                     continue
@@ -669,7 +687,7 @@ def _keeps(span, stem, token):
                 continue
             other = re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", middle)
             label = re.search(r"[a-zа-яё]{5,}", middle)
-            if other and label:
+            if other and label and not (found.end() <= number.start() and _stated_condition(middle)):
                 continue
             # The stem has to be the noun that owns the number. A shared object
             # («масла», «насоса», «патрубка»), a generic head («класс», «степень»,
