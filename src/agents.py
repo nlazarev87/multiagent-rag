@@ -223,6 +223,41 @@ def _specific(query):
     return found
 
 
+def _case(text):
+    return (text or "").lower().replace("ё", "е")
+
+
+def _span(text, start):
+    # The next line's number is a different fact. A fixed 80-character window
+    # still reaches it after newlines are flattened, and then "номер: 4" confirms
+    # "давление равно 4".
+    def cuts(index):
+        char = text[index]
+        if char not in ".!?,;\n":
+            return False
+        decimal = char == "," and 0 < index < len(text) - 1 and text[index - 1].isdigit() and text[index + 1].isdigit()
+        return not decimal
+
+    left = 0
+    for index in range(start - 1, -1, -1):
+        if cuts(index):
+            left = index + 1
+            break
+    right = len(text)
+    for index in range(start, len(text)):
+        if cuts(index):
+            right = index
+            break
+    return text[left:right]
+
+
+def _from_question(fact, asked):
+    token = fact[1]
+    if any(ch.isdigit() for ch in token) and not any(ch.isalpha() for ch in token):
+        return False
+    return _grounded(fact, asked)
+
+
 def _grounded(fact, text):
     kind, token = fact[0], _flat(fact[1])
     if kind == "stem":
@@ -231,7 +266,7 @@ def _grounded(fact, text):
     if kind == "exact" or not places:
         return bool(places)
     for place in places:
-        nearby = text[max(0, place - 80):place + 80]
+        nearby = _span(text, place)
         if any(re.search(rf"(?<![0-9a-zа-я]){re.escape(stem)}", nearby) for stem in fact[2]):
             return True
     return False
@@ -304,6 +339,7 @@ def check_agent(answer, chunks, query="", known=None):
     if not chunks or not text or absent or _flat(NO_ANSWER).rstrip(".") in _flat(text):
         return _verdict(MISSING)
     flats = [_flat(chunk["text"]) for chunk in chunks]
+    bodies = [_case(chunk["text"]) for chunk in chunks]
     asked = " ".join(word for word in _flat(query).replace("?", " ").split() if known(word.strip(".,:;«»()")))
     if _copied(text, flats):
         return _verdict(UNCONFIRMED, feedback=COPIED)
@@ -323,9 +359,9 @@ def check_agent(answer, chunks, query="", known=None):
     missing = []
     facts = _facts(text)
     for fact in facts:
-        if _grounded(fact, asked) or any(_grounded(fact, flats[number - 1]) for number in used):
+        if _from_question(fact, asked) or any(_grounded(fact, bodies[number - 1]) for number in used):
             continue
-        holders = [number for number in range(1, len(chunks) + 1) if _grounded(fact, flats[number - 1])]
+        holders = [number for number in range(1, len(chunks) + 1) if _grounded(fact, bodies[number - 1])]
         if holders:
             used.append(holders[0])
         elif fact[1] not in missing:
@@ -334,10 +370,10 @@ def check_agent(answer, chunks, query="", known=None):
         feedback = "В прошлом ответе были данные, которых нет во фрагментах: " + ", ".join(missing) + ". Ответь заново только по фрагментам."
         return _verdict(UNCONFIRMED, missing, feedback)
     words = [("stem", word) for word in _words(re.sub(r"\[[\d,\s]+\]", " ", text)) if len(word) >= 5]
-    scores = [sum(_grounded(word, flat) for word in words) for flat in flats]
+    scores = [sum(_grounded(word, body) for word in words) for body in bodies]
     if not any(scores):
         return _verdict(UNCONFIRMED, feedback=RETRY)
-    used = [number for number in used if scores[number - 1] or any(_grounded(fact, flats[number - 1]) for fact in facts)]
+    used = [number for number in used if scores[number - 1] or any(_grounded(fact, bodies[number - 1]) for fact in facts)]
     if not used:
         best = max(scores)
         used = [number for number, score in enumerate(scores, 1) if score == best][:2]

@@ -64,6 +64,24 @@ def test_check_rejects_number_missing_from_fragments():
     assert "2021" in verdict["feedback"]
 
 
+def test_check_rejects_short_number_from_another_line():
+    chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nНомер цеха: 4", "document_name": "pump.md"}
+    decimal = {"text": "Насос > Характеристики\nРабочее давление: 6,5 бар\nНомер цеха: 4", "document_name": "pump.md"}
+    wrong = agents.check_agent("Рабочее давление насоса равно 4 бар [1].", [chunk])
+    assert wrong["status"] == agents.UNCONFIRMED
+    assert wrong["missing"] == ["4"]
+    assert agents.check_agent("Рабочее давление насоса равно 6 бар [1].", [chunk])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление насоса равно 6,5 бар [1].", [decimal])["status"] == agents.CONFIRMED
+    asked = agents.check_agent(
+        "Да, рабочее давление насоса равно 10 бар [1].",
+        [chunk],
+        "Верно ли, что давление равно 10 бар?",
+        known=lambda term: True,
+    )
+    assert asked["status"] == agents.UNCONFIRMED
+    assert "10" in asked["missing"]
+
+
 def test_check_fixes_wrong_citation():
     verdict = agents.check_agent("Насос выпущен в 2019 году [2].", [PUMP, SHOP])
     assert verdict["status"] == agents.CONFIRMED
