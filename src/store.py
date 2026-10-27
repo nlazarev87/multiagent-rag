@@ -5,6 +5,8 @@ import threading
 from collections import Counter
 from pathlib import Path
 
+from settings import runtime, where as route_where
+
 CHROMA = Path(os.environ.get("CHROMA_PATH", "data/chroma"))
 MODEL = Path(os.environ.get("EMBED_PATH", "data/models/multilingual-e5-small"))
 CANDIDATES = 30
@@ -13,7 +15,40 @@ RRF = 5
 K1 = 1.5
 B = 0.75
 calls = 0
+
+
+def _candidates():
+    return runtime().get("candidates", CANDIDATES)
+
+
+def _context():
+    return runtime().get("context", CONTEXT)
+
+
+def _rrf():
+    return runtime().get("rrf", RRF)
+
+
+def _meta_ok(meta):
+    extra = route_where()
+    if not extra:
+        return True
+    return all(meta.get(key) == value for key, value in extra.items())
+
+
+def _chroma_where(allowed):
+    clauses = [{key: value} for key, value in route_where().items()]
+    if allowed:
+        clauses.append({"document_name": {"$in": list(allowed)}})
+    if not clauses:
+        return None
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
+
+
 _model = None
+_client = None
 _collection = None
 _index = None
 _stemmers = {}
@@ -41,21 +76,30 @@ def _embed(texts):
 
 
 def collection():
-    global _collection
+    global _collection, _client
     if _collection is None:
         with _import_lock:
             if _collection is None:
                 import chromadb
-                client = chromadb.PersistentClient(path=str(CHROMA))
-                _collection = client.get_or_create_collection("fragments", metadata={"hnsw:space": "cosine"})
+                _client = chromadb.PersistentClient(path=str(CHROMA))
+                _collection = _client.get_or_create_collection("fragments", metadata={"hnsw:space": "cosine"})
     return _collection
 
 
 def reset():
-    global _collection, _index, calls
+    global _collection, _index, _client, calls
     _collection = None
+    system = getattr(_client, "_system", None) if _client is not None else None
+    if system is not None and hasattr(system, "stop"):
+        try:
+            system.stop()
+        except Exception:
+            pass
+    _client = None
     _index = None
     calls = 0
+    import gc
+    gc.collect()
 
 
 def _rows(col, **where):
@@ -100,6 +144,7 @@ def upsert_chunks(chunks):
                     "group": chunk.get("group", ""),
                     "head": chunk.get("head", ""),
                     "version": chunk.get("version", 0),
+                    **({"collection": chunk["collection"]} if chunk.get("collection") else {}),
                 } for chunk in batch],
             )
     _index = None
@@ -222,6 +267,8 @@ def _lexical(index, query, allowed):
     for number, count in enumerate(index["counts"]):
         if allowed and index["metas"][number]["document_name"] not in allowed:
             continue
+        if not _meta_ok(index["metas"][number]):
+            continue
         score = 0.0
         for term in terms:
             seen = count.get(term)
@@ -233,15 +280,14 @@ def _lexical(index, query, allowed):
         if score > 0:
             scored.append((score, number))
     scored.sort(key=lambda item: (-item[0], item[1]))
-    return [index["ids"][number] for _, number in scored[:CANDIDATES]]
+    return [index["ids"][number] for _, number in scored[:_candidates()]]
 
 
 def _dense(col, query, allowed, total):
-    where = {"document_name": {"$in": allowed}} if allowed else None
     found = col.query(
         query_embeddings=_embed(["query: " + query]),
-        n_results=min(CANDIDATES, total),
-        where=where,
+        n_results=min(_candidates(), total),
+        where=_chroma_where(allowed),
         include=["distances"],
     )
     return found["ids"][0] if found["ids"] else []
@@ -251,7 +297,7 @@ def _fuse(*rankings):
     scores = Counter()
     for ranking in rankings:
         for rank, key in enumerate(ranking):
-            scores[key] += 1 / (RRF + rank + 1)
+            scores[key] += 1 / (_rrf() + rank + 1)
     return [key for key, _ in scores.most_common()]
 
 
@@ -291,7 +337,7 @@ def _render(index, numbers):
             for neighbour in (place - distance, place + distance):
                 if 0 <= neighbour < len(members) and members[neighbour] not in chosen:
                     cost = count_tokens(_body(index, members[neighbour]))
-                    if size + cost <= CONTEXT:
+                    if size + cost <= _context():
                         chosen.add(members[neighbour])
                         size += cost
     kinds = {number: index["metas"][number].get("kind") for number in members}
@@ -355,5 +401,8 @@ def search_chunks(clear_query, limit=4, document_names=None):
         if present:
             allowed = present
     dense = _dense(col, _focus(clear_query, allowed), allowed, total)
-    ranked = _fuse(_lexical(_index, clear_query, allowed), dense)
+    ranked = [
+        key for key in _fuse(_lexical(_index, clear_query, allowed), dense)
+        if _meta_ok(_index["metas"][_index["position"][key]])
+    ]
     return _contexts(_index, ranked, limit)

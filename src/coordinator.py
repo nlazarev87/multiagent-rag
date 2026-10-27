@@ -2,9 +2,14 @@ from langgraph.graph import END, StateGraph
 
 from agents import MISSING, NO_ANSWER, UNCONFIRMED, _dependent, answer_agent, check_agent, clarify_agent, search_agent, select_agent
 from dialog import add_turn, get_dialog
+from settings import runtime
 from store import known
 
-ATTEMPTS = 2
+ATTEMPTS = runtime().get("attempts", 2)
+
+
+def _attempts():
+    return runtime().get("attempts", ATTEMPTS)
 
 
 def run(query, dialog_id):
@@ -36,7 +41,7 @@ def run(query, dialog_id):
         return state
 
     def route(state):
-        if state["status"] != UNCONFIRMED or state["attempts"] >= ATTEMPTS:
+        if state["status"] != UNCONFIRMED or state["attempts"] >= _attempts():
             return "finish"
         feedback = state.get("feedback") or ""
         if "Разных значений" in feedback or "документ" in feedback.lower():

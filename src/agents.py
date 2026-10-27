@@ -1,54 +1,34 @@
 import re
 
 from llm import complete, count_tokens
+from settings import fewshot, lexicon, prompts, runtime
 from store import search_chunks
 
 NO_ANSWER = "В документах нет ответа."
 CONFIRMED = "подтверждён"
 UNCONFIRMED = "не подтверждён"
 MISSING = "нет ответа"
+SYSTEM = TASK = YES_NO = RETRY = COPIED = INVERT = LIST_GAP = ""
 PROMPT_TOKENS = 1500
-SYSTEM = (
-    "Отвечай на русском только по фрагментам ниже. "
-    "После каждого факта ставь номер фрагмента, например [2]. "
-    "Если фрагменты противоречат друг другу, скажи об этом. "
-    "Названия, номера и коды переписывай из фрагментов без изменений. "
-    "Строка «Разных значений в столбце … Список: …» перечисляет все значения столбца таблицы: "
-    "назови число или перечисли весь список, когда нужно перечислить или посчитать. "
-    "Если во фрагменте рядом с тем же сказуемым, что и в вопросе, стоит «не» или «нет», начни ответ со слова «Нет». "
-    "Если ответа во фрагментах нет, напиши: В документах нет ответа."
-)
-TASK = (
-    "Ответь на вопрос одним-тремя полными предложениями обычным текстом и после каждого факта поставь номер фрагмента в квадратных скобках. "
-    "Если нужно перечислить, перечисли через запятую в одном предложении."
-)
-YES_NO = "Начни ответ со слова «Да» или «Нет»."
-RETRY = "Прошлый ответ не содержал фактов из фрагментов. Ответь заново полным предложением по фрагментам."
-COPIED = "Прошлый ответ переписывал фрагменты или повторялся. Ответь кратко своими словами в одном-трёх предложениях."
-INVERT = "Вопрос с «ли»: начни с «Да» или «Нет» по отрицанию у того же сказуемого во фрагменте."
-LIST_GAP = "В прошлом ответе не было полного списка или числа из строки «Разных значений». Перечисли все элементы или назови число."
 SPAN = 30
-_EXAMPLES = (
-    (
-        "Когда открыта библиотека?",
-        ["Библиотека > Режим работы\nЧасы работы: с 9 до 18; Выходной: понедельник", "Библиотека > Фонд\nВ фонде 12 000 книг."],
-        "Библиотека открыта с 9 до 18 часов, выходной день — понедельник [1].",
-    ),
-    (
-        "Какие залы есть в библиотеке?",
-        [
-            "Библиотека > Залы\nТаблица 1 – Залы библиотеки\nЗал | Количество мест\nЧитальный: 40\nДетский: 25\nАрхивный: 10\n"
-            "Разных значений в столбце «Зал»: 3. Список: Читальный, Детский, Архивный.",
-            "Библиотека > Правила\nВ залах соблюдается тишина.",
-        ],
-        "В библиотеке три зала: Читальный, Детский и Архивный [1].",
-    ),
-    (
-        "Нужно ли записываться заранее?",
-        ["Библиотека > Правила\nЗапись заранее не нужна. Вход свободный."],
-        "Нет, запись заранее не нужна [1].",
-    ),
-)
+EXAMPLES = []
+
+
+def _bind_prompts():
+    data = prompts()
+    global SYSTEM, TASK, YES_NO, RETRY, COPIED, INVERT, LIST_GAP, PROMPT_TOKENS, SPAN
+    SYSTEM = data.get("system") or SYSTEM
+    TASK = data.get("task") or TASK
+    YES_NO = data.get("yes_no") or YES_NO
+    RETRY = data.get("retry") or RETRY
+    COPIED = data.get("copied") or COPIED
+    INVERT = data.get("invert") or INVERT
+    LIST_GAP = data.get("list_gap") or LIST_GAP
+    PROMPT_TOKENS = runtime().get("prompt_tokens", PROMPT_TOKENS)
+    SPAN = runtime().get("span", SPAN)
+
+
+_bind_prompts()
 _PRONOUNS = {"он", "она", "оно", "они", "его", "её", "ее", "их", "ему", "ей", "им", "него", "неё", "нее", "них", "это", "этот", "эта", "эти"}
 _TOKEN = re.compile(r"[0-9A-Za-zА-Яа-яЁё]+(?:[._/:\-][0-9A-Za-zА-Яа-яЁё]+)*")
 
@@ -125,9 +105,10 @@ def clarify_agent(query, work_turns):
 
 
 def search_agent(clear_query, document_names=None):
+    limit = runtime().get("search_limit", 4)
     if document_names:
-        return search_chunks(clear_query, 4, document_names)
-    return search_chunks(clear_query, 4)
+        return search_chunks(clear_query, limit, document_names)
+    return search_chunks(clear_query, limit)
 
 
 def _trim(text, budget, count):
@@ -164,7 +145,17 @@ def _example(query, fragments, reply):
     return "\n\n".join(head + parts + tail), reply
 
 
-EXAMPLES = [_example(*example) for example in _EXAMPLES]
+def _bind_examples():
+    global EXAMPLES
+    EXAMPLES = [_example(item["query"], item["fragments"], item["reply"]) for item in fewshot()]
+
+
+def reload_behavior():
+    _bind_prompts()
+    _bind_examples()
+
+
+_bind_examples()
 
 
 _OVERVIEW_LINE = re.compile(r"Разных значений в столбце «([^»]+)»: (\d+)\. Список: (.+)", re.IGNORECASE)
@@ -360,7 +351,7 @@ def _hits(text, token):
         )
     elif _pure_number(token):
         grouped = r"(?<!\d )" if re.fullmatch(r"\d{3}", token) else ""
-        # «Н-12», «9/299419» and «6:00» are one value. The digit scan otherwise
+        # «AB-99», «9/299419» and «6:00» are one value. The digit scan otherwise
         # keeps 12, 9, or 6, and that piece confirms the whole value.
         pattern = (
             rf"(?<![0-9a-zа-я_]){grouped}(?<!\d[,.])"
@@ -498,10 +489,32 @@ _LINKS = {
     "соответствует", "соответствуют",
     "держится", "держатся", "находится", "находятся",
 }
-_KINDS = (
-    "номер", "давлен", "темпера", "частот", "масс", "подач", "мощнос", "диамет", "расход", "напор",
-    "объем", "плотнос", "вязкост", "скорост", "количес", "длин", "ширин", "высот",
-)
+
+
+def _kinds():
+    return lexicon().get("kinds") or ()
+
+
+def _measures():
+    return lexicon().get("measures") or ()
+
+
+def _deltas():
+    return lexicon().get("deltas") or ()
+
+
+def _sizes():
+    return lexicon().get("sizes") or ()
+
+
+def _delta_endings():
+    return set(lexicon().get("delta_endings") or ())
+
+
+def _case_endings():
+    return set(lexicon().get("case_endings") or ())
+
+
 _BRIDGES = ("уров", "значен", "показател", "величин")
 # Prepositions, conjunctions and units. They stand next to a number without naming it.
 _GLUE = {
@@ -529,7 +542,7 @@ def _word_at(span, start):
 
 
 def _kind_word(word):
-    return any(word.startswith(kind) for kind in _KINDS)
+    return any(word.startswith(kind) for kind in _kinds())
 
 
 def _kind_noun(word):
@@ -542,30 +555,7 @@ def _kind_noun(word):
     ) is None
 
 
-# A condition after «при» can name its number with a word outside _KINDS.
-# «ходе» is «ход» and «угле» is «угол». «холод» is not «ход», «параметр» is not «пар».
-_MEASURES = ("ход", "ток", "вес", "пар", "тип", "кпд", "зазор", "угл", "напряж", "времен")
-# A difference, error, or swing of another measurement. «перепад давления» is not
-# the pressure, «допуск диаметра» is not the diameter, and «амплитуда хода» is
-# not the stroke. «падение» is «падени» plus «е»; «отклонений» keeps the final «й».
-_DELTAS = (
-    "перепад", "погрешност", "допуск", "отклонени", "потер", "падени", "пульсаци",
-    "амплитуд", "снижени", "разност", "неравномерност", "колебани", "градиент",
-)
-_DELTA_ENDINGS = {
-    "", "а", "я", "у", "ю", "е", "и", "ы", "о", "ь", "й",
-    "ом", "ем", "ой", "ою", "ей", "ею", "ью", "ов", "ев",
-    "ам", "ям", "ах", "ях", "ами", "ями",
-}
-# A condition after «при» can also name its number with a longer unlisted word.
-# «радиусе» is «радиус» and «площади» is «площадь». The ending has to be a case
-# ending: «площадке» is not «площадь», and «шагать» is not «шаг».
-_SIZES = ("радиус", "толщин", "ресурс", "производительност", "площад", "глубин", "емкост", "шаг", "срок")
-_CASE_ENDINGS = {
-    "", "а", "я", "у", "ю", "е", "и", "ы", "о", "ь",
-    "ом", "ем", "ой", "ою", "ей", "ею", "ью", "ов", "ев",
-    "ам", "ям", "ах", "ях", "ами", "ями",
-}
+# A condition after «при» can name its number with a word outside the kind list.
 
 
 def _brief(extra):
@@ -587,8 +577,8 @@ def _delta_word(word):
     # «допускается» and «потерять» are not «допуск» and «потеря».
     if not word:
         return False
-    for stem in _DELTAS:
-        if word.startswith(stem) and word[len(stem):] in _DELTA_ENDINGS:
+    for stem in _deltas():
+        if word.startswith(stem) and word[len(stem):] in _delta_endings():
             return True
     return False
 
@@ -596,8 +586,8 @@ def _delta_word(word):
 def _size_word(word):
     if not word:
         return False
-    for stem in _SIZES:
-        if word.startswith(stem) and word[len(stem):] in _CASE_ENDINGS:
+    for stem in _sizes():
+        if word.startswith(stem) and word[len(stem):] in _case_endings():
             return True
     return False
 
@@ -607,7 +597,7 @@ def _measure_word(word):
         return False
     if _fold(word) != word:
         return True
-    for stem in _MEASURES:
+    for stem in _measures():
         if stem in {"времен", "угл"}:
             continue
         if len(stem) >= 5:
@@ -628,7 +618,7 @@ def _measure_noun(word):
 
 
 def _kind_stem(stem):
-    return any(kind.startswith(stem) or stem.startswith(kind) for kind in _KINDS)
+    return any(kind.startswith(stem) or stem.startswith(kind) for kind in _kinds())
 
 
 def _bridge_word(word):
@@ -1064,19 +1054,19 @@ def _head_key(word):
     # «давлении» is «давлен», «ходе» is «ход», «радиусе» is «радиус».
     folded = _fold(word)
     if _kind_noun(word):
-        for kind in _KINDS:
+        for kind in _kinds():
             if folded.startswith(kind):
                 return kind
     if _measure_noun(word):
-        for stem in _MEASURES:
+        for stem in _measures():
             if _inflected(word, stem) or folded.startswith(stem):
                 return stem
     if _size_word(word):
-        for stem in _SIZES:
+        for stem in _sizes():
             if word.startswith(stem):
                 return stem
     if _delta_word(word):
-        for stem in _DELTAS:
+        for stem in _deltas():
             if word.startswith(stem):
                 return stem
     return ""
