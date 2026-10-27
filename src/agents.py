@@ -309,17 +309,104 @@ def answer_agent(query, clear_query, chunks, work_turns, feedback=None):
     return _with_cite(complete(SYSTEM, build_prompt(query, chunks, previous, feedback), examples=EXAMPLES), chunks)
 
 
+def _pure_number(token):
+    return bool(token) and any(ch.isdigit() for ch in token) and all(ch.isdigit() or ch in " ,." for ch in token)
+
+
+def _whole_number(text, start):
+    # «6,5» and «12 000» are one measurement. The token scan otherwise keeps
+    # 5 and 12, and either piece is enough to confirm the whole value.
+    found = re.match(r"\d{1,3}(?: \d{3})+(?:[,.]\d+)?|\d+(?:[,.]\d+)?", text[start:])
+    return found.group(0) if found else ""
+
+
+def _signs(text):
+    return (text or "").replace("\u2212", "-").replace("\u2013", "-")
+
+
+def _negated(text, start):
+    # «-12», «−12» and «минус 12» are one value. A hyphen between digits is a
+    # range: «6-10» still has both ends. A spaced dash is punctuation, not a
+    # sign: «давление - 6» and «давление – 6» still mean 6. The signed matcher
+    # already requires the hyphen to touch the digits, so a space must not
+    # swallow the bare number.
+    prefix = text[:start]
+    if re.search(r"(?<![0-9a-zа-яё])минус\s*$", prefix, re.IGNORECASE):
+        return True
+    if re.search(r"(?<!\d)\u2212\s?$", prefix):
+        return True
+    return re.search(r"(?<!\d)[-\u2013]$", prefix) is not None
+
+
+def _hits(text, token):
+    # Sign normalization is one character for one character, so match offsets
+    # still point at the original text. Negation has to see that original:
+    # a unicode minus is a sign, and a spaced en-dash is not.
+    raw = text or ""
+    text = _signs(raw)
+    token = _signs(token)
+    signed = token[1:].lstrip() if token.startswith("-") and _pure_number(token[1:].lstrip()) else ""
+    if signed:
+        # The magnitude alone is a different measurement. «минус 12» and «−12»
+        # are the same value as «-12».
+        pattern = (
+            rf"(?<![0-9a-zа-я_])(?:-|минус\s*)"
+            rf"{re.escape(signed)}"
+            rf"(?![0-9a-zа-я_])(?!,\d)(?!\.\d)(?! \d{{3}}(?!\d))"
+            rf"(?![\-/][a-zа-я])(?![:/]\d)"
+        )
+    elif _pure_number(token):
+        grouped = r"(?<!\d )" if re.fullmatch(r"\d{3}", token) else ""
+        # «Н-12», «9/299419» and «6:00» are one value. The digit scan otherwise
+        # keeps 12, 9, or 6, and that piece confirms the whole value.
+        pattern = (
+            rf"(?<![0-9a-zа-я_]){grouped}(?<!\d[,.])"
+            rf"(?<![a-zа-я][\-/])(?<!\d[:/])"
+            rf"{re.escape(token)}"
+            rf"(?![0-9a-zа-я_])(?!,\d)(?!\.\d)(?! \d{{3}}(?!\d))"
+            rf"(?![\-/][a-zа-я])(?![:/]\d)"
+        )
+    else:
+        pattern = rf"(?<![0-9a-zа-я_]){re.escape(token)}(?![0-9a-zа-я_])"
+    found = list(re.finditer(pattern, text))
+    if signed or not _pure_number(token):
+        return found
+    return [match for match in found if not _negated(raw, match.start())]
+
+
 def _facts(answer):
     text = re.sub(r"\[[\d,\s]+\]", " ", answer)
     facts = []
     for sentence in re.split(r"(?<=[.!?])\s+", text):
-        context = tuple(word[:5] for word in _words(sentence) if len(word) >= 5)
+        wide = tuple(word[:5] for word in _words(sentence) if len(word) >= 5)
+        covered = 0
+        previous = 0
         for match in _TOKEN.finditer(sentence):
+            if match.start() < covered:
+                continue
             token = match.group(0)
             before = sentence[:match.start()].rstrip()
             start = not before or before[-1] in ".!?:\n«\"("
             if any(ch.isdigit() for ch in token):
-                short = sum(ch.isdigit() for ch in token) <= 2
+                origin = match.start()
+                finish = match.end()
+                if _pure_number(token):
+                    whole = _whole_number(sentence, match.start())
+                    if len(whole) > len(token):
+                        token = whole
+                        finish = match.start() + len(token)
+                        covered = finish
+                    if _negated(sentence, match.start()):
+                        token = "-" + token
+                # A short number belongs to the words written with it, not to every
+                # word in the sentence. «давление 6 и ток 80» must not lend давление
+                # to 80. «от 6 до 10» has no name of its own, so 10 keeps давление.
+                local = _number_stems(sentence, previous, origin, finish)
+                context = tuple(local) if local else wide
+                previous = finish
+                # 1–3 digit values have to sit with the claim. A longer exact match is how
+                # «выпущен в 2019» still meets the line «Год выпуска: 2019».
+                short = sum(ch.isdigit() for ch in token) <= 3
                 facts.append(("near", token, context) if short and context else ("exact", token))
             elif sum(ch.isupper() for ch in token) >= 2:
                 facts.append(("exact", token))
@@ -340,16 +427,434 @@ def _specific(query):
     return found
 
 
+def _case(text):
+    return (text or "").lower().replace("ё", "е")
+
+
+def _span(text, start):
+    # The next line's number is a different fact. A fixed 80-character window
+    # still reaches it after newlines are flattened, and then "номер: 4" confirms
+    # "давление равно 4".
+    def cuts(index):
+        char = text[index]
+        if char not in ".!?,;\n":
+            return False
+        decimal = char in ",." and 0 < index < len(text) - 1 and text[index - 1].isdigit() and text[index + 1].isdigit()
+        return not decimal
+
+    left = 0
+    for index in range(start - 1, -1, -1):
+        if cuts(index):
+            left = index + 1
+            break
+    right = len(text)
+    for index in range(start, len(text)):
+        if cuts(index):
+            right = index
+            break
+    return text[left:right]
+
+
+def _plain_number(text):
+    # A clock, a fraction, a designation and a grouped figure are one value.
+    # The digit inside them is not a second measurement.
+    return re.search(
+        r"(?<![0-9a-zа-я_])(?<!\d[,.])(?<![a-zа-я][\-/])(?<!\d[:/])"
+        r"\d+(?:[,.]\d+)?"
+        r"(?![0-9a-zа-я_])(?!,\d)(?!\.\d)(?! \d{3}(?!\d))"
+        r"(?![\-/][a-zа-я])(?![:/]\d)",
+        text or "",
+    )
+
+
+# Verbs and adverbs that sit next to any measurement. They are not its name.
+_LINKS = {
+    "равно", "равна", "равен", "равны", "равняется",
+    "составляет", "составляют", "имеет", "имеют",
+    "около", "примерно", "порядка",
+    "достигает", "достигают", "превышает", "превышают",
+    "соответствует", "соответствуют",
+    "держится", "держатся", "находится", "находятся",
+}
+_KINDS = (
+    "номер", "давлен", "темпера", "частот", "масс", "подач", "мощнос", "диамет", "расход", "напор",
+    "объем", "плотнос", "вязкост", "скорост", "количес", "длин", "ширин", "высот",
+)
+_BRIDGES = ("уров", "значен", "показател", "величин")
+# Prepositions, conjunctions and units. They stand next to a number without naming it.
+_GLUE = {
+    "от", "до", "из", "за", "по", "на", "при", "для", "или", "над", "под", "без", "про",
+    "не", "ни", "но", "да", "же", "ко", "об", "со", "во", "то", "как", "это", "либо",
+    "между", "через", "после", "перед", "около", "свыше", "менее", "более",
+    "бар", "мпа", "кпа", "атм", "мм", "см", "дм", "кг", "гц", "квт", "мвт",
+    "мин", "сек", "час", "шт", "рад", "град", "мл", "вт", "па",
+}
+_ASKED = {
+    "какой", "какая", "какое", "какие", "какова", "каков", "каком", "сколько",
+    "такое", "такой", "такая", "такие", "этом",
+}
+# Endings of adjectives. «рабочее» and «полезного» do not name a measurement.
+# «давление» and «действие» do not end this way.
+_ADJECTIVE = re.compile(
+    r"(?:ый|ий|ой|ая|ое|ее|ые|ого|его|ому|ему|ым|им|ом|ем|ую|юю|ых|их|ыми|ими|ей)$"
+)
+_CONJUNCTIONS = {"и", "а", "или", "либо", "но", "да"}
+
+
+def _word_at(span, start):
+    found = re.match(r"[a-zа-яё]+", span[start:])
+    return found.group(0) if found else ""
+
+
+def _kind_word(word):
+    return any(word.startswith(kind) for kind in _KINDS)
+
+
+def _kind_noun(word):
+    # «температура» names the value; «температурных» only modifies another noun.
+    if not _kind_word(word):
+        return False
+    return re.search(
+        r"н(?:ый|ий|ой|ая|ое|ее|ые|ого|его|ому|ему|ым|им|ом|ем|ую|юю|ых|их|ыми|ими)$",
+        word,
+    ) is None
+
+
+# A condition after «при» can name its number with a word outside _KINDS.
+# «ходе» is «ход» and «угле» is «угол». «холод» is not «ход», «параметр» is not «пар».
+_MEASURES = ("ход", "ток", "вес", "пар", "тип", "кпд", "зазор", "угл", "напряж", "времен")
+
+
+def _measure_word(word):
+    if not word:
+        return False
+    for stem in _MEASURES:
+        if len(stem) >= 5:
+            if word.startswith(stem):
+                return True
+            continue
+        if _inflected(word, stem):
+            return True
+    return False
+
+
+def _kind_stem(stem):
+    return any(kind.startswith(stem) or stem.startswith(kind) for kind in _KINDS)
+
+
+def _bridge_word(word):
+    return any(word.startswith(bridge) for bridge in _BRIDGES)
+
+
+def _name_before(span, number_start):
+    # The name of a number may sit behind a linking verb: «ток равен 80».
+    # Stop at another digit, so «от 6 до 10» does not walk back to давление.
+    pos = number_start
+    for _ in range(6):
+        prefix = span[:pos].rstrip(" \t:;—–-\u2212()«»\",")
+        found = re.search(r"([a-zа-яё]{2,})$", prefix)
+        if not found:
+            return ""
+        word = found.group(1)
+        if word in _GLUE or word in _LINKS or word in _ASKED or _bridge_word(word):
+            pos = found.start()
+            continue
+        return word
+    return ""
+
+
+def _inflected(word, stem):
+    # «ток» and «тока» are one name. «холод» is not «ход», and «параметр» is not «пар».
+    if not word or not stem:
+        return False
+    if word == stem:
+        return True
+    longer, shorter = (word, stem) if len(word) >= len(stem) else (stem, word)
+    if not longer.startswith(shorter):
+        return False
+    extra = longer[len(shorter):]
+    return 0 < len(extra) <= 3 and extra[0] in "аеёиоуыэюя"
+
+
+def _other_name(span, number_start, stem):
+    # The word naming the number. «ток», «ход», «тип» and «кпд» are shorter than
+    # five letters, so the gap scan never sees them. «ток равен 80» hides ток
+    # behind the verb.
+    word = _name_before(span, number_start)
+    if not word or word.startswith(stem):
+        return False
+    return True
+
+
+def _split_gap(middle):
+    # «давление и ток: 80» coordinates two names. «давление на выходе: 6» does not.
+    return re.search(r"(?<![0-9a-zа-яё])(?:или|либо|но|и|а)(?![0-9a-zа-яё])", middle or "") is not None
+
+
+def _stems_in(region):
+    stems = []
+    for word in re.findall(r"[a-zа-яё]{3,}", (region or "").lower().replace("ё", "е")):
+        if word in _GLUE or word in _LINKS or word in _PRONOUNS or word in _ASKED or _bridge_word(word):
+            continue
+        stem = word[:5]
+        if stem not in stems:
+            stems.append(stem)
+    return stems
+
+
+def _tail_label(head):
+    without = re.sub(r"\d[\d ,.]*$", "", head or "")
+    return re.split(r"\d[\d ,.]*", without)[-1]
+
+
+def _next_number_at(sentence, finish):
+    found = re.search(r"\d", sentence[finish:])
+    return finish + found.start() if found else len(sentence)
+
+
+def _number_stems(sentence, previous, start, finish):
+    stems = _stems_in(sentence[previous:start])
+    if stems:
+        return stems
+    if previous:
+        inherited = _stems_in(_tail_label(sentence[:previous]))
+        if inherited:
+            return inherited
+    return _stems_in(sentence[finish:_next_number_at(sentence, finish)])
+
+
+def _restates_earlier_kind(span, start, stem):
+    # «давление держится на уровне 80»: «уровне» repeats давление. It does not
+    # name a new measurement, so it must not confirm температура 80.
+    # «при температуре 20 уровень 8» is different: 20 already took температура.
+    for found in reversed(list(re.finditer(r"[a-zа-яё]{5,}", span[:start]))):
+        word = found.group(0)
+        if word in _LINKS or word.startswith(stem):
+            continue
+        if not _kind_word(word):
+            return False
+        return _plain_number(span[found.end():start]) is None
+    return False
+
+
+def _measure_label(words, stem):
+    # The nearest name of a number. A genitive such as «контура» is not a
+    # different measurement; «номер», «массой» and «температура» are.
+    # «на уровне» restates the name before it: «температура на уровне».
+    names = [word for word in words if word not in _LINKS]
+    while names and _bridge_word(names[-1]):
+        names.pop()
+    if not names or names[-1].startswith(stem):
+        return False
+    if _kind_word(names[-1]):
+        return True
+    # «рабочая температура масла»: масла is a genitive, температура still names 80.
+    return len(names) >= 2 and _kind_noun(names[-2]) and not names[-2].startswith(stem)
+
+
+def _other_label(span, number_start, stem_at):
+    # «при температуре 80 рабочее давление составляет 6» is one clause. 80 is
+    # labeled by «температуре», and the pressure is the later 6. The same is
+    # true of «номер 6», «частота 50» and «4 насоса» written before the
+    # attribute. A value with no label of its own still belongs to the name
+    # that follows: «6 бар — рабочее давление». «от 6 до 10» is not this case:
+    # both numbers follow the attribute.
+    # These sit between a name and its number. They are not another measurement.
+    tail = span[stem_at.end():]
+    if re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", tail) is None:
+        return False
+    stem = stem_at.group(0)
+    if _other_name(span, number_start, stem):
+        return True
+    labels = re.findall(r"[a-zа-яё]{5,}", span[:number_start])
+    while labels and labels[-1] in _LINKS:
+        labels.pop()
+    if labels and not labels[-1].startswith(stem):
+        return True
+    middle = re.sub(r"[a-zа-яё]+\s*$", "", span[number_start:stem_at.start()])
+    return any(word not in _LINKS for word in re.findall(r"[a-zа-яё]{5,}", middle))
+
+
+def _matches(word, stem):
+    if not word or not stem:
+        return False
+    # «давление» matches «давлен», «точности» matches «точно».
+    # The stem must not swallow a shorter different word: «параметр» is not «пар».
+    if word.startswith(stem):
+        return True
+    return _inflected(word, stem)
+
+
+def _naming_nouns(span, number_start):
+    # Nouns of the phrase that names this number, nearest first.
+    # «температура масла: 80» → масла, температура.
+    # «класс точности: 80» → точности, класс.
+    # «давление на выходе: 6» stops at «на» and keeps «выходе».
+    # «при температуре составляет 6» drops температуре: the verb shows that
+    # 6 belongs to the head before «при».
+    pos = number_start
+    nouns = []
+    dropped = []
+    saw_verb = False
+    for _ in range(8):
+        prefix = span[:pos].rstrip(" \t:;—–-\u2212()«»\",")
+        found = re.search(r"([a-zа-яё]{2,})$", prefix)
+        if not found:
+            break
+        between = prefix[found.end():]
+        if nouns and re.search(r"(?<![a-zа-яё])(?:и|а)(?![a-zа-яё])", between):
+            break
+        word = found.group(1)
+        pos = found.start()
+        if word in _LINKS:
+            saw_verb = True
+            continue
+        if word in _ASKED or _bridge_word(word):
+            continue
+        if word in _GLUE:
+            if not nouns:
+                continue
+            if word in _CONJUNCTIONS:
+                break
+            if saw_verb:
+                dropped.append(nouns[0])
+                nouns.clear()
+                saw_verb = False
+                continue
+            break
+        if _ADJECTIVE.search(word) and not _kind_noun(word):
+            continue
+        nouns.append(word)
+        if len(nouns) >= 3:
+            break
+    return nouns, dropped
+
+
+def _phrase_owner(nouns):
+    if not nouns:
+        return ""
+    if len(nouns) == 1:
+        return nouns[0]
+    # «давление масла» and «диаметр патрубка»: the kind is the measurement.
+    # «класс точности» and «степень защиты»: the word next to the generic head is.
+    head = nouns[-1]
+    if _kind_word(head):
+        return head
+    return nouns[-2]
+
+
+def _foreign_phrase(span, number_start, stem):
+    # «масла» in «температура масла: 80» does not make the number a pressure.
+    # «класс» in «класс точности: 80» does not make it «класс давления».
+    # «температуре» in «давление при температуре составляет 6» does not own 6.
+    nouns, dropped = _naming_nouns(span, number_start)
+    owner = _phrase_owner(nouns)
+    if not owner:
+        return False
+    if _matches(owner, stem):
+        return False
+    if any(_matches(word, stem) for word in nouns) or any(_matches(word, stem) for word in dropped):
+        return True
+    # «давление при температуре 80» and «давление при ходе 80»: the condition
+    # owns the number, so the head before «при» does not. The same is true of
+    # «ток», «зазор», «угол», «кпд», «напряжение» and «ход поршня».
+    # «давление на выходе: 6» and «давление при работе: 6» name no other measurement.
+    if any(_measure_word(word) and not _matches(word, stem) for word in nouns):
+        return True
+    return _kind_noun(owner)
+
+
+def _stated_condition(middle):
+    # «при температуре 80 градусов составляет» only qualifies the value that
+    # follows. The number inside it is not a second value of the head.
+    number = r"\d{1,3}(?: \d{3})+(?:[,.]\d+)?|\d+(?:[,.]\d+)?"
+    links = "|".join(re.escape(word) for word in sorted(_LINKS, key=len, reverse=True))
+    unit = r"(?:\s+[^\s]*[a-zа-яё°%][^\s]*){0,2}"
+    pattern = rf"\s*при(?:\s+[a-zа-яё]{{3,}}){{1,3}}\s+(?:{number}){unit}\s+(?:{links})\s*[:;—–\-]*\s*"
+    return re.fullmatch(pattern, middle or "") is not None
+
+
+def _keeps(span, stem, token):
+    numbers = _hits(span, token)
+    if len(stem) < 5:
+        # A short name only keeps the number it touches: «ток: 80», not «ток ... 6».
+        return any(_inflected(_name_before(span, number.start()), stem) for number in numbers)
+    # «давление: 6 бар и температура: 80» is one clause, so the line window still
+    # sees both numbers. 80 belongs to давление only when no other value with its
+    # own label sits between them. «от 6 до 10» has no such label. A value that
+    # stands before the attribute is kept only when it is not someone else's.
+    # «рабочая температура: 80» shares «рабоч» with «рабочее давление», and
+    # «температура составляет 80» shares the verb. Those words do not name 80.
+    # «давление при температуре составляет 6» still keeps 6, and so does
+    # «давление при температуре 80 градусов составляет 6»: 80 belongs to
+    # температуре, and 6 is the only value of давление. «ток», «ход», «тип»
+    # and «кпд» name the other number even though they are shorter than five
+    # letters: «давление: 6 бар и ток: 80» is not давление 80.
+    stems = list(re.finditer(rf"(?<![0-9a-zа-я]){re.escape(stem)}", span))
+    for number in numbers:
+        for found in stems:
+            word = _word_at(span, found.start())
+            if word in _LINKS:
+                continue
+            if _bridge_word(word) and _restates_earlier_kind(span, found.start(), stem):
+                continue
+            if found.end() <= number.start():
+                left = found.end()
+                if 0 < left < number.start() and span[left - 1].isalpha() and span[left].isalpha():
+                    while left < number.start() and span[left].isalpha():
+                        left += 1
+                middle = span[left:number.start()]
+                # «насос номер 6 ... давление 8» and «6 бар — давление и
+                # температура 80». The number's own name is another measurement.
+                # «при температуре 80 градусов составляет» is not: it qualifies
+                # the value that follows.
+                if not _stated_condition(middle):
+                    names = re.findall(r"[a-zа-яё]{5,}", middle)
+                    if _measure_label(names, stem) and (
+                        not _kind_stem(stem) or _plain_number(span[number.end():]) or _plain_number(span[:found.start()])
+                    ):
+                        continue
+                    if _other_name(span, number.start(), stem) and (
+                        re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", middle) or _split_gap(middle)
+                    ):
+                        continue
+            elif number.end() <= found.start():
+                if _other_label(span, number.start(), found):
+                    continue
+                middle = span[number.end():found.start()]
+            else:
+                continue
+            other = re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", middle)
+            label = re.search(r"[a-zа-яё]{5,}", middle)
+            if other and label and not (found.end() <= number.start() and _stated_condition(middle)):
+                continue
+            # The stem has to be the noun that owns the number. A shared object
+            # («масла», «насоса», «патрубка»), a generic head («класс», «степень»,
+            # «коэффициент») or a side mention («при температуре составляет»)
+            # does not.
+            if found.end() <= number.start() and _foreign_phrase(span, number.start(), stem):
+                continue
+            return True
+    return False
+
+
+def _from_question(fact, asked):
+    token = fact[1]
+    if any(ch.isdigit() for ch in token) and not any(ch.isalpha() for ch in token):
+        return False
+    return _grounded(fact, asked)
+
+
 def _grounded(fact, text):
     kind, token = fact[0], _flat(fact[1])
     if kind == "stem":
         return re.search(rf"(?<![0-9a-zа-я]){re.escape(token[:5])}", text) is not None
-    places = [match.start() for match in re.finditer(rf"(?<![0-9a-zа-я_]){re.escape(token)}(?![0-9a-zа-я_])", text)]
+    places = [match.start() for match in _hits(text, token)]
     if kind == "exact" or not places:
         return bool(places)
     for place in places:
-        nearby = text[max(0, place - 80):place + 80]
-        if any(re.search(rf"(?<![0-9a-zа-я]){re.escape(stem)}", nearby) for stem in fact[2]):
+        nearby = _span(text, place)
+        if any(_keeps(nearby, stem, token) for stem in fact[2]):
             return True
     return False
 
@@ -421,6 +926,7 @@ def check_agent(answer, chunks, query="", known=None):
     if not chunks or not text or absent or _flat(NO_ANSWER).rstrip(".") in _flat(text):
         return _verdict(MISSING)
     flats = [_flat(chunk["text"]) for chunk in chunks]
+    bodies = [_case(chunk["text"]) for chunk in chunks]
     asked = " ".join(word for word in _flat(query).replace("?", " ").split() if known(word.strip(".,:;«»()")))
     if _copied(text, flats):
         return _verdict(UNCONFIRMED, feedback=COPIED)
@@ -440,9 +946,9 @@ def check_agent(answer, chunks, query="", known=None):
     missing = []
     facts = _facts(text)
     for fact in facts:
-        if _grounded(fact, asked) or any(_grounded(fact, flats[number - 1]) for number in used):
+        if _from_question(fact, asked) or any(_grounded(fact, bodies[number - 1]) for number in used):
             continue
-        holders = [number for number in range(1, len(chunks) + 1) if _grounded(fact, flats[number - 1])]
+        holders = [number for number in range(1, len(chunks) + 1) if _grounded(fact, bodies[number - 1])]
         if holders:
             used.append(holders[0])
         elif fact[1] not in missing:
@@ -451,10 +957,10 @@ def check_agent(answer, chunks, query="", known=None):
         feedback = "В прошлом ответе были данные, которых нет во фрагментах: " + ", ".join(missing) + ". Ответь заново только по фрагментам."
         return _verdict(UNCONFIRMED, missing, feedback)
     words = [("stem", word) for word in _words(re.sub(r"\[[\d,\s]+\]", " ", text)) if len(word) >= 5]
-    scores = [sum(_grounded(word, flat) for word in words) for flat in flats]
+    scores = [sum(_grounded(word, body) for word in words) for body in bodies]
     if not any(scores):
         return _verdict(UNCONFIRMED, feedback=RETRY)
-    used = [number for number in used if scores[number - 1] or any(_grounded(fact, flats[number - 1]) for fact in facts)]
+    used = [number for number in used if scores[number - 1] or any(_grounded(fact, bodies[number - 1]) for fact in facts)]
     if not used:
         best = max(scores)
         used = [number for number, score in enumerate(scores, 1) if score == best][:2]
