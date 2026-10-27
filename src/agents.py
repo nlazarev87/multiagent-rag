@@ -525,10 +525,29 @@ def _kind_noun(word):
 _MEASURES = ("ход", "ток", "вес", "пар", "тип", "кпд", "зазор", "угл", "напряж", "времен")
 
 
+def _brief(extra):
+    return extra == "" or (len(extra) <= 3 and extra[0] in "аеёиоуыэюя")
+
+
+def _fold(word):
+    # «время» and «угол» change inside the stem: «времени», «угле».
+    # A five-letter prefix of one form is not a prefix of the other.
+    # «углубление» is not «угол», and «временно» is not «время».
+    if word == "время" or (word.startswith("времен") and _brief(word[6:])):
+        return "времен"
+    if word == "угол" or (word.startswith("угл") and _brief(word[3:])):
+        return "угл"
+    return word
+
+
 def _measure_word(word):
     if not word:
         return False
+    if _fold(word) != word:
+        return True
     for stem in _MEASURES:
+        if stem in {"времен", "угл"}:
+            continue
         if len(stem) >= 5:
             if word.startswith(stem):
                 return True
@@ -536,6 +555,14 @@ def _measure_word(word):
         if _inflected(word, stem):
             return True
     return False
+
+
+def _measure_noun(word):
+    # «временно» and «напряженно» share a measure prefix, but they are adverbs.
+    # They must not take the number away from the noun they modify.
+    if not _measure_word(word):
+        return False
+    return _fold(word) != word or not word.endswith("о")
 
 
 def _kind_stem(stem):
@@ -565,15 +592,17 @@ def _name_before(span, number_start):
 
 def _inflected(word, stem):
     # «ток» and «тока» are one name. «холод» is not «ход», and «параметр» is not «пар».
+    # «угол» and «угле» are one name, and so are «время» and «времени».
     if not word or not stem:
         return False
+    word, stem = _fold(word), _fold(stem)
     if word == stem:
         return True
     longer, shorter = (word, stem) if len(word) >= len(stem) else (stem, word)
     if not longer.startswith(shorter):
         return False
     extra = longer[len(shorter):]
-    return 0 < len(extra) <= 3 and extra[0] in "аеёиоуыэюя"
+    return _brief(extra) and extra != ""
 
 
 def _other_name(span, number_start, stem):
@@ -736,9 +765,10 @@ def _phrase_owner(nouns):
     if len(nouns) == 1:
         return nouns[0]
     # «давление масла» and «диаметр патрубка»: the kind is the measurement.
+    # «ход поршня», «ток двигателя», «угол поворота» and «время работы» too.
     # «класс точности» and «степень защиты»: the word next to the generic head is.
     head = nouns[-1]
-    if _kind_word(head):
+    if _kind_word(head) or _measure_noun(head):
         return head
     return nouns[-2]
 
@@ -774,11 +804,23 @@ def _stated_condition(middle):
     return re.fullmatch(pattern, middle or "") is not None
 
 
+def _short_owns(span, number_start, stem):
+    # «ток: 80» touches the name. «ход поршня: 80» and «угол поворота: 80» do not:
+    # the object sits in between, but the short name still owns the number.
+    # That object is not a second measurement, so «диаметр поршня» does not keep 80.
+    nouns, _dropped = _naming_nouns(span, number_start)
+    owner = _phrase_owner(nouns)
+    if _inflected(owner, stem):
+        return True
+    if owner and (_kind_word(owner) or _measure_noun(owner)):
+        return False
+    return _inflected(_name_before(span, number_start), stem)
+
+
 def _keeps(span, stem, token):
     numbers = _hits(span, token)
     if len(stem) < 5:
-        # A short name only keeps the number it touches: «ток: 80», not «ток ... 6».
-        return any(_inflected(_name_before(span, number.start()), stem) for number in numbers)
+        return any(_short_owns(span, number.start(), stem) for number in numbers)
     # «давление: 6 бар и температура: 80» is one clause, so the line window still
     # sees both numbers. 80 belongs to давление only when no other value with its
     # own label sits between them. «от 6 до 10» has no such label. A value that
@@ -790,7 +832,9 @@ def _keeps(span, stem, token):
     # температуре, and 6 is the only value of давление. «ток», «ход», «тип»
     # and «кпд» name the other number even though they are shorter than five
     # letters: «давление: 6 бар и ток: 80» is not давление 80.
-    stems = list(re.finditer(rf"(?<![0-9a-zа-я]){re.escape(stem)}", span))
+    sought = _fold(stem)
+    pattern = re.escape(stem) if sought == stem else rf"(?:{re.escape(stem)}|{re.escape(sought)})"
+    stems = list(re.finditer(rf"(?<![0-9a-zа-я]){pattern}", span))
     for number in numbers:
         for found in stems:
             word = _word_at(span, found.start())

@@ -607,6 +607,46 @@ def test_check_rejects_a_measurement_taken_from_a_short_condition():
     assert agents.check_agent("Рабочее давление равно 6 бар [1].", [running])["status"] == agents.CONFIRMED
 
 
+def test_check_rejects_a_measurement_that_only_shares_the_object():
+    stroke = {"text": "Насос > Режим\nХод поршня: 80 мм.", "document_name": "pump.md"}
+    current = {"text": "Насос > Режим\nТок двигателя: 80 А.", "document_name": "pump.md"}
+    gap = {"text": "Насос > Режим\nЗазор клапана: 80 мкм.", "document_name": "pump.md"}
+    weight = {"text": "Насос > Режим\nВес ротора: 5 кг.", "document_name": "pump.md"}
+    angle = {"text": "Насос > Режим\nУгол поворота: 80 градусов.", "document_name": "pump.md"}
+    hours = {"text": "Насос > Режим\nВремя работы: 80 часов.", "document_name": "pump.md"}
+    voltage = {"text": "Насос > Режим\nНапряжение сети: 220 В.", "document_name": "pump.md"}
+    conditioned = {"text": "Рабочее давление при ходе поршня 80 мм составляет 6 бар.", "document_name": "pump.md"}
+    oblique = {"text": "Давление при угле поворота 80 градусов составляет 6 бар.", "document_name": "pump.md"}
+    temporary = {"text": "Временно давление равно 6 бар.", "document_name": "pump.md"}
+    intense = {"text": "Напряженно рабочее давление равно 6 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Диаметр поршня равен 80 мм [1].", [stroke])["missing"] == ["80"]
+    assert agents.check_agent("Ход поршня равен 80 мм [1].", [stroke])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Мощность двигателя равна 80 кВт [1].", [current])["missing"] == ["80"]
+    assert agents.check_agent("Ток двигателя равен 80 А [1].", [current])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Диаметр клапана равен 80 мкм [1].", [gap])["missing"] == ["80"]
+    assert agents.check_agent("Зазор клапана равен 80 мкм [1].", [gap])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Диаметр ротора равен 5 мм [1].", [weight])["missing"] == ["5"]
+    assert agents.check_agent("Вес ротора равен 5 кг [1].", [weight])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Скорость поворота равна 80 градусов [1].", [angle])["missing"] == ["80"]
+    assert agents.check_agent("Угол поворота равен 80 градусов [1].", [angle])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Угол равен 80 градусов [1].", [angle])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Мощность работы равна 80 [1].", [hours])["missing"] == ["80"]
+    assert agents.check_agent("Время работы равно 80 часов [1].", [hours])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Мощность сети равна 220 кВт [1].", [voltage])["missing"] == ["220"]
+    assert agents.check_agent("Напряжение сети равно 220 В [1].", [voltage])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Напряжение равно 220 В [1].", [voltage])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Диаметр поршня равен 80 мм [1].", [conditioned])["missing"] == ["80"]
+    assert agents.check_agent("Ход поршня равен 80 мм [1].", [conditioned])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление составляет 6 бар [1].", [conditioned])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Скорость поворота равна 80 градусов [1].", [oblique])["missing"] == ["80"]
+    assert agents.check_agent("Угол поворота равен 80 градусов [1].", [oblique])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление составляет 6 бар [1].", [oblique])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 6 бар [1].", [temporary])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время равно 6 часов [1].", [temporary])["missing"] == ["6"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [intense])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Напряжение равно 6 В [1].", [intense])["missing"] == ["6"]
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}
