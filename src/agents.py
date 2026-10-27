@@ -396,6 +396,13 @@ def _facts(answer):
                 # word in the sentence. «давление 6 и ток 80» must not lend давление
                 # to 80. «от 6 до 10» has no name of its own, so 10 keeps давление.
                 window = _number_window(sentence, previous, origin, finish)
+                # «по данным завода 1600 — рабочее давление». The words in front
+                # are not the measurement; the name after the dash is.
+                # «2019 — давление 6» is the other way: давление names 6.
+                if not _names_measurement(window):
+                    trail = _trailing_name(sentence, finish)
+                    if _names_measurement(trail):
+                        window = trail
                 local = _stems_in(window)
                 context = tuple(local) if local else wide
                 # «равно 50 ± 0,2» claims 50, and 0,2 only as its half-width.
@@ -411,13 +418,29 @@ def _facts(answer):
                             break
                     facts.append(("near", token, parent, True))
                     continue
+                # «AB-9.2» and «3-8» are the value written in the fragment, not a
+                # measurement named by the letters of the code or the words around it.
+                coded = any(ch.isalpha() for ch in token) and any(ch.isdigit() for ch in token)
+                ranged = bool(re.fullmatch(r"\d+\s*-\s*\d+", token.replace("\u2212", "-")))
+                if coded or ranged:
+                    facts.append(("exact", token))
+                    continue
                 # 1–3 digit values have to sit with the claim. A longer exact match is how
                 # «выпущен в 2019» still meets the line «Год выпуска: 2019». A measurement
                 # claim does not get that shortcut: «давление равно 2019» must not take
                 # the year, and «давление равно 1000» must not take the density.
                 short = sum(ch.isdigit() for ch in token) <= 3
                 bound = bool(context) and (short or _names_measurement(window))
-                facts.append(("near", token, context) if bound else ("exact", token))
+                # A year can match by its digits: «выпущен в 2019» meets
+                # «Год выпуска: 2019». A qualifier still belongs to this
+                # occurrence. «на выходе значение 2000» must not take the inlet,
+                # so the words in front travel with the exact number.
+                if bound:
+                    facts.append(("near", token, context))
+                elif local and not short:
+                    facts.append(("exact", token, tuple(local)))
+                else:
+                    facts.append(("exact", token))
             elif sum(ch.isupper() for ch in token) >= 2:
                 facts.append(("exact", token))
             elif token[:1].isupper() and len(token) >= 4 and not start:
@@ -450,7 +473,12 @@ def _bounds(text, start):
         if char not in ".!?,;\n":
             return False
         decimal = char in ",." and 0 < index < len(text) - 1 and text[index - 1].isdigit() and text[index + 1].isdigit()
-        return not decimal
+        if decimal:
+            return False
+        # «в 14 ч. 30 мин. составляет 6» is one clause. The dot is the
+        # abbreviation, so it must not hide 6. «Пауза 30 мин. Давление 6»
+        # still splits: a new noun after the dot is the next fact.
+        return not (char == "." and _clock_dot(text, index))
 
     left = 0
     for index in range(start - 1, -1, -1):
@@ -478,6 +506,14 @@ _PLAIN_NUMBER = re.compile(
     r"(?![0-9a-zа-я_])(?!,\d)(?!\.\d)(?! \d{3}(?!\d))"
     r"(?![\-/][a-zа-я])(?![:/]\d)"
 )
+# «12 000» is one value. The plain scan keeps only «000», and a qualifier check
+# then looks at the wrong place.
+_VALUE = re.compile(
+    r"(?<![0-9a-zа-я_])(?<!\d[,.])(?<![a-zа-я][\-/])(?<!\d[:/])"
+    r"(?:\d{1,3}(?: \d{3})+(?:[,.]\d+)?|\d+(?:[,.]\d+)?)"
+    r"(?![0-9a-zа-я_])(?!,\d)(?!\.\d)(?! \d{3}(?!\d))"
+    r"(?![\-/][a-zа-я])(?![:/]\d)"
+)
 
 
 def _plain_number(text):
@@ -487,7 +523,8 @@ def _plain_number(text):
 # Verbs and adverbs that sit next to any measurement. They are not its name.
 _LINKS = {
     "равно", "равна", "равен", "равны", "равняется",
-    "составляет", "составляют", "имеет", "имеют",
+    "составляет", "составляют", "имеет", "имеют", "иметь", "имел", "имела", "имело", "имели",
+    "должен", "должна", "должно", "должны",
     "около", "примерно", "порядка",
     "достигает", "достигают", "превышает", "превышают",
     "соответствует", "соответствуют",
@@ -708,6 +745,17 @@ def _number_window(sentence, previous, start, finish):
     return sentence[finish:_next_number_at(sentence, finish)]
 
 
+def _trailing_name(sentence, finish):
+    # «1600 — рабочее давление» and «1600 бар — рабочее давление» name 1600.
+    # A later number owns the words in front of it: «2019 — давление 6».
+    if _next_number_at(sentence, finish) != len(sentence):
+        return ""
+    rest = sentence[finish:]
+    if re.match(r"(?:\s+[a-zа-яё°%]{1,8}){0,2}\s*[:—–\-]\s+\S", _case(rest)):
+        return rest
+    return ""
+
+
 def _names_measurement(region):
     # «давление», «ход», «радиус» and «перепад» name the number beside them.
     # «выпущен», «год» and «фонд» do not, so a bare year can still match exactly.
@@ -748,16 +796,305 @@ def _measure_label(words, stem):
     return len(names) >= 2 and _kind_noun(names[-2]) and not names[-2].startswith(stem)
 
 
+# «1 января», «в январе» and «12 мая». «майор» is not «май», and «маршрута» is not «март».
+_MONTH_NAME = re.compile(
+    r"январ(?:ь|я|е|ю|ем)|феврал(?:ь|я|е|ю|ем)|март(?:а|е|у|ом)?|"
+    r"апрел(?:ь|я|е|ю|ем)|ма(?:ем|й|я|е|ю)|июн(?:ь|я|е|ю|ем)|"
+    r"июл(?:ь|я|е|ю|ем)|август(?:а|е|у|ом)?|сентябр(?:ь|я|е|ю|ем)|"
+    r"октябр(?:ь|я|е|ю|ем)|ноябр(?:ь|я|е|ю|ем)|декабр(?:ь|я|е|ю|ем)"
+)
+
+
+def _month_word(word):
+    return _MONTH_NAME.fullmatch(word or "") is not None
+
+
+def _calendar_day(token):
+    return bool(re.fullmatch(r"\d{1,2}", token or "")) and 1 <= int(token) <= 31
+
+
+def _word_after(text):
+    found = re.match(r"\s*([a-zа-яё]+)", _case(text))
+    return found.group(1) if found else ""
+
+
+def _word_before(text):
+    found = re.search(r"([a-zа-яё]+)\s*$", _case(text))
+    return found.group(1) if found else ""
+
+
+def _numeric_date(text, start, end):
+    # «01.01.2019» is one date. The digit scan otherwise keeps 01 and 2019,
+    # and either piece hides the value written next to the measurement.
+    token = text[start:end]
+    before = text[:start]
+    after = text[end:]
+    if re.fullmatch(r"(?:19|20)\d{2}", token) and re.search(r"(?<!\d)\d{1,2}\.\d{1,2}\.$", before):
+        return True
+    if re.fullmatch(r"\d{1,2}", token) and re.search(r"(?<!\d)\d{1,2}\.$", before) and re.match(
+        r"\.(?:19|20)\d{2}(?!\d)", after
+    ):
+        return True
+    return bool(re.fullmatch(r"\d{1,2}", token) and re.match(r"\.\d{1,2}\.(?:19|20)\d{2}(?!\d)", after))
+
+
+def _date_number(text, start, end):
+    # «с 2019 года», «в 2019 году» and «до 2019» name a date. That year is not
+    # the reading, so «давление с 2019 года составляет 6» is давление 6, and
+    # «с 2019 года давление составляет 6» is not давление 2019. «2019 бар» and
+    # «от 2000 до 2019 бар» are readings: a unit or a range keeps the number.
+    # «с 1 января 2019 года составляет 6» is the same date. The day is not
+    # давление 1, and it must not hide 6. «в январе 2019» and «01.01.2019»
+    # are not readings either. «1 мм», «1 бар» and «от 1 до 6 бар» still are.
+    token = text[start:end]
+    after = text[end:]
+    before = text[:start]
+    year = bool(re.fullmatch(r"(?:19|20)\d{2}", token))
+    if year and re.match(r"\s*(?:года|году|годом|год|г\.?)(?![0-9a-zа-яё])", after, re.IGNORECASE):
+        return True
+    if _numeric_date(text, start, end):
+        return True
+    if re.match(
+        r"\s*(?:бар|мпа|кпа|атм|мм|см|дм|кг|гц|квт|мвт|мин|сек|час|шт|мл|вт|па|м|л|%)(?![0-9a-zа-яё])",
+        _case(after),
+    ):
+        return False
+    if _calendar_day(token) and _month_word(_word_after(after)):
+        return True
+    if _calendar_day(token):
+        later = re.match(r"\s*(?:по|до)\s+(\d{1,2})\s+([a-zа-яё]+)", _case(after))
+        if later and _calendar_day(later.group(1)) and _month_word(later.group(2)):
+            return True
+    if not year:
+        return False
+    if re.search(r"(?<![0-9a-zа-яё])от\s*$", before, re.IGNORECASE) and re.match(
+        r"\s*до(?![0-9a-zа-яё])", after, re.IGNORECASE
+    ):
+        return False
+    if re.search(r"(?<![0-9a-zа-яё])до\s*$", before, re.IGNORECASE) and re.search(
+        r"(?<![0-9a-zа-яё])от\s+\d", before, re.IGNORECASE
+    ):
+        return False
+    if _month_word(_word_before(before)):
+        return True
+    return re.search(r"(?<![0-9a-zа-яё])(?:в|во|с|со|до|от|к|ко|по)\s*$", before, re.IGNORECASE) is not None
+
+
+# «в 6 часов», «в 14 ч», «в 14 ч.», «к 8 часам», «по 18 часов».
+# «часового» is not «час», and «часть» is not either: the short form is only «ч».
+_HOUR_STEM = r"(?:час(?:а|ов|ам|у|ах|ами|ом|е)?|ч)"
+_HOUR_WORD = re.compile(rf"{_HOUR_STEM}(?![0-9a-zа-яё])\.?")
+_TIME_PREP = r"(?:около|во|ко|со|от|до|по|в|к|с)"
+# «30 минут», «30 мин», «30 мин.», «1 минуту», «15 секунд», «15 сек».
+# «минутный» is not «минут», and «минимум» is not «мин».
+_MINUTE_STEM = r"(?:минут(?:а|ы|у|е|ой|ою|ам|ах|ами)?|мин)"
+_SECOND_STEM = r"(?:секунд(?:а|ы|у|е|ой|ою|ам|ах|ами)?|сек)"
+_CLOCK_PART_WORD = re.compile(rf"(?:{_MINUTE_STEM}|{_SECOND_STEM})(?![0-9a-zа-яё])\.?")
+# The hour this minute or second belongs to: «в 14 часов 30 минут»,
+# «в 14 ч 30 мин», «к 8 часам 15 секунд», «в 14 часов 30 мин 15 сек».
+_CLOCK_PART_BEFORE = re.compile(
+    rf"(?<![0-9a-zа-яё]){_TIME_PREP}\s+(\d{{1,2}})\s+{_HOUR_WORD.pattern}"
+    rf"(?:\s+\d{{1,2}}\s+{_MINUTE_STEM}(?![0-9a-zа-яё])\.?)?\s*$"
+)
+
+
+def _hour_range_after(after):
+    # «до 18 часов», «по 18 часов», «до 18 ч» and «по 18 ч.».
+    # «до 18 бар» and «по 18 бар» have no hour word.
+    found = re.match(rf"\s*(?:до|по)\s+(\d{{1,2}})\s+{_HOUR_WORD.pattern}", _case(after))
+    return found is not None and int(found.group(1)) <= 24
+
+
+def _hour_range_before(before):
+    # «с 8 часов до», «от 6 ч по», «с 8 ч. до»: the unit sits on the start,
+    # so the end number has no hour word after it.
+    return re.search(
+        rf"(?<![0-9a-zа-яё])(?:от|с|со)\s+\d{{1,2}}\s+{_HOUR_WORD.pattern}\s+(?:до|по)\s*$",
+        _case(before),
+    ) is not None
+
+
+def _hour_range_end_unit(after):
+    # «с 8 часов до 18 бар» is a reading. «с 8 часов до 18» and
+    # «с 8 часов до 18 составляет 6» are still the clock end.
+    found = re.match(r"\s*([a-zа-яё]+)", _case(after))
+    if not found:
+        return False
+    word = found.group(1)
+    if _HOUR_WORD.fullmatch(word):
+        return False
+    return word in _GLUE or _unit_word(word)
+
+
+def _clock_number(text, start, end):
+    # «в 6 часов», «к 8 часам», «до 18 часов» and «в 14:30» name a time of day.
+    # That hour is not the reading, so «давление в 6 часов составляет 10» is
+    # давление 10, and «в 18 часов рабочее давление: 6» is not давление 18.
+    # «с 8 до 18 часов», «с 8 по 18 часов», «от 6 до 10 часов» and
+    # «с 8 часов до 18» are the same kind of hour, on both ends.
+    # A duration still owns its range:
+    # «наработка от 6 до 10 часов» and «наработка с 8 по 18 часов».
+    # «давление с 8 по 18 часов составляет 6» does not, so 8 and 18 must not
+    # hide 6. «с 8 по 18 бар» and «с 8 часов до 18 бар» stay readings.
+    # «6.5» and «14.30 бар» stay readings: a dot is a time only after a time preposition.
+    # «в 14 часов 30 минут» and «в 14 ч 30 мин» are the same clock: 30 is not
+    # the reading. «часть» and «минутный» are not those units.
+    token = text[start:end]
+    after = text[end:]
+    before = text[:start]
+    if _clock_part(token, before, after):
+        return True
+    if re.fullmatch(r"\d{2}", token) and re.search(r"(?<!\d)\d{1,2}:$", before):
+        return True
+    if re.fullmatch(r"\d{1,2}", token) and re.match(r":\d{2}(?!\d)", after):
+        return True
+    if re.fullmatch(r"\d{2}", token) and re.search(
+        rf"(?<![0-9a-zа-яё]){_TIME_PREP}\s+\d{{1,2}}\.$", before, re.IGNORECASE
+    ):
+        return True
+    if (
+        re.fullmatch(r"\d{1,2}", token)
+        and re.match(r"\.\d{2}(?!\d)", after)
+        and re.search(rf"(?<![0-9a-zа-яё]){_TIME_PREP}\s*$", before, re.IGNORECASE)
+    ):
+        return True
+    if not re.fullmatch(r"\d{1,2}", token) or int(token) > 24:
+        return False
+    if _hour_range_after(after) and re.search(
+        rf"(?<![0-9a-zа-яё])(?:от|с|со)\s*$", before, re.IGNORECASE
+    ):
+        return True
+    if _hour_range_before(before) and not _hour_range_end_unit(after):
+        return True
+    if not re.match(rf"\s*{_HOUR_WORD.pattern}", _case(after)):
+        return False
+    return re.search(rf"(?<![0-9a-zа-яё]){_TIME_PREP}\s*$", before, re.IGNORECASE) is not None
+
+
+def _clock_dot(text, index):
+    # A dot after «ч», «час», «мин» or «сек» continues the same clause when
+    # a minute, a second, or a linking verb follows. «с 8 ч. до 18» is the
+    # same window: the abbreviation sits before the other end.
+    # «ч. 12 насосов» and «мин. давление» stay separate facts.
+    if re.search(r"(?<![0-9a-zа-яё])(?:час|мин|сек|ч)$", _case(text[:index])) is None:
+        return False
+    rest = _case(text[index + 1:])
+    links = "|".join(re.escape(word) for word in sorted(_LINKS, key=len, reverse=True))
+    if re.match(rf"\s*(?:{links})(?![0-9a-zа-яё])", rest):
+        return True
+    if re.match(rf"\s*\d{{1,2}}\s+(?:{_MINUTE_STEM}|{_SECOND_STEM})(?![0-9a-zа-яё])", rest):
+        return True
+    return re.match(r"\s*(?:до|по)\s+\d{1,2}(?!\d)", rest) is not None
+
+
+def _part_hour_at(span, start):
+    # Start of the clock hour that «30» continues in «в 14 часов 30 минут»
+    # or «в 14 ч 30 мин». A duration with no time preposition,
+    # «составляет 6 ч 30 мин», has none.
+    found = _CLOCK_PART_BEFORE.search(_case(span[:start]))
+    if not found or int(found.group(1)) > 24:
+        return None
+    return found.start(1)
+
+
+def _clock_part(token, before, after):
+    # «в 14 часов 30 минут», «в 14 ч 30 мин» and «в 14 ч 30 мин 15 сек» name
+    # a time of day. That minute is not the reading, so «давление в 14 часов
+    # 30 мин составляет 6» is давление 6, and not давление 30. «время в 6 ч
+    # 30 мин» still belongs to время: the hour does, so the minute does too.
+    # «наработка составляет 6 ч 30 мин» has no time preposition.
+    if not re.fullmatch(r"\d{1,2}", token or "") or int(token) > 59:
+        return False
+    if not re.match(rf"\s*{_CLOCK_PART_WORD.pattern}", _case(after)):
+        return False
+    return _part_hour_at(before, len(before)) is not None
+
+
+def _clock_unit(word):
+    # «часов» and «минут» sit inside «с 8 часов до 18» and «с 8 ч 30 мин до 18».
+    # They are the unit, not the noun that owns the duration. «часового» is not.
+    folded = _case(word)
+    return _HOUR_WORD.fullmatch(folded) is not None or _CLOCK_PART_WORD.fullmatch(folded) is not None
+
+
+def _hour_owner(span, start):
+    # The noun a duration measures: «срок службы в 6 часов» → срок,
+    # «наработка до 6 часов» → наработка. A leading «в 6 часов» has none.
+    # «наработка от 6 до 10 часов»: the end has to walk past 6 and «до».
+    # «наработка с 8 часов до 18» also walks past the hour unit.
+    pos = start
+    for _ in range(8):
+        prefix = span[:pos].rstrip(" \t:;—–-\u2212()«»\",")
+        number = re.search(r"\d+(?:[,.]\d+)?$", prefix)
+        if number:
+            pos = number.start()
+            continue
+        found = re.search(r"([a-zа-яё]+)$", prefix)
+        if not found:
+            return ""
+        word = found.group(1)
+        if (
+            word in _GLUE
+            or word in _LINKS
+            or word in _ASKED
+            or word in {"в", "к", "с", "о", "у"}
+            or _clock_unit(word)
+        ):
+            pos = found.start()
+            continue
+        nouns, _dropped = _naming_nouns(span, found.end())
+        return _phrase_owner(nouns)
+    return ""
+
+
+def _owns_hours(span, start, stem):
+    # «смена в 8 часов», «срок службы в 6 часов» and «наработка до 6 часов»
+    # belong to that noun. «давление в 6 часов» and «ток в 6 часов» do not:
+    # a physical kind is not measured in hours. «количество до 6 часов» is
+    # the count of those hours, and «время в 6 часов» is the duration itself.
+    # «время в 6 часов 30 минут»: the minute belongs to whoever owns the hour.
+    hour_at = _part_hour_at(span, start)
+    if hour_at is not None and hour_at != start:
+        return _owns_hours(span, hour_at, stem)
+    owner = _hour_owner(span, start)
+    if not owner or not _matches(owner, stem):
+        return False
+    if _kind_noun(owner) and not owner.startswith("количеств"):
+        return False
+    if _measure_noun(owner) and not _matches(owner, "время"):
+        return False
+    if _delta_word(owner):
+        return False
+    if _size_word(owner) and not (owner.startswith("ресурс") or owner.startswith("срок")):
+        return False
+    return True
+
+
+def _reading(text, follow=""):
+    # A date or a clock between a name and its value is not another measurement.
+    # «время работы от 6 до 10 часов»: the slice before 10 stops at «до», so
+    # the hour word after 10 still has to show that 6 is the other end.
+    if not text:
+        return None
+    whole = text + (follow or "")
+    for match in re.finditer(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", text):
+        if _date_number(whole, match.start(), match.end()) or _clock_number(whole, match.start(), match.end()):
+            continue
+        return match
+    return None
+
+
 def _other_label(span, number_start, stem_at):
     # «при температуре 80 рабочее давление составляет 6» is one clause. 80 is
     # labeled by «температуре», and the pressure is the later 6. The same is
     # true of «номер 6», «частота 50» and «4 насоса» written before the
     # attribute. A value with no label of its own still belongs to the name
     # that follows: «6 бар — рабочее давление». «от 6 до 10» is not this case:
-    # both numbers follow the attribute.
+    # both numbers follow the attribute. «1600 — давление с 2019 года» keeps
+    # 1600: the year is not a second reading of давление.
     # These sit between a name and its number. They are not another measurement.
     tail = span[stem_at.end():]
-    if re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", tail) is None:
+    if _reading(tail) is None:
         return False
     stem = stem_at.group(0)
     if _other_name(span, number_start, stem):
@@ -943,9 +1280,23 @@ def _keeps(span, stem, token):
     # The half-width in «диаметр: 50 ± 0,2» is not диаметр 0,2. The value in
     # front of the sign still is. «погрешность: ±0,5» keeps 0,5: nothing numeric
     # stands before the sign.
-    numbers = [number for number in _hits(span, token) if not _number_before_tolerance(span, number.start())]
+    numbers = [
+        number
+        for number in _hits(span, token)
+        if not _number_before_tolerance(span, number.start())
+        and not _date_number(span, number.start(), number.end())
+        and not (
+            _clock_number(span, number.start(), number.end())
+            and not _owns_hours(span, number.start(), stem)
+        )
+    ]
     if len(stem) < 5:
-        return any(_short_owns(span, number.start(), stem) for number in numbers)
+        # «срок службы в 6 часов»: срок is shorter than five letters, and «в»
+        # hides it from the short-name walk. The duration still belongs to срок.
+        return any(
+            _owns_hours(span, number.start(), stem) or _short_owns(span, number.start(), stem)
+            for number in numbers
+        )
     # «давление: 6 бар и температура: 80» is one clause, so the line window still
     # sees both numbers. 80 belongs to давление only when no other value with its
     # own label sits between them. «от 6 до 10» has no such label. A value that
@@ -973,6 +1324,12 @@ def _keeps(span, stem, token):
                     while left < number.start() and span[left].isalpha():
                         left += 1
                 middle = span[left:number.start()]
+                follow = span[number.start():]
+                # «на входе и 6»: the qualifier before «и» names the earlier
+                # value, so it must not confirm the later one. «давление 16 бар
+                # и 6» still keeps давление, because another number sits in the gap.
+                if _split_gap(middle) and _reading(middle, follow) is None:
+                    continue
                 # «насос номер 6 ... давление 8» and «6 бар — давление и
                 # температура 80». The number's own name is another measurement.
                 # «при температуре 80 градусов составляет» is not: it qualifies
@@ -991,9 +1348,7 @@ def _keeps(span, stem, token):
                         )
                     ):
                         continue
-                    if _other_name(span, number.start(), stem) and (
-                        re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", middle) or _split_gap(middle)
-                    ):
+                    if _other_name(span, number.start(), stem) and (_reading(middle, follow) or _split_gap(middle)):
                         continue
             elif number.end() <= found.start():
                 if _other_label(span, number.start(), found):
@@ -1003,9 +1358,10 @@ def _keeps(span, stem, token):
                 if _foreign_phrase(span, number.start(), stem):
                     continue
                 middle = span[number.end():found.start()]
+                follow = span[found.start():]
             else:
                 continue
-            other = re.search(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", middle)
+            other = _reading(middle, follow)
             label = re.search(r"[a-zа-яё]{5,}", middle)
             if other and label and not (found.end() <= number.start() and _stated_condition(middle)):
                 continue
@@ -1026,16 +1382,45 @@ def _from_question(fact, asked):
     return _grounded(fact, asked)
 
 
+# Declined units. «градусов» does not pick one pressure out of two; «бар» is
+# already glue, but the full word is not. «части» is not «час».
+_UNITS = (
+    "градус", "процент", "метр", "литр", "секунд", "минут", "час",
+    "килограмм", "ампер", "вольт", "ватт", "паскал", "герц",
+)
+
+
+def _unit_word(word):
+    for stem in _UNITS:
+        if word.startswith(stem) and word[len(stem):] in _case_endings():
+            return True
+    return False
+
+
 def _content_words(region):
     # Words that can tell two values of one measurement apart.
     # «на выходе» keeps «выходе», «максимальное» keeps «максимальное».
     # A unit, a preposition or a linking verb does not.
     words = []
     for word in re.findall(r"[a-zа-яё]{3,}", (region or "").lower().replace("ё", "е")):
-        if word in _GLUE or word in _LINKS or word in _PRONOUNS or word in _ASKED or _bridge_word(word):
+        if word in _GLUE or word in _LINKS or word in _PRONOUNS or word in _ASKED or _bridge_word(word) or _unit_word(word):
             continue
         words.append(word)
     return words
+
+
+def _gap_parts(region):
+    # «2 бар на входе и 6» — the conjunction gives «на входе» to 2.
+    # «2 бар и на выходе 6» — «на выходе» names 6. A comma does the same:
+    # «2 бар, давление на выходе 6».
+    found = re.search(
+        r"(?<![0-9a-zа-яё])(?:,|" + "|".join(sorted(_CONJUNCTIONS, key=len, reverse=True)) + r")(?![0-9a-zа-яё])",
+        region or "",
+        re.IGNORECASE,
+    )
+    if not found:
+        return None
+    return region[:found.start()], region[found.end():]
 
 
 def _label_words(span, start, end):
@@ -1043,25 +1428,40 @@ def _label_words(span, start, end):
     # «давление на входе 2 бар и давление на выходе 6» gives «входе» to 2
     # and «выходе» to 6. «6 бар — давление» has nothing before it, so the
     # name after the dash belongs to 6.
+    # «давление 2 бар на входе и 6 бар на выходе» puts the qualifier after
+    # the value. The words in front are only «давление», so the inlet was
+    # left on 6 and the outlet claim took the inlet pressure.
     previous = 0
     for match in _PLAIN_NUMBER.finditer(span):
         if match.start() >= start:
             break
         previous = match.end()
-    words = _content_words(span[previous:start])
-    if words:
-        return words
     nxt = len(span)
     for match in _PLAIN_NUMBER.finditer(span):
         if match.start() >= end:
             nxt = match.start()
             break
-    # «от 6 до 10 градусов»: «градусов» is only a unit, so 10 keeps the name
-    # before the range. «6 бар — давление» has the name after the number.
-    forward = _content_words(span[end:nxt])
-    if any(_head_key(word) for word in forward):
-        return forward
-    return []
+    before = span[previous:start]
+    after = span[end:nxt]
+    split_before = _gap_parts(before)
+    # No conjunction: the words in front name this number.
+    # «бар на входе и» keeps «входе» with the earlier value.
+    preface = split_before[1] if split_before else before
+    split_after = _gap_parts(after)
+    if split_after:
+        postfix = split_after[0]
+    elif nxt == len(span):
+        # «6 бар на выходе» and «6 бар — давление»: nothing follows the name.
+        postfix = after
+    else:
+        # «80 градусов рабочее давление составляет 6»: those words name 6.
+        # «от 6 до 10»: «до» is not a new claim, and 10 keeps the name in front.
+        postfix = ""
+    words = _content_words(preface)
+    for word in _content_words(postfix):
+        if word not in words:
+            words.append(word)
+    return words
 
 
 def _head_key(word):
@@ -1091,24 +1491,85 @@ def _answers_head(stem, heads):
     return any(stem == head or stem == head[:5] for head in heads)
 
 
-def _qualifier_conflict(text, start, answer_stems):
+def _genitive_shape(word):
+    # «масла» and «воды» are the object of a measurement whose name was left
+    # out. «насос» and «выход» end on a consonant and name the number itself.
+    return any(word.endswith(ending) and len(word) > len(ending) + 2 for ending in ("а", "я", "ы", "и", "ов", "ев", "ей"))
+
+
+def _qualifier_only(text, number_start):
+    # A later value still belongs to the measurement named before a clause
+    # break when it adds only a qualifier. «на выходе: 6», «16 бар
+    # максимальное» and «масла: 16» do. «насос №4» and «4 насоса» name a
+    # different fact, so the pressure must not inherit them.
+    left, right = _bounds(text, number_start)
+    span = _case(text[left:right])
+    local = number_start - left
+    for match in re.finditer(r"[a-zа-яё]{3,}", span):
+        word = match.group(0)
+        if word in _GLUE or word in _LINKS or word in _PRONOUNS or word in _ASKED or _bridge_word(word) or _unit_word(word):
+            continue
+        if _head_key(word):
+            return False
+        if _ADJECTIVE.search(word) and not _kind_noun(word):
+            continue
+        preceded = span[:match.start()].rstrip(" \t:;—–-\u2212()«»\",")
+        prev = re.search(r"([a-zа-яё]+)$", preceded)
+        if prev and prev.group(1) in _PREPOSITIONS:
+            continue
+        if match.end() <= local and _genitive_shape(word) and not re.search(r"[a-zа-яё]", span[match.end():local]):
+            continue
+        return False
+    return True
+
+
+def _carried_heads(text, earlier, later):
+    # «На входе давление: 2 бар; на выходе: 6 бар». The break makes two
+    # spans, and the second never repeats давление. It is still that
+    # measurement, so 2 must not confirm the outlet. «Давление: 6 бар;
+    # температура: 80» names a new measurement. «4 насоса; давление 8»
+    # has nothing to carry forward.
+    _, _, token, span, words = earlier
+    later_at, _, _, _, later_words = later
+    heads = {key for word in words if (key := _head_key(word))}
+    later_heads = {key for word in later_words if (key := _head_key(word))}
+    if not heads or later_heads - heads:
+        return set()
+    kept = {head for head in heads if _keeps(span, head, token)}
+    if not kept or not _qualifier_only(text, later_at):
+        return set()
+    return kept
+
+
+def _qualifier_conflict(text, start, answer_stems, end=None):
     # «давление на выходе равно 2» is not the inlet pressure, and
     # «максимальное давление равно 6» is not the minimum. The head is the
     # same measurement, so the word that picks the value has to sit with
     # the number. «давление насоса» may still be 6 when the pump is named
     # on another line, and «рабочее давление» may still be 6 beside
     # «рабочая температура»: those are different measurements.
+    # «12 000» is one value. A plain scan starts at «000», misses the hit,
+    # and then «давление на выходе 12 000» takes the inlet. A signed hit
+    # starts on the minus while the digits start one character later, so
+    # «давление на выходе -12» would take the inlet the same way. The hit
+    # and the value overlap in both cases.
     signed = _signs(text or "")
     found = []
-    for match in _PLAIN_NUMBER.finditer(signed):
+    for match in _VALUE.finditer(signed):
         left, right = _bounds(signed, match.start())
         span = signed[left:right]
         words = _label_words(span, match.start() - left, match.end() - left)
-        found.append((match.start(), match.group(0), span, words))
-    current = next((item for item in found if item[0] == start), None)
+        # The magnitude of «-12» is not that value. The keep-check has to see
+        # the sign, or the inlet's «-12» looks like a different number.
+        number = match.group(0)
+        if _negated(text or "", match.start()):
+            number = "-" + number
+        found.append((match.start(), match.end(), number, span, words))
+    stop = start + 1 if end is None else end
+    current = next((item for item in found if item[0] < stop and item[1] > start), None)
     if current is None:
         return False
-    _, token, span, words = current
+    current_at, _, token, span, words = current
     # «максимальное давление 16 бар и 6 бар»: 6 has no words of its own,
     # so it still carries максимальное. A different word, as in
     # «и на выходе 6», is another value and must not inherit.
@@ -1116,14 +1577,20 @@ def _qualifier_conflict(text, start, answer_stems):
         return False
     here_stems = {word[:5] for word in words}
     here_heads = {key for word in words if (key := _head_key(word))}
-    for other_start, other_token, other_span, other_words in found:
-        if other_start == start:
+    for other_item in found:
+        other_start, _, other_token, other_span, other_words = other_item
+        if other_start == current_at:
             continue
         other_heads = {key for word in other_words if (key := _head_key(word))}
         shared = {
             head for head in here_heads | other_heads
             if _keeps(span, head, token) and _keeps(other_span, head, other_token)
         }
+        # «давление: 2 бар; на выходе: 6». The break drops the repeated name,
+        # so the outlet is invisible unless the first head is carried over.
+        if not shared and span != other_span:
+            first, second = (current, other_item) if current_at < other_start else (other_item, current)
+            shared = _carried_heads(signed, first, second)
         # «давление на входе 2 бар и на выходе 6» leaves the second value
         # without its own head. Those words still belong to the same measurement.
         # A headless number earlier in the clause does not: «в цехе 4 насоса
@@ -1143,6 +1610,29 @@ def _qualifier_conflict(text, start, answer_stems):
                 continue
             if stem in other_stems and stem not in here_stems:
                 return True
+    return False
+
+
+def _borrowed(text, start, end, stems):
+    # An exact digit match. «на выходе значение равно 2000» is not the inlet,
+    # and not the year, when «выходе» is written on another number.
+    # «выпущен в 2019» stays: «выпущен» labels neither the year nor the pressure.
+    signed = _signs(text or "")
+    labels = []
+    for match in _VALUE.finditer(signed):
+        left, right = _bounds(signed, match.start())
+        span = signed[left:right]
+        words = _label_words(span, match.start() - left, match.end() - left)
+        labels.append((match.start(), match.end(), {word[:5] for word in words}))
+    current = next((keys for pos, stop, keys in labels if pos <= start < stop or start <= pos < end), None)
+    if current is None:
+        return False
+    wanted = {stem[:5] for stem in stems if len(stem) >= 3}
+    for pos, stop, keys in labels:
+        if pos <= start < stop or start <= pos < end:
+            continue
+        if any(stem in keys and stem not in current for stem in wanted):
+            return True
     return False
 
 
@@ -1168,12 +1658,14 @@ def _grounded(fact, text):
         return _tolerance_grounded(token, fact[2], text)
     places = list(_hits(text, token))
     if kind == "exact" or not places:
+        if places and kind == "exact" and len(fact) > 2 and not any(ch.isalpha() for ch in token):
+            return any(not _borrowed(text, match.start(), match.end(), fact[2]) for match in places)
         return bool(places)
     for match in places:
         nearby = _span(text, match.start())
         if not any(_keeps(nearby, stem, token) for stem in fact[2]):
             continue
-        if _qualifier_conflict(text, match.start(), fact[2]):
+        if _qualifier_conflict(text, match.start(), fact[2], match.end()):
             continue
         return True
     return False

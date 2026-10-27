@@ -1,5 +1,6 @@
 from docx import Document
 
+import ingest
 import store
 from ingest import ingest_dir, split_chunks
 
@@ -15,6 +16,30 @@ def test_upsert_skips_same_checksum(tmp_path, monkeypatch):
     store.upsert_chunks(chunks)
     store.upsert_chunks(chunks)
     assert store.collection().count() == 1
+
+
+def test_reingest_applies_overlap_change(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
+    monkeypatch.setattr(ingest, "count_tokens", lambda text: max(1, len((text or "").split())))
+    ingest._word_tokens.cache_clear()
+    text = "\n".join(
+        f"строка {number} " + " ".join(f"слово{number}_{index}" for index in range(8))
+        for number in range(40)
+    )
+    state = {"tokens": 250, "overlap": 40, "intro": 120}
+    monkeypatch.setattr(ingest, "runtime", lambda: state)
+    first = split_chunks(text, "doc.txt")
+    store.upsert_chunks(first)
+    state["overlap"] = 0
+    second = split_chunks(text, "doc.txt")
+    assert len(first) == len(second) > 1
+    assert [chunk["text"] for chunk in first] != [chunk["text"] for chunk in second]
+    store.upsert_chunks(second)
+    _, texts, metas = store._rows(store.collection())
+    stored = [body for _, body in sorted(zip(metas, texts), key=lambda item: item[0]["chunk_index"])]
+    assert stored == [chunk["text"] for chunk in second]
+    ingest._word_tokens.cache_clear()
 
 
 def test_upsert_replaces_changed_document(tmp_path, monkeypatch):

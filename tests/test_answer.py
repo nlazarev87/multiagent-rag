@@ -906,6 +906,601 @@ def test_check_rejects_a_long_number_taken_from_another_measurement():
     assert agents.check_agent("Масса равна 1000 кг [1].", [radius])["missing"] == ["1000"]
 
 
+def test_check_rejects_a_year_taken_as_its_measurement():
+    since = {"text": "С 2019 года давление составляет 6 бар.", "document_name": "pump.md"}
+    during = {"text": "В 2019 году рабочее давление: 6 бар.", "document_name": "pump.md"}
+    until = {"text": "До 2019 давление было 6 бар.", "document_name": "pump.md"}
+    dated = {"text": "Давление с 2019 года составляет 6 бар.", "document_name": "pump.md"}
+    marked = {"text": "1600 — рабочее давление с 2019 года.", "document_name": "pump.md"}
+    ranged = {"text": "Давление от 2000 до 2019 бар.", "document_name": "pump.md"}
+    real = {"text": "Рабочее давление: 2019 бар.", "document_name": "pump.md"}
+    issued = {"text": "Насос > Характеристики\nГод выпуска: 2019", "document_name": "pump.md"}
+    assert agents.check_agent("Давление равно 2019 бар [1].", [since])["missing"] == ["2019"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [since])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 2019 бар [1].", [during])["missing"] == ["2019"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [during])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 2019 бар [1].", [until])["missing"] == ["2019"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [until])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 2019 бар [1].", [dated])["missing"] == ["2019"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [dated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 2019 бар [1].", [marked])["missing"] == ["2019"]
+    assert agents.check_agent("Рабочее давление равно 1600 бар [1].", [marked])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 2000 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 2019 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 2019 бар [1].", [real])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Насос выпущен в 2019 году [1].", [issued])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Год выпуска равен 2019 [1].", [issued])["status"] == agents.CONFIRMED
+
+
+def test_check_rejects_a_calendar_day_taken_as_its_measurement():
+    dated = {"text": "Давление с 1 января 2019 года составляет 6 бар.", "document_name": "pump.md"}
+    may = {"text": "Давление с 12 мая 2019 года составляет 6 бар.", "document_name": "pump.md"}
+    winter = {"text": "Давление с 31 декабря 2019 года составляет 6 бар.", "document_name": "pump.md"}
+    bare = {"text": "Давление с 1 января 2019 составляет 6 бар.", "document_name": "pump.md"}
+    month = {"text": "Давление в январе 2019 составляет 6 бар.", "document_name": "pump.md"}
+    leading = {"text": "1 января давление составляет 6 бар.", "document_name": "pump.md"}
+    cold = {"text": "Температура 1 января составила 20 градусов.", "document_name": "pump.md"}
+    spanned = {"text": "Давление с 1 по 6 января составляет 10 бар.", "document_name": "pump.md"}
+    numeric = {"text": "Давление с 01.01.2019 составляет 6 бар.", "document_name": "pump.md"}
+    ranged = {"text": "Давление от 1 до 6 бар.", "document_name": "pump.md"}
+    unit = {"text": "Диаметр 1 мм.", "document_name": "pump.md"}
+    january = {"text": "Давление 1 бар в январе.", "document_name": "pump.md"}
+    major = {"text": "Номер 1 майора.", "document_name": "pump.md"}
+    real = {"text": "Рабочее давление: 2019 бар.", "document_name": "pump.md"}
+    season = {"text": "Подача в мае: 6.", "document_name": "pump.md"}
+    assert agents.check_agent("Давление равно 1 бар [1].", [dated])["missing"] == ["1"]
+    assert agents.check_agent("Давление равно 2019 бар [1].", [dated])["missing"] == ["2019"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [dated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 12 бар [1].", [may])["missing"] == ["12"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [may])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 31 бар [1].", [winter])["missing"] == ["31"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [winter])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [bare])["missing"] == ["1"]
+    assert agents.check_agent("Давление равно 2019 бар [1].", [bare])["missing"] == ["2019"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [bare])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 2019 бар [1].", [month])["missing"] == ["2019"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [month])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [leading])["missing"] == ["1"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [leading])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура равна 1 градус [1].", [cold])["missing"] == ["1"]
+    assert agents.check_agent("Температура равна 20 градусов [1].", [cold])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [spanned])["missing"] == ["1"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [spanned])["missing"] == ["6"]
+    assert agents.check_agent("Давление равно 10 бар [1].", [spanned])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [numeric])["missing"] == ["1"]
+    assert agents.check_agent("Давление равно 2019 бар [1].", [numeric])["missing"] == ["2019"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [numeric])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 6 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Диаметр равен 1 мм [1].", [unit])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [january])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Номер равен 1 [1].", [major])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 2019 бар [1].", [real])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Подача равна 6 [1].", [season])["status"] == agents.CONFIRMED
+
+
+def test_check_rejects_a_clock_time_taken_as_its_measurement():
+    between = {"text": "Давление в 6 часов составляет 10 бар.", "document_name": "pump.md"}
+    leading = {"text": "В 18 часов рабочее давление: 6 бар.", "document_name": "pump.md"}
+    toward = {"text": "К 8 часам давление составило 6 бар.", "document_name": "pump.md"}
+    hour = {"text": "В 1 час давление составляет 6 бар.", "document_name": "pump.md"}
+    hours = {"text": "В 2 часа давление составляет 6 бар.", "document_name": "pump.md"}
+    since = {"text": "С 6 часов давление составляет 10 бар.", "document_name": "pump.md"}
+    until = {"text": "До 18 часов давление составляет 6 бар.", "document_name": "pump.md"}
+    colon = {"text": "Давление в 14:30 составляет 6 бар.", "document_name": "pump.md"}
+    dotted = {"text": "Давление в 14.30 составляет 6 бар.", "document_name": "pump.md"}
+    heated = {"text": "Температура в 18 часов составила 80 градусов.", "document_name": "pump.md"}
+    lasted = {"text": "Время работы составляет 6 часов.", "document_name": "pump.md"}
+    shift = {"text": "Смена в 8 часов.", "document_name": "pump.md"}
+    life = {"text": "Срок службы в 6 часов.", "document_name": "pump.md"}
+    resource = {"text": "Ресурс до 6 часов.", "document_name": "pump.md"}
+    ranged = {"text": "Наработка от 6 до 10 часов.", "document_name": "pump.md"}
+    decimal = {"text": "Рабочее давление: 14.30 бар.", "document_name": "pump.md"}
+    bars = {"text": "Давление в 6 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Давление равно 6 бар [1].", [between])["missing"] == ["6"]
+    assert agents.check_agent("Давление равно 10 бар [1].", [between])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 18 бар [1].", [leading])["missing"] == ["18"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [leading])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [toward])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [toward])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [hour])["missing"] == ["1"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [hour])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 2 бар [1].", [hours])["missing"] == ["2"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [hours])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 6 бар [1].", [since])["missing"] == ["6"]
+    assert agents.check_agent("Давление равно 10 бар [1].", [since])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 18 бар [1].", [until])["missing"] == ["18"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [until])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 14 бар [1].", [colon])["missing"] == ["14"]
+    assert agents.check_agent("Давление равно 30 бар [1].", [colon])["missing"] == ["30"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [colon])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 14 бар [1].", [dotted])["missing"] == ["14"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [dotted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура равна 18 градусов [1].", [heated])["missing"] == ["18"]
+    assert agents.check_agent("Температура равна 80 градусов [1].", [heated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время работы составляет 6 часов [1].", [lasted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Смена равна 8 часов [1].", [shift])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Срок службы равен 6 часов [1].", [life])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ресурс равен 6 часов [1].", [resource])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 6 часов [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 10 часов [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 14.30 бар [1].", [decimal])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 14 бар [1].", [decimal])["missing"] == ["14"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [bars])["status"] == agents.CONFIRMED
+
+
+def test_check_rejects_a_clock_minute_taken_as_its_measurement():
+    between = {"text": "Давление в 14 часов 30 минут составляет 6 бар.", "document_name": "pump.md"}
+    leading = {"text": "В 14 часов 30 минут рабочее давление: 6 бар.", "document_name": "pump.md"}
+    toward = {"text": "К 8 часам 15 минут давление составило 6 бар.", "document_name": "pump.md"}
+    early = {"text": "Давление в 6 часов 30 минут составляет 10 бар.", "document_name": "pump.md"}
+    heated = {"text": "Температура в 18 часов 45 минут составила 80 градусов.", "document_name": "pump.md"}
+    precise = {"text": "Давление в 14 часов 30 минут 15 секунд составляет 6 бар.", "document_name": "pump.md"}
+    singular = {"text": "Давление в 1 час 1 минуту составляет 6 бар.", "document_name": "pump.md"}
+    plural = {"text": "Давление в 2 часа 5 минут составляет 6 бар.", "document_name": "pump.md"}
+    lasted = {"text": "Время в 6 часов 30 минут.", "document_name": "pump.md"}
+    life = {"text": "Срок службы в 6 часов 30 минут.", "document_name": "pump.md"}
+    resource = {"text": "Ресурс до 6 часов 30 минут.", "document_name": "pump.md"}
+    counted = {"text": "Количество до 6 часов 30 минут.", "document_name": "pump.md"}
+    worked = {"text": "Время работы составляет 6 часов 30 минут.", "document_name": "pump.md"}
+    plain = {"text": "Время работы составляет 30 минут.", "document_name": "pump.md"}
+    ranged = {"text": "Наработка от 6 до 10 часов.", "document_name": "pump.md"}
+    shift = {"text": "Смена в 8 часов.", "document_name": "pump.md"}
+    pause = {"text": "Пауза 30 минут. Давление 6 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Давление равно 30 бар [1].", [between])["missing"] == ["30"]
+    assert agents.check_agent("Давление равно 14 бар [1].", [between])["missing"] == ["14"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [between])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 30 бар [1].", [leading])["missing"] == ["30"]
+    assert agents.check_agent("Рабочее давление равно 14 бар [1].", [leading])["missing"] == ["14"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [leading])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 15 бар [1].", [toward])["missing"] == ["15"]
+    assert agents.check_agent("Давление равно 8 бар [1].", [toward])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [toward])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 30 бар [1].", [early])["missing"] == ["30"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [early])["missing"] == ["6"]
+    assert agents.check_agent("Давление равно 10 бар [1].", [early])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура равна 45 градусов [1].", [heated])["missing"] == ["45"]
+    assert agents.check_agent("Температура равна 18 градусов [1].", [heated])["missing"] == ["18"]
+    assert agents.check_agent("Температура равна 80 градусов [1].", [heated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 30 бар [1].", [precise])["missing"] == ["30"]
+    assert agents.check_agent("Давление равно 15 бар [1].", [precise])["missing"] == ["15"]
+    assert agents.check_agent("Давление равно 14 бар [1].", [precise])["missing"] == ["14"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [precise])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [singular])["missing"] == ["1"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [singular])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 5 бар [1].", [plural])["missing"] == ["5"]
+    assert agents.check_agent("Давление равно 2 бар [1].", [plural])["missing"] == ["2"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [plural])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время равно 30 минут [1].", [lasted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время равно 6 часов [1].", [lasted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Срок службы равен 30 минут [1].", [life])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Срок службы равен 6 часов [1].", [life])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ресурс равен 30 минут [1].", [resource])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ресурс равен 6 часов [1].", [resource])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Количество равно 30 минут [1].", [counted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Количество равно 6 часов [1].", [counted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время работы составляет 6 часов [1].", [worked])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время работы составляет 30 минут [1].", [plain])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 6 часов [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 10 часов [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Смена равна 8 часов [1].", [shift])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 30 бар [1].", [pause])["missing"] == ["30"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [pause])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Пауза равна 30 минут [1].", [pause])["status"] == agents.CONFIRMED
+
+
+def test_check_rejects_an_abbreviated_clock_taken_as_its_measurement():
+    between = {"text": "Давление в 14 ч 30 мин составляет 6 бар.", "document_name": "pump.md"}
+    spelled = {"text": "Давление в 14 часов 30 мин составляет 6 бар.", "document_name": "pump.md"}
+    dotted = {"text": "Давление в 14 ч. 30 мин. составляет 6 бар.", "document_name": "pump.md"}
+    leading = {"text": "В 14 ч 30 мин рабочее давление: 6 бар.", "document_name": "pump.md"}
+    hour = {"text": "Давление в 14 ч составляет 6 бар.", "document_name": "pump.md"}
+    precise = {"text": "Давление в 14 ч 30 мин 15 сек составляет 6 бар.", "document_name": "pump.md"}
+    singular = {"text": "Давление в 1 ч 1 мин составляет 6 бар.", "document_name": "pump.md"}
+    lasted = {"text": "Время в 6 ч 30 мин.", "document_name": "pump.md"}
+    life = {"text": "Срок службы в 6 ч 30 мин.", "document_name": "pump.md"}
+    worked = {"text": "Время работы составляет 6 ч 30 мин.", "document_name": "pump.md"}
+    plain = {"text": "Время работы составляет 30 мин.", "document_name": "pump.md"}
+    shift = {"text": "Смена в 8 ч.", "document_name": "pump.md"}
+    ranged = {"text": "Наработка от 6 до 10 ч.", "document_name": "pump.md"}
+    pause = {"text": "Пауза 30 мин. Давление 6 бар.", "document_name": "pump.md"}
+    split = {"text": "Смена в 8 ч. Давление 6 бар.", "document_name": "pump.md"}
+    part = {"text": "Давление в 6 часть составляет 10 бар.", "document_name": "pump.md"}
+    zone = {"text": "Давление в 6 часового пояса составляет 10 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Давление равно 30 бар [1].", [between])["missing"] == ["30"]
+    assert agents.check_agent("Давление равно 14 бар [1].", [between])["missing"] == ["14"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [between])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 30 бар [1].", [spelled])["missing"] == ["30"]
+    assert agents.check_agent("Давление равно 14 бар [1].", [spelled])["missing"] == ["14"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [spelled])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 30 бар [1].", [dotted])["missing"] == ["30"]
+    assert agents.check_agent("Давление равно 14 бар [1].", [dotted])["missing"] == ["14"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [dotted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 30 бар [1].", [leading])["missing"] == ["30"]
+    assert agents.check_agent("Рабочее давление равно 14 бар [1].", [leading])["missing"] == ["14"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [leading])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 14 бар [1].", [hour])["missing"] == ["14"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [hour])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 15 бар [1].", [precise])["missing"] == ["15"]
+    assert agents.check_agent("Давление равно 30 бар [1].", [precise])["missing"] == ["30"]
+    assert agents.check_agent("Давление равно 14 бар [1].", [precise])["missing"] == ["14"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [precise])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 1 бар [1].", [singular])["missing"] == ["1"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [singular])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время равно 30 минут [1].", [lasted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время равно 6 часов [1].", [lasted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Срок службы равен 30 минут [1].", [life])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Срок службы равен 6 часов [1].", [life])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время работы составляет 6 часов [1].", [worked])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время работы составляет 30 минут [1].", [plain])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Смена равна 8 часов [1].", [shift])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 6 часов [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 10 часов [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 30 бар [1].", [pause])["missing"] == ["30"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [pause])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Пауза равна 30 минут [1].", [pause])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [split])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [split])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Смена равна 8 часов [1].", [split])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 6 бар [1].", [part])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 6 бар [1].", [zone])["status"] == agents.CONFIRMED
+
+
+def test_check_rejects_an_hour_range_taken_as_its_measurement():
+    window = {"text": "Давление с 8 до 18 часов составляет 6 бар.", "document_name": "pump.md"}
+    leading = {"text": "С 8 до 18 часов рабочее давление: 6 бар.", "document_name": "pump.md"}
+    spelled = {"text": "Давление с 8 часов до 18 часов составляет 6 бар.", "document_name": "pump.md"}
+    short = {"text": "Рабочее давление с 8 до 18 ч составляет 6 бар.", "document_name": "pump.md"}
+    dotted = {"text": "Рабочее давление с 8 до 18 ч. составляет 6 бар.", "document_name": "pump.md"}
+    during = {"text": "Давление от 6 до 10 часов составляет 16 бар.", "document_name": "pump.md"}
+    heated = {"text": "Температура с 8 до 18 часов составила 80 градусов.", "document_name": "pump.md"}
+    ranged = {"text": "Наработка от 6 до 10 часов.", "document_name": "pump.md"}
+    shift = {"text": "Смена с 8 до 18 часов.", "document_name": "pump.md"}
+    life = {"text": "Срок службы от 6 до 10 часов.", "document_name": "pump.md"}
+    worked = {"text": "Время работы от 6 до 10 часов.", "document_name": "pump.md"}
+    counted = {"text": "Количество от 6 до 10 часов.", "document_name": "pump.md"}
+    resource = {"text": "Ресурс от 6 до 10 часов.", "document_name": "pump.md"}
+    bars = {"text": "Давление от 8 до 18 бар.", "document_name": "pump.md"}
+    bare = {"text": "Давление от 8 до 18.", "document_name": "pump.md"}
+    start_unit = {"text": "Давление с 8 часов до 18 составляет 6 бар.", "document_name": "pump.md"}
+    start_short = {"text": "Давление с 8 ч до 18 составляет 6 бар.", "document_name": "pump.md"}
+    start_dotted = {"text": "Давление с 8 ч. до 18 составляет 6 бар.", "document_name": "pump.md"}
+    shift_start = {"text": "Смена с 8 часов до 18.", "document_name": "pump.md"}
+    ranged_start = {"text": "Наработка с 8 часов до 18.", "document_name": "pump.md"}
+    bars_start = {"text": "Давление с 8 часов до 18 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Давление равно 8 бар [1].", [window])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 18 бар [1].", [window])["missing"] == ["18"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [window])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 8 бар [1].", [leading])["missing"] == ["8"]
+    assert agents.check_agent("Рабочее давление равно 18 бар [1].", [leading])["missing"] == ["18"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [leading])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [spelled])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 18 бар [1].", [spelled])["missing"] == ["18"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [spelled])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 8 бар [1].", [short])["missing"] == ["8"]
+    assert agents.check_agent("Рабочее давление равно 18 бар [1].", [short])["missing"] == ["18"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [short])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 8 бар [1].", [dotted])["missing"] == ["8"]
+    assert agents.check_agent("Рабочее давление равно 18 бар [1].", [dotted])["missing"] == ["18"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [dotted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 6 бар [1].", [during])["missing"] == ["6"]
+    assert agents.check_agent("Давление равно 10 бар [1].", [during])["missing"] == ["10"]
+    assert agents.check_agent("Давление равно 16 бар [1].", [during])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура равна 8 градусов [1].", [heated])["missing"] == ["8"]
+    assert agents.check_agent("Температура равна 18 градусов [1].", [heated])["missing"] == ["18"]
+    assert agents.check_agent("Температура равна 80 градусов [1].", [heated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 6 часов [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 10 часов [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Смена равна 8 часов [1].", [shift])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Смена равна 18 часов [1].", [shift])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Срок службы равен 6 часов [1].", [life])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Срок службы равен 10 часов [1].", [life])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время работы составляет 6 часов [1].", [worked])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время работы составляет 10 часов [1].", [worked])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Количество равно 6 часов [1].", [counted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Количество равно 10 часов [1].", [counted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ресурс равен 6 часов [1].", [resource])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ресурс равен 10 часов [1].", [resource])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [bars])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 18 бар [1].", [bars])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [bare])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 18 бар [1].", [bare])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [start_unit])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 18 бар [1].", [start_unit])["missing"] == ["18"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [start_unit])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [start_short])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 18 бар [1].", [start_short])["missing"] == ["18"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [start_short])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [start_dotted])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 18 бар [1].", [start_dotted])["missing"] == ["18"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [start_dotted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Смена равна 8 часов [1].", [shift_start])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Смена равна 18 часов [1].", [shift_start])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 8 часов [1].", [ranged_start])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 18 часов [1].", [ranged_start])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [bars_start])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 18 бар [1].", [bars_start])["status"] == agents.CONFIRMED
+
+
+def test_check_rejects_an_hour_range_through_po_taken_as_its_measurement():
+    window = {"text": "Давление с 8 по 18 часов составляет 6 бар.", "document_name": "pump.md"}
+    leading = {"text": "С 8 по 18 часов рабочее давление: 6 бар.", "document_name": "pump.md"}
+    short = {"text": "Рабочее давление с 8 по 18 ч составляет 6 бар.", "document_name": "pump.md"}
+    dotted = {"text": "Рабочее давление с 8 по 18 ч. составляет 6 бар.", "document_name": "pump.md"}
+    during = {"text": "Давление от 6 по 10 часов составляет 16 бар.", "document_name": "pump.md"}
+    heated = {"text": "Температура с 8 по 18 часов составила 80 градусов.", "document_name": "pump.md"}
+    minutes = {"text": "Давление с 8 по 18 часов 30 минут составляет 6 бар.", "document_name": "pump.md"}
+    brief = {"text": "Давление с 8 по 18 ч 30 мин составляет 6 бар.", "document_name": "pump.md"}
+    midnight = {"text": "Давление с 0 по 6 часов составляет 10 бар.", "document_name": "pump.md"}
+    each = {"text": "Давление по 6 часов составляет 10 бар.", "document_name": "pump.md"}
+    ranged = {"text": "Наработка с 8 по 18 часов.", "document_name": "pump.md"}
+    shift = {"text": "Смена с 8 по 18 часов.", "document_name": "pump.md"}
+    life = {"text": "Срок службы от 6 по 10 часов.", "document_name": "pump.md"}
+    worked = {"text": "Время работы с 8 по 18 часов.", "document_name": "pump.md"}
+    counted = {"text": "Количество от 6 по 10 часов.", "document_name": "pump.md"}
+    resource = {"text": "Ресурс с 8 по 18 часов.", "document_name": "pump.md"}
+    lasted = {"text": "Время с 8 по 18 часов 30 минут.", "document_name": "pump.md"}
+    per = {"text": "Наработка по 6 часов.", "document_name": "pump.md"}
+    bars = {"text": "Давление с 8 по 18 бар.", "document_name": "pump.md"}
+    bare = {"text": "Давление с 8 по 18.", "document_name": "pump.md"}
+    part = {"text": "Давление по 6 часть составляет 10 бар.", "document_name": "pump.md"}
+    start_unit = {"text": "Давление с 8 часов по 18 составляет 6 бар.", "document_name": "pump.md"}
+    start_short = {"text": "Давление с 8 ч по 18 составляет 6 бар.", "document_name": "pump.md"}
+    start_dotted = {"text": "Давление с 8 ч. по 18 составляет 6 бар.", "document_name": "pump.md"}
+    shift_start = {"text": "Смена с 8 часов по 18.", "document_name": "pump.md"}
+    ranged_start = {"text": "Наработка с 8 часов по 18.", "document_name": "pump.md"}
+    bars_start = {"text": "Давление с 8 часов по 18 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Давление равно 8 бар [1].", [window])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 18 бар [1].", [window])["missing"] == ["18"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [window])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 8 бар [1].", [leading])["missing"] == ["8"]
+    assert agents.check_agent("Рабочее давление равно 18 бар [1].", [leading])["missing"] == ["18"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [leading])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 8 бар [1].", [short])["missing"] == ["8"]
+    assert agents.check_agent("Рабочее давление равно 18 бар [1].", [short])["missing"] == ["18"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [short])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 8 бар [1].", [dotted])["missing"] == ["8"]
+    assert agents.check_agent("Рабочее давление равно 18 бар [1].", [dotted])["missing"] == ["18"]
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [dotted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 6 бар [1].", [during])["missing"] == ["6"]
+    assert agents.check_agent("Давление равно 10 бар [1].", [during])["missing"] == ["10"]
+    assert agents.check_agent("Давление равно 16 бар [1].", [during])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Температура равна 8 градусов [1].", [heated])["missing"] == ["8"]
+    assert agents.check_agent("Температура равна 18 градусов [1].", [heated])["missing"] == ["18"]
+    assert agents.check_agent("Температура равна 80 градусов [1].", [heated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [minutes])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 18 бар [1].", [minutes])["missing"] == ["18"]
+    assert agents.check_agent("Давление равно 30 бар [1].", [minutes])["missing"] == ["30"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [minutes])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [brief])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 18 бар [1].", [brief])["missing"] == ["18"]
+    assert agents.check_agent("Давление равно 30 бар [1].", [brief])["missing"] == ["30"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [brief])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 0 бар [1].", [midnight])["missing"] == ["0"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [midnight])["missing"] == ["6"]
+    assert agents.check_agent("Давление равно 10 бар [1].", [midnight])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 6 бар [1].", [each])["missing"] == ["6"]
+    assert agents.check_agent("Давление равно 10 бар [1].", [each])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 8 часов [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 18 часов [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Смена равна 8 часов [1].", [shift])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Смена равна 18 часов [1].", [shift])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Срок службы равен 6 часов [1].", [life])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Срок службы равен 10 часов [1].", [life])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время работы составляет 8 часов [1].", [worked])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время работы составляет 18 часов [1].", [worked])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Количество равно 6 часов [1].", [counted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Количество равно 10 часов [1].", [counted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ресурс равен 8 часов [1].", [resource])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ресурс равен 18 часов [1].", [resource])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время равно 8 часов [1].", [lasted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время равно 18 часов [1].", [lasted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Время равно 30 минут [1].", [lasted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 6 часов [1].", [per])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [bars])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 18 бар [1].", [bars])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [bare])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 18 бар [1].", [bare])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 6 бар [1].", [part])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 10 бар [1].", [part])["missing"] == ["10"]
+    assert agents.check_agent("Давление равно 8 бар [1].", [start_unit])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 18 бар [1].", [start_unit])["missing"] == ["18"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [start_unit])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [start_short])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 18 бар [1].", [start_short])["missing"] == ["18"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [start_short])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [start_dotted])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 18 бар [1].", [start_dotted])["missing"] == ["18"]
+    assert agents.check_agent("Давление равно 6 бар [1].", [start_dotted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Смена равна 8 часов [1].", [shift_start])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Смена равна 18 часов [1].", [shift_start])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 8 часов [1].", [ranged_start])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Наработка равна 18 часов [1].", [ranged_start])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 8 бар [1].", [bars_start])["missing"] == ["8"]
+    assert agents.check_agent("Давление равно 18 бар [1].", [bars_start])["status"] == agents.CONFIRMED
+
+
+def test_check_rejects_a_number_that_only_appears_in_the_question():
+    named = {"text": "Ответственный: Петров А.А.", "document_name": "doc.md"}
+    pump = {"text": "Рабочее давление: 6 бар.", "document_name": "pump.md"}
+    build = {"text": "Сборка 12.0 готова.", "document_name": "spec.md"}
+    assert "1.0" in agents.check_agent(
+        "Петров указан для версии 1.0 [1].", [named], "Кто указан ответственным за версию 1.0?"
+    )["missing"]
+    assert agents.check_agent("Давление равно 100 бар [1].", [pump], "Какое давление 100 бар?")["missing"] == ["100"]
+    assert agents.check_agent("Давление равно 1600 бар [1].", [pump], "Какое давление 1600 бар?")["missing"] == ["1600"]
+    assert "2019" in agents.check_agent(
+        "Насос выпущен в 2019 году [1].", [pump], "Насос выпущен в 2019?"
+    )["missing"]
+    assert "2.0" in agents.check_agent(
+        "Версия равна 2.0 [1].", [build], "Какая версия 12.0?"
+    )["missing"]
+
+
+def test_check_grounds_a_code_and_a_numeric_range():
+    flows = {"text": "Список: FLOW_A.1, FLOW_B.2. Частота: 0-24 раз в день.", "document_name": "spec.md"}
+    assert agents.check_agent("Потоки FLOW_A.1 и FLOW_B.2 [1].", [flows])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Частота равна 0-24 раз в день [1].", [flows])["status"] == agents.CONFIRMED
+
+
+def test_check_rejects_a_long_number_of_another_value():
+    ends = {"text": "Давление на входе: 2000 бар. Давление на выходе: 6000 бар.", "document_name": "pump.md"}
+    joined = {"text": "Давление на входе 2000 бар и давление на выходе 6000 бар.", "document_name": "pump.md"}
+    limits = {"text": "Минимальное давление: 2000 бар. Максимальное давление: 6000 бар.", "document_name": "pump.md"}
+    fluids = {"text": "Давление воды: 2000 бар. Давление масла: 6000 бар.", "document_name": "pump.md"}
+    year = {"text": "Насос > Характеристики\nРабочее давление на выходе: 6 бар\nГод выпуска: 2019", "document_name": "pump.md"}
+    named = {"text": "Год выпуска: 2019\nРабочее давление: 1600 бар.", "document_name": "pump.md"}
+    books = {"text": "Давление на входе: 12 000 бар. Давление на выходе: 6 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("На выходе значение равно 2000 бар [1].", [ends])["missing"] == ["2000"]
+    assert agents.check_agent("На выходе значение равно 6000 бар [1].", [ends])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Показатель на выходе равен 2000 бар [1].", [ends])["missing"] == ["2000"]
+    assert agents.check_agent("На выходе значение равно 2000 бар [1].", [joined])["missing"] == ["2000"]
+    assert agents.check_agent("На выходе значение равно 6000 бар [1].", [joined])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное значение равно 2000 бар [1].", [limits])["missing"] == ["2000"]
+    assert agents.check_agent("Максимальное значение равно 6000 бар [1].", [limits])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Минимальное значение равно 2000 бар [1].", [limits])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Значение масла равно 2000 бар [1].", [fluids])["missing"] == ["2000"]
+    assert agents.check_agent("Значение масла равно 6000 бар [1].", [fluids])["status"] == agents.CONFIRMED
+    assert agents.check_agent("На выходе значение равно 2019 бар [1].", [year])["missing"] == ["2019"]
+    assert agents.check_agent("На выходе значение равно 6 бар [1].", [year])["status"] == agents.CONFIRMED
+    assert agents.check_agent("По данным завода 2019 — рабочее давление [1].", [named])["missing"] == ["2019"]
+    assert agents.check_agent("По данным завода 1600 — рабочее давление [1].", [named])["status"] == agents.CONFIRMED
+    assert agents.check_agent("2019 — год выпуска [1].", [named])["status"] == agents.CONFIRMED
+    assert agents.check_agent("На выходе значение равно 12 000 бар [1].", [books])["missing"] == ["12 000"]
+    assert agents.check_agent("На выходе значение равно 6 бар [1].", [books])["status"] == agents.CONFIRMED
+
+
+def test_check_rejects_a_grouped_or_signed_number_of_another_value():
+    ends = {"text": "Давление на входе: 12 000 бар. Давление на выходе: 6 бар.", "document_name": "pump.md"}
+    both = {"text": "Давление на входе: 12 000 бар. Давление на выходе: 16 000 бар.", "document_name": "pump.md"}
+    joined = {"text": "Давление на входе 12 000 бар и давление на выходе 16 000 бар.", "document_name": "pump.md"}
+    limits = {"text": "Минимальное давление: 12 000 бар. Максимальное давление: 16 000 бар.", "document_name": "pump.md"}
+    fluids = {"text": "Давление воды: 12 000 бар. Давление масла: 6 бар.", "document_name": "pump.md"}
+    duties = {"text": "Испытательное давление: 12 000 бар.\nРабочее давление: 6 бар.", "document_name": "pump.md"}
+    radii = {"text": "Радиус крышки: 12 000 мм. Радиус поршня: 80 мм.", "document_name": "pump.md"}
+    strokes = {"text": "Ход поршня: 12 000 мм. Ход клапана: 40 мм.", "document_name": "pump.md"}
+    ranged = {"text": "Давление от 12 000 до 16 000 бар.", "document_name": "pump.md"}
+    decimal = {"text": "Давление на входе: 12 000,5 бар. Давление на выходе: 6 бар.", "document_name": "pump.md"}
+    signed = {"text": "Давление на входе: -12 бар. Давление на выходе: 6 бар.", "document_name": "pump.md"}
+    minus = {"text": "Давление на входе: −12 бар. Давление на выходе: 6 бар.", "document_name": "pump.md"}
+    word = {"text": "Давление на входе: минус 12 бар. Давление на выходе: 6 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Давление на выходе равно 12 000 бар [1].", [ends])["missing"] == ["12 000"]
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [ends])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на входе равно 12 000 бар [1].", [ends])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 12 000 бар [1].", [both])["missing"] == ["12 000"]
+    assert agents.check_agent("Давление на входе равно 16 000 бар [1].", [both])["missing"] == ["16 000"]
+    assert agents.check_agent("Давление на выходе равно 16 000 бар [1].", [both])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на входе равно 12 000 бар [1].", [both])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 12 000 бар [1].", [joined])["missing"] == ["12 000"]
+    assert agents.check_agent("Давление на выходе равно 16 000 бар [1].", [joined])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное давление равно 12 000 бар [1].", [limits])["missing"] == ["12 000"]
+    assert agents.check_agent("Минимальное давление равно 16 000 бар [1].", [limits])["missing"] == ["16 000"]
+    assert agents.check_agent("Максимальное давление равно 16 000 бар [1].", [limits])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Минимальное давление равно 12 000 бар [1].", [limits])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление масла равно 12 000 бар [1].", [fluids])["missing"] == ["12 000"]
+    assert agents.check_agent("Давление воды равно 12 000 бар [1].", [fluids])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление масла равно 6 бар [1].", [fluids])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 12 000 бар [1].", [duties])["missing"] == ["12 000"]
+    assert agents.check_agent("Испытательное давление равно 12 000 бар [1].", [duties])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [duties])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Радиус поршня равен 12 000 мм [1].", [radii])["missing"] == ["12 000"]
+    assert agents.check_agent("Радиус крышки равен 12 000 мм [1].", [radii])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Радиус поршня равен 80 мм [1].", [radii])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ход клапана равен 12 000 мм [1].", [strokes])["missing"] == ["12 000"]
+    assert agents.check_agent("Ход поршня равен 12 000 мм [1].", [strokes])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Ход клапана равен 40 мм [1].", [strokes])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 12 000 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 16 000 бар [1].", [ranged])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 12 000,5 бар [1].", [decimal])["missing"] == ["12 000,5"]
+    assert agents.check_agent("Давление на входе равно 12 000,5 бар [1].", [decimal])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [decimal])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно -12 бар [1].", [signed])["missing"] == ["-12"]
+    assert agents.check_agent("Давление на входе равно -12 бар [1].", [signed])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [signed])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно −12 бар [1].", [minus])["missing"] == ["-12"]
+    assert agents.check_agent("Давление на входе равно −12 бар [1].", [minus])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно минус 12 бар [1].", [word])["missing"] == ["-12"]
+    assert agents.check_agent("Давление на входе равно минус 12 бар [1].", [word])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [word])["status"] == agents.CONFIRMED
+
+
+def test_check_rejects_a_qualifier_written_after_the_number():
+    ends = {"text": "Давление 2 бар на входе и 6 бар на выходе.", "document_name": "pump.md"}
+    stated = {"text": "Давление составляет 2 бар на входе и 6 бар на выходе.", "document_name": "pump.md"}
+    paren = {"text": "Давление 6 бар (на входе) и 16 бар (на выходе).", "document_name": "pump.md"}
+    limits = {"text": "Давление 6 бар минимальное и 16 бар максимальное.", "document_name": "pump.md"}
+    grouped = {"text": "Давление 12 000 бар на входе и 6 бар на выходе.", "document_name": "pump.md"}
+    signed = {"text": "Давление -12 бар на входе и 6 бар на выходе.", "document_name": "pump.md"}
+    carried = {"text": "Максимальное давление 16 бар и 6 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Давление на входе равно 6 бар [1].", [ends])["missing"] == ["6"]
+    assert agents.check_agent("Давление на выходе равно 2 бар [1].", [ends])["missing"] == ["2"]
+    assert agents.check_agent("Давление на входе равно 2 бар [1].", [ends])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [ends])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на входе равно 6 бар [1].", [stated])["missing"] == ["6"]
+    assert agents.check_agent("Давление на входе равно 2 бар [1].", [stated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [stated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на входе равно 16 бар [1].", [paren])["missing"] == ["16"]
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [paren])["missing"] == ["6"]
+    assert agents.check_agent("Давление на входе равно 6 бар [1].", [paren])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 16 бар [1].", [paren])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное давление равно 6 бар [1].", [limits])["missing"] == ["6"]
+    assert agents.check_agent("Минимальное давление равно 16 бар [1].", [limits])["missing"] == ["16"]
+    assert agents.check_agent("Минимальное давление равно 6 бар [1].", [limits])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное давление равно 16 бар [1].", [limits])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на входе равно 6 бар [1].", [grouped])["missing"] == ["6"]
+    assert agents.check_agent("Давление на выходе равно 12 000 бар [1].", [grouped])["missing"] == ["12 000"]
+    assert agents.check_agent("Давление на входе равно 12 000 бар [1].", [grouped])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [grouped])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на входе равно 6 бар [1].", [signed])["missing"] == ["6"]
+    assert agents.check_agent("Давление на выходе равно -12 бар [1].", [signed])["missing"] == ["-12"]
+    assert agents.check_agent("Давление на входе равно -12 бар [1].", [signed])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [signed])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное давление равно 16 бар [1].", [carried])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное давление равно 6 бар [1].", [carried])["status"] == agents.CONFIRMED
+
+
+def test_check_rejects_a_value_whose_clause_drops_the_measurement():
+    split = {"text": "На входе давление: 2 бар; на выходе: 6 бар.", "document_name": "pump.md"}
+    comma = {"text": "Давление на входе: 2 бар, на выходе: 6 бар.", "document_name": "pump.md"}
+    period = {"text": "Давление на входе 2 бар. На выходе 6 бар.", "document_name": "pump.md"}
+    limits = {"text": "Давление 6 бар минимальное; 16 бар максимальное.", "document_name": "pump.md"}
+    fluids = {"text": "Давление воды: 6 бар. Масла: 16 бар.", "document_name": "pump.md"}
+    radius = {"text": "Радиус крышки: 40 мм. Поршня: 80 мм.", "document_name": "pump.md"}
+    grouped = {"text": "Давление на входе: 12 000 бар; на выходе: 6 бар.", "document_name": "pump.md"}
+    pump = {"text": "Насос №4. Давление 6 бар.", "document_name": "pump.md"}
+    heated = {"text": "Рабочая температура: 80 градусов.\nДавление: 6 бар.", "document_name": "pump.md"}
+    counted = {"text": "В цехе 4 насоса; давление 8 бар.", "document_name": "pump.md"}
+    assert agents.check_agent("Давление на выходе равно 2 бар [1].", [split])["missing"] == ["2"]
+    assert agents.check_agent("Давление на входе равно 6 бар [1].", [split])["missing"] == ["6"]
+    assert agents.check_agent("Давление на входе равно 2 бар [1].", [split])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [split])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 2 бар [1].", [comma])["missing"] == ["2"]
+    assert agents.check_agent("Давление на входе равно 2 бар [1].", [comma])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [comma])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 2 бар [1].", [period])["missing"] == ["2"]
+    assert agents.check_agent("Давление на входе равно 2 бар [1].", [period])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [period])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное давление равно 6 бар [1].", [limits])["missing"] == ["6"]
+    assert agents.check_agent("Минимальное давление равно 16 бар [1].", [limits])["missing"] == ["16"]
+    assert agents.check_agent("Минимальное давление равно 6 бар [1].", [limits])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Максимальное давление равно 16 бар [1].", [limits])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление масла равно 6 бар [1].", [fluids])["missing"] == ["6"]
+    assert agents.check_agent("Давление воды равно 16 бар [1].", [fluids])["missing"] == ["16"]
+    assert agents.check_agent("Давление воды равно 6 бар [1].", [fluids])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление масла равно 16 бар [1].", [fluids])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Радиус поршня равен 40 мм [1].", [radius])["missing"] == ["40"]
+    assert agents.check_agent("Радиус крышки равен 40 мм [1].", [radius])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Радиус поршня равен 80 мм [1].", [radius])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 12 000 бар [1].", [grouped])["missing"] == ["12 000"]
+    assert agents.check_agent("Давление на входе равно 12 000 бар [1].", [grouped])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление на выходе равно 6 бар [1].", [grouped])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление насоса равно 6 бар [1].", [pump])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 6 бар [1].", [heated])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Рабочее давление равно 80 бар [1].", [heated])["missing"] == ["80"]
+    assert agents.check_agent("Давление равно 8 бар [1].", [counted])["status"] == agents.CONFIRMED
+    assert agents.check_agent("Давление равно 4 бар [1].", [counted])["missing"] == ["4"]
+
+
 def test_check_rejects_three_digit_number_from_another_line():
     chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nИнвентарный номер: 180", "document_name": "pump.md"}
     real = {"text": "Насос > Характеристики\nРабочее давление: 160 бар\nНомер: 12", "document_name": "pump.md"}
