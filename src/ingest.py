@@ -161,6 +161,16 @@ def _docx_blocks(path):
         if any(_TOC.match(name) for name in _style_names(item.style)):
             continue
         level = _heading_level(item)
+        if (
+            not level
+            and blocks
+            and blocks[-1].get("kind") == "p"
+            and blocks[-1]["text"].endswith("-")
+            and not text[:1].isupper()
+        ):
+            blocks[-1]["text"] = blocks[-1]["text"][:-1] + text
+            previous = blocks[-1]["text"]
+            continue
         blocks.append({"kind": "heading", "level": level, "text": text} if level else {"kind": "p", "text": text})
         previous = text
     return blocks
@@ -240,6 +250,13 @@ def _cut(words, budget):
             size += _word_tokens(words[end])
             end += 1
         end = max(end, start + 1)
+        if end < len(words) and end - start > 8:
+            floor = start + max(4, (end - start) // 2)
+            for index in range(end - 1, floor - 1, -1):
+                token = words[index].rstrip("\"'«»“”")
+                if token.endswith((".", ";", "?", "!")):
+                    end = index + 1
+                    break
         pieces.append(" ".join(words[start:end]))
         if end >= len(words):
             break

@@ -289,8 +289,21 @@ def build_prompt(query, chunks, previous=None, feedback=None, count=None, budget
     return "\n\n".join(head + parts + tail)
 
 
+_LATIN_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9]{2,}")
+
+
+def _latin_missing_from_chunks(query, chunks):
+    blob = _flat(" ".join(chunk.get("text") or "" for chunk in chunks))
+    for token in _LATIN_TOKEN.findall(query or ""):
+        if token.lower() not in blob:
+            return True
+    return False
+
+
 def answer_agent(query, clear_query, chunks, work_turns, feedback=None):
     if not chunks:
+        return NO_ANSWER
+    if _latin_missing_from_chunks(query, chunks):
         return NO_ANSWER
     if not feedback:
         listed = _from_overview(query, chunks)

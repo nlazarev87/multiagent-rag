@@ -12,6 +12,11 @@ def test_answer_refuses_empty_chunks():
     assert agents.answer_agent("цвет", "цвет насоса", [], []) == agents.NO_ANSWER
 
 
+def test_answer_refuses_latin_token_missing_from_chunks(monkeypatch):
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("complete")))
+    assert agents.answer_agent("Какая версия Python у насоса?", "Какая версия Python у насоса?", [PUMP], []) == agents.NO_ANSWER
+
+
 def test_answer_copies_overview_list_without_model(monkeypatch):
     monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("complete")))
     halls = {

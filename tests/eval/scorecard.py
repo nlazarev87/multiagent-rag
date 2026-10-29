@@ -613,11 +613,18 @@ def _answer_flags(item, answer, chunks):
     }
 
 
+def _frozen_covers_questions():
+    if not FROZEN.exists():
+        return False
+    frozen = _load(FROZEN)
+    return {item["id"] for item in _questions()}.issubset(frozen)
+
+
 def measure_answer():
     from agents import answer_agent
     import dialog
 
-    if not FROZEN.exists():
+    if not _frozen_covers_questions():
         freeze_chunks()
     frozen = _load(FROZEN)
     items = [item for item in _questions() if item["split"] == "dev"]

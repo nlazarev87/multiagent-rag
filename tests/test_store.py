@@ -71,6 +71,15 @@ def test_search_keeps_to_document_named_in_question(tmp_path, monkeypatch):
     assert {chunk["document_name"] for chunk in found} == {"b.txt"}
 
 
+def test_search_keeps_to_numbered_filename_in_question(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    same = "В разделе Назначение программы должны быть указаны сведения о назначении программы."
+    store.upsert_chunks(split_chunks(same, "STD_1.2-99.txt"))
+    store.upsert_chunks(split_chunks(same, "STD_1.3-99.txt"))
+    found = store.search_chunks("Что указывают в разделе Назначение программы по STD 1.2-99?")
+    assert {chunk["document_name"] for chunk in found} == {"STD_1.2-99.txt"}
+
+
 def test_search_finds_exact_code(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     lines = [f"Поток X_{number}.1 передаёт заявки номер {number}." for number in range(1, 9)]
