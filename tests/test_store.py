@@ -85,6 +85,15 @@ def test_search_keeps_to_document_named_in_question(tmp_path, monkeypatch):
     assert {chunk["document_name"] for chunk in found} == {"b.txt"}
 
 
+def test_scope_narrows_only_when_one_document_owns_the_number():
+    both = {"vocabulary": {"a_1.2-99.txt": set(), "b_1.2-99.txt": set()}}
+    assert store.scope(both, "Что указано в 1.2-99?") is None
+    one = {"vocabulary": {"STD_1.2-99.txt": set(), "STD_1.3-99.txt": set()}}
+    assert store.scope(one, "Что указано в 1.2-99?") == ["STD_1.2-99.txt"]
+    alone = {"vocabulary": {"STD_1.2-99.txt": set()}}
+    assert store.scope(alone, "Что указано в 1.2-99?") is None
+
+
 def test_search_keeps_to_numbered_filename_in_question(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     same = "В разделе Назначение программы должны быть указаны сведения о назначении программы."
