@@ -1685,7 +1685,12 @@ def _grounded(fact, text):
 
 
 def _source(number, chunk):
-    return {"number": number, "document_name": chunk["document_name"], "section": chunk.get("section", "")}
+    return {
+        "number": number,
+        "document_name": chunk["document_name"],
+        "section": chunk.get("section", ""),
+        "chunk_index": chunk.get("chunk_index", 0),
+    }
 
 
 def _copied(text, flats):
@@ -1873,7 +1878,16 @@ def check_agent(answer, chunks, query="", known=None):
         feedback = "В прошлом ответе были данные, которых нет во фрагментах: " + ", ".join(missing) + ". Ответь заново только по фрагментам."
         return _verdict(UNCONFIRMED, missing, feedback)
     words = [("stem", word) for word in _words(re.sub(r"\[[\d,\s]+\]", " ", text)) if len(word) >= 5]
-    scores = [sum(_grounded(word, body) for word in words) for body in bodies]
+    asked_stems = {word[:5] for word in _words(asked) if len(word) >= 5}
+    extra = [word for word in words if word[1][:5] not in asked_stems]
+    if extra and not facts:
+        grounded_extra = sum(1 for word in extra if any(_grounded(word, body) for body in bodies))
+        if grounded_extra * 3 < len(extra):
+            return _verdict(UNCONFIRMED, feedback=RETRY)
+        scored = extra
+    else:
+        scored = words
+    scores = [sum(_grounded(word, body) for word in scored) for body in bodies]
     if not any(scores):
         return _verdict(UNCONFIRMED, feedback=RETRY)
     used = [number for number in used if scores[number - 1] or any(_grounded(fact, bodies[number - 1]) for fact in facts)]

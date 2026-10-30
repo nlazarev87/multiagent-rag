@@ -1,6 +1,6 @@
 import agents
 
-PUMP = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nГод выпуска: 2019", "document_name": "pump.md", "section": "Насос > Характеристики"}
+PUMP = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nГод выпуска: 2019", "document_name": "pump.md", "section": "Насос > Характеристики", "chunk_index": 3}
 SHOP = {"text": "Цех имеет номер 4. Мастер цеха — Иванов.", "document_name": "charter.txt", "section": ""}
 
 
@@ -219,10 +219,25 @@ def test_prompt_fits_token_budget():
     assert "Фрагмент 1" in prompt and "Фрагмент 2" not in prompt
 
 
+def test_check_rejects_definition_that_only_shares_a_question_word():
+    chunk = {
+        "text": "Подготовить точный текст для страницы «Безопасность» или расписать скрипт для звонка.",
+        "document_name": "note.txt",
+    }
+    answer = (
+        "Безопасная разработка — это процесс разработки программного обеспечения, "
+        "который обеспечивает защиту от потенциальных угроз, безопасность данных "
+        "и пользователей, а также управление рисками [1]."
+    )
+    verdict = agents.check_agent(answer, [chunk], "что такое безопасная разработка?")
+    assert verdict["status"] == agents.UNCONFIRMED
+
+
 def test_check_confirms_grounded_answer_and_cites_sources():
     verdict = agents.check_agent("Рабочее давление насоса равно 6 бар, год выпуска 2019 [1].", [PUMP, SHOP])
     assert verdict["status"] == agents.CONFIRMED
     assert [source["document_name"] for source in verdict["sources"]] == ["pump.md"]
+    assert verdict["sources"][0]["chunk_index"] == PUMP["chunk_index"]
 
 
 def test_check_rejects_number_missing_from_fragments():

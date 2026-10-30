@@ -49,6 +49,20 @@ def test_upsert_replaces_changed_document(tmp_path, monkeypatch):
     assert store._rows(store.collection())[1] == ["Насос зелёный."]
 
 
+def test_chunks_for_document_orders_by_index(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
+    store.upsert_chunks([
+        {"text": "второй", "document_name": "note.txt", "chunk_index": 1, "checksum": "a", "section": "B"},
+        {"text": "первый", "document_name": "note.txt", "chunk_index": 0, "checksum": "a", "section": "A"},
+        {"text": "чужой", "document_name": "other.txt", "chunk_index": 0, "checksum": "b", "section": ""},
+    ])
+    rows = store.chunks_for_document("note.txt")
+    assert [row["text"] for row in rows] == ["первый", "второй"]
+    assert [row["section"] for row in rows] == ["A", "B"]
+    assert [row["chunk_index"] for row in rows] == [0, 1]
+
+
 def test_empty_search_returns_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "CHROMA", tmp_path / "empty")
     store.reset()

@@ -7,5 +7,6 @@ data/chroma-debug/
 data/inbox/
 data/models/
 data/load_time.txt
+data/ui/
 
 .env

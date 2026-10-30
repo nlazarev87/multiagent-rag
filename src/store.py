@@ -167,6 +167,20 @@ def list_documents():
     return names
 
 
+def chunks_for_document(name):
+    _, texts, metas = _rows(collection(), where={"document_name": name})
+    rows = [
+        {
+            "text": text,
+            "section": meta.get("section", ""),
+            "chunk_index": meta.get("chunk_index", 0),
+        }
+        for text, meta in zip(texts, metas)
+    ]
+    rows.sort(key=lambda row: row["chunk_index"])
+    return rows
+
+
 def _stem(word):
     language = "english" if word.isascii() else "russian"
     if language not in _stemmers:

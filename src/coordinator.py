@@ -49,9 +49,10 @@ def run(query, dialog_id):
         return "answer"
 
     def finish(state):
-        if state["status"] == MISSING:
+        if state["status"] in (MISSING, UNCONFIRMED):
             state["answer"] = NO_ANSWER
             state["sources"] = []
+            state["status"] = MISSING
         names = []
         for source in state["sources"]:
             if source["document_name"] not in names:

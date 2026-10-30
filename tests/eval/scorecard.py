@@ -452,7 +452,7 @@ def measure_coord():
             "verdicts": [verdict(agents.UNCONFIRMED, feedback="a"), verdict(agents.UNCONFIRMED, feedback="b")],
             "reply": "Цех имеет номер 4 [1].",
             "order": ["select", "clarify", "search", "answer", "check", "answer", "check", "save"],
-            "status": agents.UNCONFIRMED,
+            "status": agents.MISSING,
             "answers": 2,
             "retry": True,
         },
