@@ -147,6 +147,20 @@ def test_long_line_splits_after_a_sentence(monkeypatch):
     _word_tokens.cache_clear()
 
 
+def test_docx_does_not_join_a_hyphen_to_a_new_sentence(tmp_path):
+    from ingest import _docx_blocks
+
+    document = Document()
+    document.add_paragraph("Строка заканчивается дефисом-")
+    document.add_paragraph("Новое предложение начинается с большой буквы.")
+    path = tmp_path / "hyphen.docx"
+    document.save(path)
+    texts = [block["text"] for block in _docx_blocks(path)]
+    assert "Строка заканчивается дефисом-" in texts
+    assert "Новое предложение начинается с большой буквы." in texts
+    assert all("дефисомНовое" not in text for text in texts)
+
+
 def test_docx_joins_hyphen_line_break(tmp_path):
     document = Document()
     document.add_paragraph("Требования к содержанию доку-")

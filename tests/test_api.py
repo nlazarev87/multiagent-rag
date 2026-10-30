@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -398,3 +400,31 @@ def test_query_does_not_restore_a_dialog_deleted_while_answering(monkeypatch):
     saved = workspace.load()["dialogs"]
     assert all(row["id"] != created["id"] for row in saved)
     assert all(turn.get("query") != "номер" for row in saved for turn in row.get("turns") or [])
+
+def test_upload_writes_only_the_file_name(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setattr("api.INBOX", inbox)
+    monkeypatch.setattr("api.ingest_dir", lambda folder: [])
+    monkeypatch.setattr("api.upsert_chunks", lambda chunks: None)
+    monkeypatch.setattr("api.list_documents", lambda: ["outside.txt", "note.txt"])
+    outside = tmp_path / "outside.txt"
+    outside.write_text("чужой файл", encoding="utf-8")
+
+    class FakeUpload:
+        def __init__(self, filename, payload):
+            self.filename = filename
+            self.payload = payload
+
+        async def read(self):
+            return self.payload
+
+    result = asyncio.run(api.upload([
+        FakeUpload("../outside.txt", "Цех имеет номер 4.".encode()),
+        FakeUpload("subdir/note.txt", "Насос Н-12.".encode()),
+    ]))
+    assert (inbox / "outside.txt").read_text(encoding="utf-8") == "Цех имеет номер 4."
+    assert (inbox / "note.txt").read_text(encoding="utf-8") == "Насос Н-12."
+    assert not (inbox / "subdir").exists()
+    assert outside.read_text(encoding="utf-8") == "чужой файл"
+    assert result["documents"] == ["outside.txt", "note.txt"]
