@@ -122,10 +122,8 @@ def documents_delete(document_name: str):
     path = INBOX / name
     if path.is_file():
         path.unlink()
-    data = workspace.load()
-    data["tree"] = workspace.drop_file(data["tree"], name)
-    workspace.save(data)
-    return {"documents": list_documents(), "tree": workspace.snapshot(list_documents())["tree"]}
+    known = list_documents()
+    return {"documents": known, "tree": workspace.forget_file(name, known)}
 
 
 @app.post("/documents")
@@ -189,9 +187,9 @@ def ui_ratings(dialog_id: str, turn_index: int, body: Ratings):
 @app.post("/query")
 def query(body: Query):
     try:
-        workspace.get_dialog_row(body.dialog_id)
+        existed = workspace.prepare_dialog(body.dialog_id) is not None
         result = run(body.query, body.dialog_id)
-        workspace.append_turn(body.dialog_id, body.query, result)
+        workspace.append_turn(body.dialog_id, body.query, result, create=not existed)
         return result
     except Exception as exc:
         raise HTTPException(500, detail=str(exc)) from exc

@@ -20,6 +20,13 @@ def test_set_dialog_keeps_twenty_turns():
     assert rows[-1]["query"] == "24"
 
 
+def test_drop_dialog_forgets_turns():
+    dialog.reset()
+    dialog.add_turn("d", {"query": "q", "answer": "a", "document_names": []})
+    dialog.drop_dialog("d")
+    assert dialog.get_dialog("d") == []
+
+
 def test_set_dialog_reads_names_from_sources():
     dialog.reset()
     dialog.set_dialog("d", [{

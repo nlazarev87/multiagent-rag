@@ -3,6 +3,8 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 import api
+import dialog
+import workspace
 from api import app
 
 SOURCE = {"number": 1, "document_name": "pump.md", "section": ""}
@@ -28,6 +30,9 @@ def test_api_routes(tmp_path, monkeypatch):
     response = client.post("/query", json={"query": "давление", "dialog_id": "d"})
     assert response.json()["answer"] == "Давление равно 6 бар [1]."
     assert response.json()["sources"] == [SOURCE]
+    stored = workspace.load()["dialogs"]
+    assert stored[0]["id"] == "d"
+    assert stored[0]["turns"][0]["query"] == "давление"
 
 
 def test_upload_lists_document(tmp_path, monkeypatch):
@@ -156,3 +161,39 @@ def test_ui_tree_drops_unknown_files(monkeypatch):
         names.extend(item.get("document_name") for item in child.get("children") or [] if item.get("document_name"))
     assert "note.txt" in names
     assert "missing.txt" not in names
+
+
+def test_query_reloads_saved_history_after_memory_is_cleared(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
+    seen = []
+
+    def run(query, dialog_id):
+        seen.append([turn["query"] for turn in dialog.get_dialog(dialog_id)])
+        return {"answer": "ответ", "status": "подтверждён", "document_names": ["note.txt"], "sources": []}
+
+    monkeypatch.setattr("api.run", run)
+    dialog.reset()
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    assert client.post("/query", json={"query": "первый", "dialog_id": created["id"]}).status_code == 200
+    dialog.add_turn(created["id"], {"query": "устарело", "answer": "x", "document_names": []})
+    assert client.post("/query", json={"query": "второй", "dialog_id": created["id"]}).status_code == 200
+    assert seen == [[], ["первый"]]
+
+
+def test_query_does_not_restore_a_dialog_deleted_while_answering(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: [])
+
+    def run(query, dialog_id):
+        workspace.delete_dialog(dialog_id)
+        return {"answer": "Цех имеет номер 4 [1].", "status": "подтверждён", "document_names": [], "sources": []}
+
+    monkeypatch.setattr("api.run", run)
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    response = client.post("/query", json={"query": "номер", "dialog_id": created["id"]})
+    assert response.status_code == 200
+    assert response.json()["answer"] == "Цех имеет номер 4 [1]."
+    saved = workspace.load()["dialogs"]
+    assert all(row["id"] != created["id"] for row in saved)
+    assert all(turn.get("query") != "номер" for row in saved for turn in row.get("turns") or [])

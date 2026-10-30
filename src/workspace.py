@@ -1,13 +1,19 @@
 import json
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from dialog import set_dialog
+from dialog import drop_dialog, set_dialog
 
 ROOT = Path(__file__).resolve().parents[1]
 PATH = ROOT / "data" / "ui" / "workspace.json"
 TITLE = "Новый диалог"
+# Sync routes run on a thread pool. Each read-modify-write of the workspace
+# file holds this lock; otherwise a rating or a tree save drops the turn that
+# an in-flight answer is about to write.
+_lock = threading.RLock()
+_before_write = None
 
 
 def blank_ratings():
@@ -23,7 +29,7 @@ def empty():
     return {"dialogs": [], "tree": {"id": "root", "name": "", "children": []}}
 
 
-def load():
+def _read():
     if not PATH.is_file():
         return empty()
     try:
@@ -41,11 +47,28 @@ def load():
     return {"dialogs": dialogs, "tree": tree}
 
 
-def save(data):
+def _write(data):
+    hook = _before_write
+    if hook is not None:
+        hook(data)
     PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(PATH)
+    tmp = PATH.with_name(f".{PATH.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(PATH)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def load():
+    with _lock:
+        return _read()
+
+
+def save(data):
+    with _lock:
+        _write(data)
 
 
 def _now():
@@ -166,13 +189,14 @@ def ensure_files(tree, names):
 
 
 def snapshot(known=None):
-    data = load()
-    names = list(known or [])
-    data["tree"] = ensure_files(sanitize_tree(data["tree"], set(names)), names)
-    if not data["dialogs"]:
-        data["dialogs"].append(_blank())
-        save(data)
-    return data
+    with _lock:
+        data = _read()
+        names = list(known or [])
+        data["tree"] = ensure_files(sanitize_tree(data["tree"], set(names)), names)
+        if not data["dialogs"]:
+            data["dialogs"].append(_blank())
+            _write(data)
+        return data
 
 
 def _blank():
@@ -192,95 +216,128 @@ def _find(data, dialog_id):
 
 
 def create_dialog():
-    data = load()
-    row = _blank()
-    data["dialogs"].insert(0, row)
-    save(data)
+    with _lock:
+        data = _read()
+        row = _blank()
+        data["dialogs"].insert(0, row)
+        _write(data)
     set_dialog(row["id"], [])
     return row
 
 
 def delete_dialog(dialog_id):
-    data = load()
-    data["dialogs"] = [row for row in data["dialogs"] if not (isinstance(row, dict) and row.get("id") == dialog_id)]
-    if not data["dialogs"]:
-        data["dialogs"].append(_blank())
-    save(data)
+    with _lock:
+        data = _read()
+        data["dialogs"] = [row for row in data["dialogs"] if not (isinstance(row, dict) and row.get("id") == dialog_id)]
+        if not data["dialogs"]:
+            data["dialogs"].append(_blank())
+        _write(data)
+    drop_dialog(dialog_id)
     return data
 
 
 def get_dialog_row(dialog_id):
-    data = load()
-    _, row = _find(data, dialog_id)
-    if row is None:
-        return None
-    set_dialog(row["id"], row.get("turns") or [])
+    with _lock:
+        data = _read()
+        _, row = _find(data, dialog_id)
+        if row is None:
+            return None
+        turns = row.get("turns") or []
+    set_dialog(row["id"], turns)
+    return row
+
+
+def prepare_dialog(dialog_id):
+    dialog_id = str(dialog_id)
+    with _lock:
+        data = _read()
+        _, row = _find(data, dialog_id)
+        turns = [] if row is None else (row.get("turns") or [])
+    set_dialog(dialog_id, turns)
     return row
 
 
 def put_tree(tree, known):
-    data = load()
-    names = set(known or [])
-    data["tree"] = ensure_files(sanitize_tree(tree, names), names)
-    save(data)
-    return data
+    with _lock:
+        data = _read()
+        names = set(known or [])
+        data["tree"] = ensure_files(sanitize_tree(tree, names), names)
+        _write(data)
+        return data
 
 
-def append_turn(dialog_id, query, result):
-    data = load()
-    index, row = _find(data, dialog_id)
-    if row is None:
-        row = _blank()
-        row["id"] = dialog_id
-        data["dialogs"].insert(0, row)
-        index = 0
-    turns = list(row.get("turns") or [])
-    sources = result.get("sources") or []
-    names = result.get("document_names") or _names({"sources": sources})
-    turns.append({
-        "query": query,
-        "answer": result.get("answer", ""),
-        "sources": sources,
-        "document_names": names,
-        "ratings": blank_ratings(),
-    })
-    row = dict(row)
-    row["turns"] = turns
-    if row.get("title") in (None, "", TITLE):
-        row["title"] = _title(query)
-    row["updated_at"] = _now()
-    data["dialogs"][index] = row
-    data["dialogs"].sort(key=lambda item: item.get("updated_at") or "", reverse=True)
-    save(data)
-    return row
+def forget_file(name, known):
+    with _lock:
+        data = _read()
+        data["tree"] = drop_file(data["tree"], name)
+        _write(data)
+        names = list(known or [])
+        data["tree"] = ensure_files(sanitize_tree(data["tree"], set(names)), names)
+        if not data["dialogs"]:
+            data["dialogs"].append(_blank())
+            _write(data)
+        return data["tree"]
+
+
+def append_turn(dialog_id, query, result, *, create=True):
+    with _lock:
+        data = _read()
+        index, row = _find(data, dialog_id)
+        if row is None:
+            if not create:
+                return None
+            row = _blank()
+            row["id"] = dialog_id
+            data["dialogs"].insert(0, row)
+            index = 0
+        turns = list(row.get("turns") or [])
+        sources = result.get("sources") or []
+        names = result.get("document_names") or _names({"sources": sources})
+        turns.append({
+            "query": query,
+            "answer": result.get("answer", ""),
+            "sources": sources,
+            "document_names": names,
+            "ratings": blank_ratings(),
+        })
+        row = dict(row)
+        row["turns"] = turns
+        if row.get("title") in (None, "", TITLE):
+            row["title"] = _title(query)
+        row["updated_at"] = _now()
+        data["dialogs"][index] = row
+        data["dialogs"].sort(key=lambda item: item.get("updated_at") or "", reverse=True)
+        _write(data)
+        return row
 
 
 def patch_ratings(dialog_id, turn_index, body):
-    data = load()
-    _, row = _find(data, dialog_id)
-    if row is None:
-        return None
-    turns = list(row.get("turns") or [])
-    if turn_index < 0 or turn_index >= len(turns):
-        return None
-    turn = dict(turns[turn_index])
-    ratings = dict(turn.get("ratings") or blank_ratings())
-    if "answer_complete" in body:
-        ratings["answer_complete"] = score(body.get("answer_complete"))
-    if "answer_correct" in body:
-        ratings["answer_correct"] = score(body.get("answer_correct"))
-    if "links" in body and isinstance(body.get("links"), dict):
-        links = dict(ratings.get("links") or {})
-        for key, value in body["links"].items():
-            links[str(key)] = score(value)
-        ratings["links"] = links
-    if "documents" in body and isinstance(body.get("documents"), dict):
-        documents = dict(ratings.get("documents") or {})
-        for key, value in body["documents"].items():
-            documents[Path(str(key)).name] = score(value)
-        ratings["documents"] = documents
-    turn["ratings"] = ratings
-    turns[turn_index] = turn
-    row["turns"] = turns
-    save(data)
-    return turn
+    with _lock:
+        data = _read()
+        _, row = _find(data, dialog_id)
+        if row is None:
+            return None
+        turns = list(row.get("turns") or [])
+        if turn_index < 0 or turn_index >= len(turns):
+            return None
+        turn = dict(turns[turn_index])
+        ratings = dict(turn.get("ratings") or blank_ratings())
+        if "answer_complete" in body:
+            ratings["answer_complete"] = score(body.get("answer_complete"))
+        if "answer_correct" in body:
+            ratings["answer_correct"] = score(body.get("answer_correct"))
+        if "links" in body and isinstance(body.get("links"), dict):
+            links = dict(ratings.get("links") or {})
+            for key, value in body["links"].items():
+                links[str(key)] = score(value)
+            ratings["links"] = links
+        if "documents" in body and isinstance(body.get("documents"), dict):
+            documents = dict(ratings.get("documents") or {})
+            for key, value in body["documents"].items():
+                documents[Path(str(key)).name] = score(value)
+            ratings["documents"] = documents
+        turn["ratings"] = ratings
+        turns[turn_index] = turn
+        row["turns"] = turns
+        _write(data)
+        return turn
