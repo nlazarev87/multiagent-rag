@@ -599,16 +599,19 @@
             signal: AbortSignal.timeout(15000),
           });
           const data = await response.json().catch(() => ({}));
+          if (response.ok) tabChunks[name] = data.chunks || [];
+          if (activeTab !== name) return;
           if (!response.ok) {
             preview.replaceChildren(element("p", "muted", data.detail || "Документ не найден"));
             return;
           }
-          tabChunks[name] = data.chunks || [];
         } catch (error) {
+          if (activeTab !== name) return;
           preview.replaceChildren(element("p", "muted", "Сервер не ответил"));
           return;
         }
       }
+      if (activeTab !== name) return;
       const chunks = tabChunks[name] || [];
       if (!chunks.length) {
         preview.replaceChildren(element("p", "muted", "Нет текста"));

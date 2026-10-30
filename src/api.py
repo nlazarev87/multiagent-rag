@@ -189,6 +189,7 @@ def ui_ratings(dialog_id: str, turn_index: int, body: Ratings):
 @app.post("/query")
 def query(body: Query):
     try:
+        workspace.get_dialog_row(body.dialog_id)
         result = run(body.query, body.dialog_id)
         workspace.append_turn(body.dialog_id, body.query, result)
         return result
