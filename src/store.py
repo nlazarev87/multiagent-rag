@@ -53,6 +53,10 @@ _collection = None
 _index = None
 _stemmers = {}
 _import_lock = threading.Lock()
+# Sync routes share a thread pool with ingest. Search keeps the index object
+# it opened. A delete or an upload clears the global when it finishes, and
+# that must not crash the request that is already reading it.
+_index_lock = threading.RLock()
 _WORD = re.compile(r"[0-9a-zа-я]+(?:[._/-][0-9a-zа-я]+)*")
 _NAME = re.compile(r"[0-9A-Za-zА-Яа-яЁё]+(?:[._/-][0-9A-Za-zА-Яа-яЁё]+)*")
 _STOP = set(
@@ -88,18 +92,19 @@ def collection():
 
 def reset():
     global _collection, _index, _client, calls
-    _collection = None
-    system = getattr(_client, "_system", None) if _client is not None else None
-    if system is not None and hasattr(system, "stop"):
-        try:
-            system.stop()
-        except Exception:
-            pass
-    _client = None
-    _index = None
-    calls = 0
-    import gc
-    gc.collect()
+    with _index_lock:
+        _collection = None
+        system = getattr(_client, "_system", None) if _client is not None else None
+        if system is not None and hasattr(system, "stop"):
+            try:
+                system.stop()
+            except Exception:
+                pass
+        _client = None
+        _index = None
+        calls = 0
+        import gc
+        gc.collect()
 
 
 def _rows(col, **where):
@@ -124,67 +129,71 @@ def upsert_chunks(chunks):
     global _index
     if not chunks:
         return
-    col = collection()
-    groups = {}
-    for chunk in chunks:
-        groups.setdefault(chunk["document_name"], []).append(chunk)
-    for name, items in groups.items():
-        found = col.get(where={"document_name": name}, include=["metadatas"])
-        metas = found["metadatas"] or []
-        if len(metas) == len(items) and all(meta.get("checksum") == items[0]["checksum"] for meta in metas):
-            continue
-        if found["ids"]:
-            col.delete(ids=found["ids"])
-        for start in range(0, len(items), 64):
-            batch = items[start:start + 64]
-            col.add(
-                ids=[_chunk_id(chunk) for chunk in batch],
-                documents=[chunk["text"] for chunk in batch],
-                embeddings=_embed(["passage: " + chunk.get("embed", chunk["text"]) for chunk in batch]),
-                metadatas=[{
-                    "document_name": chunk["document_name"],
-                    "chunk_index": chunk["chunk_index"],
-                    "checksum": chunk["checksum"],
-                    "section": chunk.get("section", ""),
-                    "kind": chunk.get("kind", "text"),
-                    "group": chunk.get("group", ""),
-                    "head": chunk.get("head", ""),
-                    "version": chunk.get("version", 0),
-                    **({"collection": chunk["collection"]} if chunk.get("collection") else {}),
-                } for chunk in batch],
-            )
-    _index = None
+    with _index_lock:
+        col = collection()
+        groups = {}
+        for chunk in chunks:
+            groups.setdefault(chunk["document_name"], []).append(chunk)
+        for name, items in groups.items():
+            found = col.get(where={"document_name": name}, include=["metadatas"])
+            metas = found["metadatas"] or []
+            if len(metas) == len(items) and all(meta.get("checksum") == items[0]["checksum"] for meta in metas):
+                continue
+            if found["ids"]:
+                col.delete(ids=found["ids"])
+            for start in range(0, len(items), 64):
+                batch = items[start:start + 64]
+                col.add(
+                    ids=[_chunk_id(chunk) for chunk in batch],
+                    documents=[chunk["text"] for chunk in batch],
+                    embeddings=_embed(["passage: " + chunk.get("embed", chunk["text"]) for chunk in batch]),
+                    metadatas=[{
+                        "document_name": chunk["document_name"],
+                        "chunk_index": chunk["chunk_index"],
+                        "checksum": chunk["checksum"],
+                        "section": chunk.get("section", ""),
+                        "kind": chunk.get("kind", "text"),
+                        "group": chunk.get("group", ""),
+                        "head": chunk.get("head", ""),
+                        "version": chunk.get("version", 0),
+                        **({"collection": chunk["collection"]} if chunk.get("collection") else {}),
+                    } for chunk in batch],
+                )
+        _index = None
 
 
 def delete_document(document_name):
     global _index
-    col = collection()
-    found = col.get(where={"document_name": document_name})
-    if found["ids"]:
-        col.delete(ids=found["ids"])
-    _index = None
+    with _index_lock:
+        col = collection()
+        found = col.get(where={"document_name": document_name})
+        if found["ids"]:
+            col.delete(ids=found["ids"])
+        _index = None
 
 
 def list_documents():
-    names = []
-    for meta in _rows(collection())[2]:
-        if meta["document_name"] not in names:
-            names.append(meta["document_name"])
-    return names
+    with _index_lock:
+        names = []
+        for meta in _rows(collection())[2]:
+            if meta["document_name"] not in names:
+                names.append(meta["document_name"])
+        return names
 
 
 def chunks_for_document(name):
-    _, texts, metas = _rows(collection(), where={"document_name": name})
-    rows = [
-        {
-            "text": text,
-            "section": meta.get("section", ""),
-            "chunk_index": meta.get("chunk_index", 0),
-        }
-        for text, meta in zip(texts, metas)
-    ]
-    rows.sort(key=lambda row: row["chunk_index"])
-    return rows
+    with _index_lock:
+        _, texts, metas = _rows(collection(), where={"document_name": name})
+        rows = [
+            {
+                "text": text,
+                "section": meta.get("section", ""),
+                "chunk_index": meta.get("chunk_index", 0),
+            }
+            for text, meta in zip(texts, metas)
+        ]
+        rows.sort(key=lambda row: row["chunk_index"])
+        return rows
 
 
 def _stem(word):
@@ -247,13 +256,25 @@ def _build(col):
     }
 
 
-def known(term):
+def _open_index():
     global _index
-    col = collection()
-    if _index is None or len(_index["ids"]) != col.count():
-        _index = _build(col)
+    with _index_lock:
+        col = collection()
+        total = col.count()
+        if total == 0:
+            _index = None
+            return col, 0, None
+        if _index is None or len(_index["ids"]) != total:
+            _index = _build(col)
+        return col, total, _index
+
+
+def known(term):
+    _col, _total, index = _open_index()
+    if index is None:
+        return False
     term = term.lower().replace("ё", "е")
-    return any(term in words for words in _index["vocabulary"].values())
+    return any(term in words for words in index["vocabulary"].values())
 
 
 def _names(query):
@@ -359,12 +380,19 @@ def _lexical(index, query, allowed):
 
 
 def _dense(col, query, allowed, total):
-    found = col.query(
-        query_embeddings=_embed(["query: " + query]),
-        n_results=min(_candidates(), total),
-        where=_chroma_where(allowed),
-        include=["distances"],
-    )
+    embedding = _embed(["query: " + query])
+    with _index_lock:
+        # The collection may have shrunk while the query vector was built.
+        # Asking for more neighbours than Chroma still holds raises.
+        current = col.count()
+        if current == 0:
+            return []
+        found = col.query(
+            query_embeddings=embedding,
+            n_results=min(_candidates(), current, total or current),
+            where=_chroma_where(allowed),
+            include=["distances"],
+        )
     return found["ids"][0] if found["ids"] else []
 
 
@@ -462,22 +490,20 @@ def _contexts(index, ranked, limit):
 
 
 def search_chunks(clear_query, limit=4, document_names=None):
-    global calls, _index
+    global calls
     calls += 1
-    col = collection()
-    total = col.count()
-    if total == 0:
+    col, total, index = _open_index()
+    if index is None:
         return []
-    if _index is None or len(_index["ids"]) != total:
-        _index = _build(col)
-    allowed = scope(_index, clear_query)
+    allowed = scope(index, clear_query)
     if document_names:
-        present = [name for name in document_names if name in _index["vocabulary"]]
+        present = [name for name in document_names if name in index["vocabulary"]]
         if present:
             allowed = present
     dense = _dense(col, _focus(clear_query, allowed), allowed, total)
     ranked = [
-        key for key in _fuse(_lexical(_index, clear_query, allowed), dense)
-        if _meta_ok(_index["metas"][_index["position"][key]])
+        key
+        for key in _fuse(_lexical(index, clear_query, allowed), dense)
+        if key in index["position"] and _meta_ok(index["metas"][index["position"][key]])
     ]
-    return _contexts(_index, ranked, limit)
+    return _contexts(index, ranked, limit)

@@ -118,6 +118,91 @@ def test_search_finds_exact_code(tmp_path, monkeypatch):
     assert any("X_9.2" in chunk["text"] for chunk in found)
 
 
+def test_search_keeps_its_index_when_a_delete_clears_the_global(monkeypatch):
+    text = "Рабочее давление равно 6 бар."
+    meta = {
+        "document_name": "pump.md",
+        "chunk_index": 0,
+        "section": "Характеристики",
+        "kind": "text",
+        "group": "",
+        "head": "",
+    }
+    store._index = {
+        "ids": ["id0"],
+        "texts": [text],
+        "metas": [meta],
+        "groups": {},
+        "position": {"id0": 0},
+        "vocabulary": {"pump.md": set()},
+        "counts": [],
+        "lengths": [],
+        "frequency": {},
+        "size": {},
+        "chunks": {},
+    }
+
+    class Col:
+        def count(self):
+            return 1
+
+        def get(self, **kwargs):
+            return {"ids": ["id0"], "documents": [text], "metadatas": [meta]}
+
+        def delete(self, ids):
+            self.ids = ids
+
+        def query(self, **kwargs):
+            return {"ids": [["id0"]], "distances": [[0.1]]}
+
+    monkeypatch.setattr(store, "collection", lambda: Col())
+    monkeypatch.setattr(store, "scope", lambda index, query: None)
+    monkeypatch.setattr(store, "_lexical", lambda index, query, allowed: ["id0"])
+    monkeypatch.setattr(store, "_focus", lambda query, allowed: query)
+
+    def dense(col, query, allowed, total):
+        # Upload and delete finish by dropping the global index. That overlaps
+        # the slow vector query, and Chroma can also return an id the opened
+        # index never saw.
+        store.delete_document("pump.md")
+        return ["id0", "gone"]
+
+    monkeypatch.setattr(store, "_dense", dense)
+    try:
+        found = store.search_chunks("давление насоса")
+    finally:
+        store._index = None
+    assert [chunk["text"] for chunk in found] == [text]
+    assert found[0]["document_name"] == "pump.md"
+
+
+def test_delete_during_query_embed_does_not_crash_search(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, "CHROMA", tmp_path / "chroma")
+    store.reset()
+    vector = [0.1, 0.2, 0.3, 0.4]
+
+    def embed(texts):
+        # The vector step is the slow part of a question. A delete that lands
+        # there used to drop the global index and abort the question.
+        if any(str(text).startswith("query:") for text in texts):
+            store.delete_document("pump.md")
+            store.delete_document("charter.txt")
+        return [vector for _ in texts]
+
+    monkeypatch.setattr(store, "_embed", embed)
+    store.upsert_chunks([
+        {"text": "Насос синий.", "document_name": "pump.md", "chunk_index": 0, "checksum": "a", "section": ""},
+        {"text": "Цех имеет номер 4.", "document_name": "charter.txt", "chunk_index": 0, "checksum": "b", "section": ""},
+    ])
+    try:
+        found = store.search_chunks("насос")
+        assert isinstance(found, list)
+        assert store.search_chunks("насос") == []
+        assert store.list_documents() == []
+    finally:
+        store.reset()
+
+
 def test_table_row_comes_with_its_table(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     folder = tmp_path / "docs"
