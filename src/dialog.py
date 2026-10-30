@@ -32,5 +32,9 @@ def set_dialog(dialog_id, turns):
     _dialogs[dialog_id] = rows
 
 
+def drop_dialog(dialog_id):
+    _dialogs.pop(dialog_id, None)
+
+
 def reset():
     _dialogs.clear()
