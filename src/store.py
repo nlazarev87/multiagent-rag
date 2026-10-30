@@ -167,6 +167,20 @@ def list_documents():
     return names
 
 
+def chunks_for_document(name):
+    _, texts, metas = _rows(collection(), where={"document_name": name})
+    rows = [
+        {
+            "text": text,
+            "section": meta.get("section", ""),
+            "chunk_index": meta.get("chunk_index", 0),
+        }
+        for text, meta in zip(texts, metas)
+    ]
+    rows.sort(key=lambda row: row["chunk_index"])
+    return rows
+
+
 def _stem(word):
     language = "english" if word.isascii() else "russian"
     if language not in _stemmers:
@@ -241,17 +255,48 @@ def _names(query):
     for token in _NAME.findall(query):
         upper = sum(ch.isupper() for ch in token)
         coded = any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
-        if upper >= 2 or coded:
+        numbered = bool(re.search(r"\d+[._-]\d+", token))
+        if upper >= 2 or coded or numbered:
             names.append(token.lower().replace("ё", "е"))
     return names
 
 
+def _doc_markers(doc):
+    low = doc.lower().replace("ё", "е")
+    markers = set(_WORD.findall(low))
+    markers.update(index_part for index_part in re.findall(r"\d+(?:[._-]\d+)+", low))
+    return markers
+
+
+def _marker_hit(name, markers, words):
+    if name in words or name in markers:
+        return True
+    return any(
+        marker == name
+        or marker.startswith(name + ".")
+        or marker.startswith(name + "-")
+        or marker.startswith(name + "_")
+        for marker in markers
+    )
+
+
 def scope(index, query):
     documents = sorted(index["vocabulary"])
-    known = [name for name in _names(query) if any(name in index["vocabulary"][doc] for doc in documents)]
-    if not known or len(documents) < 2:
+    names = _names(query)
+    if not names or len(documents) < 2:
         return None
-    hits = {doc: sum(name in index["vocabulary"][doc] for name in known) for doc in documents}
+    marks = {doc: _doc_markers(doc) for doc in documents}
+    known = [
+        name
+        for name in names
+        if any(_marker_hit(name, marks[doc], index["vocabulary"][doc]) for doc in documents)
+    ]
+    if not known:
+        return None
+    hits = {
+        doc: sum(_marker_hit(name, marks[doc], index["vocabulary"][doc]) for name in known)
+        for doc in documents
+    }
     best = max(hits.values())
     chosen = [doc for doc in documents if hits[doc] == best]
     return chosen if len(chosen) < len(documents) else None

@@ -109,6 +109,31 @@ def test_chunks_fit_tokens_and_overlap():
     assert first[-1] in second[:40]
 
 
+def test_long_line_splits_after_a_sentence(monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
+    from ingest import _cut, _word_tokens
+
+    _word_tokens.cache_clear()
+    lead = " ".join(f"слово{number}" for number in range(50)) + "."
+    mid = " ".join(f"хвост{number}" for number in range(40))
+    tail = "В разделе Назначение должны быть указаны сведения о назначении программы."
+    pieces = _cut((lead + " " + mid + " " + tail).split(), 80)
+    assert pieces[0].endswith(".")
+    assert "Назначение" not in pieces[0]
+    assert any("Назначение" in piece for piece in pieces[1:])
+    _word_tokens.cache_clear()
+
+
+def test_docx_joins_hyphen_line_break(tmp_path):
+    document = Document()
+    document.add_paragraph("Требования к содержанию доку-")
+    document.add_paragraph("мента приведены в приложении.")
+    document.save(tmp_path / "hyphen.docx")
+    text = " ".join(chunk["text"] for chunk in ingest_dir(tmp_path))
+    assert "документа" in text
+    assert "доку-" not in text
+
+
 def test_paragraph_with_section_number_is_kept():
     chunks = split_chunks("Согласно разделу 3.2 насос имеет давление 6 бар.", "pump.txt")
     assert "3.2" in chunks[0]["text"]

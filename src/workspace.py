@@ -1,0 +1,286 @@
+import json
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+from dialog import set_dialog
+
+ROOT = Path(__file__).resolve().parents[1]
+PATH = ROOT / "data" / "ui" / "workspace.json"
+TITLE = "Новый диалог"
+
+
+def blank_ratings():
+    return {
+        "answer_complete": None,
+        "answer_correct": None,
+        "links": {},
+        "documents": {},
+    }
+
+
+def empty():
+    return {"dialogs": [], "tree": {"id": "root", "name": "", "children": []}}
+
+
+def load():
+    if not PATH.is_file():
+        return empty()
+    try:
+        data = json.loads(PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return empty()
+    if not isinstance(data, dict):
+        return empty()
+    dialogs = data.get("dialogs")
+    tree = data.get("tree")
+    if not isinstance(dialogs, list):
+        dialogs = []
+    if not isinstance(tree, dict):
+        tree = {"id": "root", "name": "", "children": []}
+    return {"dialogs": dialogs, "tree": tree}
+
+
+def save(data):
+    PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(PATH)
+
+
+def _now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _title(text):
+    line = " ".join(str(text or "").split())
+    if not line:
+        return TITLE
+    if len(line) > 60:
+        return line[:60].rstrip() + "…"
+    return line
+
+
+def _names(turn):
+    names = []
+    for name in turn.get("document_names") or []:
+        if name and name not in names:
+            names.append(name)
+    if names:
+        return names
+    for source in turn.get("sources") or []:
+        name = source.get("document_name")
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _turns(turns):
+    rows = []
+    for turn in turns[-20:]:
+        rows.append({
+            "query": turn.get("query", ""),
+            "answer": turn.get("answer", ""),
+            "document_names": _names(turn),
+        })
+    return rows
+
+
+def score(value):
+    if value is None or value == "":
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    if 1 <= number <= 5:
+        return number
+    return None
+
+
+def iter_files(node):
+    names = []
+    if not isinstance(node, dict):
+        return names
+    name = node.get("document_name")
+    if name:
+        names.append(Path(str(name)).name)
+    for child in node.get("children") or []:
+        names.extend(iter_files(child))
+    return names
+
+
+def sanitize_tree(node, known, seen=None):
+    seen = seen if seen is not None else set()
+    if not isinstance(node, dict):
+        return {"id": "root", "name": "", "children": []}
+    children = []
+    for child in node.get("children") or []:
+        if not isinstance(child, dict):
+            continue
+        if "document_name" in child:
+            name = Path(str(child.get("document_name") or "")).name
+            if name in known:
+                children.append({"document_name": name})
+            continue
+        folder_id = str(child.get("id") or uuid.uuid4())
+        if folder_id in seen:
+            continue
+        seen.add(folder_id)
+        nested = sanitize_tree(child, known, seen)
+        nested["id"] = folder_id
+        nested["name"] = str(child.get("name") or "Папка")[:80] or "Папка"
+        children.append(nested)
+    node_id = str(node.get("id") or "root")
+    return {"id": node_id, "name": str(node.get("name") or ""), "children": children}
+
+
+def drop_file(node, name):
+    if not isinstance(node, dict):
+        return {"id": "root", "name": "", "children": []}
+    kept = []
+    for child in node.get("children") or []:
+        if not isinstance(child, dict):
+            continue
+        if child.get("document_name") == name:
+            continue
+        if "document_name" in child:
+            kept.append(child)
+            continue
+        kept.append(drop_file(child, name))
+    node = dict(node)
+    node["children"] = kept
+    return node
+
+
+def ensure_files(tree, names):
+    have = set(iter_files(tree))
+    children = list(tree.get("children") or [])
+    for name in names:
+        if name not in have:
+            children.append({"document_name": name})
+            have.add(name)
+    tree = dict(tree)
+    tree["children"] = children
+    return tree
+
+
+def snapshot(known=None):
+    data = load()
+    names = list(known or [])
+    data["tree"] = ensure_files(sanitize_tree(data["tree"], set(names)), names)
+    if not data["dialogs"]:
+        data["dialogs"].append(_blank())
+        save(data)
+    return data
+
+
+def _blank():
+    return {
+        "id": str(uuid.uuid4()),
+        "title": TITLE,
+        "updated_at": _now(),
+        "turns": [],
+    }
+
+
+def _find(data, dialog_id):
+    for index, row in enumerate(data["dialogs"]):
+        if isinstance(row, dict) and row.get("id") == dialog_id:
+            return index, row
+    return -1, None
+
+
+def create_dialog():
+    data = load()
+    row = _blank()
+    data["dialogs"].insert(0, row)
+    save(data)
+    set_dialog(row["id"], [])
+    return row
+
+
+def delete_dialog(dialog_id):
+    data = load()
+    data["dialogs"] = [row for row in data["dialogs"] if not (isinstance(row, dict) and row.get("id") == dialog_id)]
+    if not data["dialogs"]:
+        data["dialogs"].append(_blank())
+    save(data)
+    return data
+
+
+def get_dialog_row(dialog_id):
+    data = load()
+    _, row = _find(data, dialog_id)
+    if row is None:
+        return None
+    set_dialog(row["id"], row.get("turns") or [])
+    return row
+
+
+def put_tree(tree, known):
+    data = load()
+    names = set(known or [])
+    data["tree"] = ensure_files(sanitize_tree(tree, names), names)
+    save(data)
+    return data
+
+
+def append_turn(dialog_id, query, result):
+    data = load()
+    index, row = _find(data, dialog_id)
+    if row is None:
+        row = _blank()
+        row["id"] = dialog_id
+        data["dialogs"].insert(0, row)
+        index = 0
+    turns = list(row.get("turns") or [])
+    sources = result.get("sources") or []
+    names = result.get("document_names") or _names({"sources": sources})
+    turns.append({
+        "query": query,
+        "answer": result.get("answer", ""),
+        "sources": sources,
+        "document_names": names,
+        "ratings": blank_ratings(),
+    })
+    row = dict(row)
+    row["turns"] = turns
+    if row.get("title") in (None, "", TITLE):
+        row["title"] = _title(query)
+    row["updated_at"] = _now()
+    data["dialogs"][index] = row
+    data["dialogs"].sort(key=lambda item: item.get("updated_at") or "", reverse=True)
+    save(data)
+    return row
+
+
+def patch_ratings(dialog_id, turn_index, body):
+    data = load()
+    _, row = _find(data, dialog_id)
+    if row is None:
+        return None
+    turns = list(row.get("turns") or [])
+    if turn_index < 0 or turn_index >= len(turns):
+        return None
+    turn = dict(turns[turn_index])
+    ratings = dict(turn.get("ratings") or blank_ratings())
+    if "answer_complete" in body:
+        ratings["answer_complete"] = score(body.get("answer_complete"))
+    if "answer_correct" in body:
+        ratings["answer_correct"] = score(body.get("answer_correct"))
+    if "links" in body and isinstance(body.get("links"), dict):
+        links = dict(ratings.get("links") or {})
+        for key, value in body["links"].items():
+            links[str(key)] = score(value)
+        ratings["links"] = links
+    if "documents" in body and isinstance(body.get("documents"), dict):
+        documents = dict(ratings.get("documents") or {})
+        for key, value in body["documents"].items():
+            documents[Path(str(key)).name] = score(value)
+        ratings["documents"] = documents
+    turn["ratings"] = ratings
+    turns[turn_index] = turn
+    row["turns"] = turns
+    save(data)
+    return turn

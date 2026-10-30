@@ -94,33 +94,33 @@
     "best": 1.0,
     "room": 0.0,
     "floor": 1.0,
-    "n": 22,
+    "n": 46,
     "direction": "higher",
-    "hits": 22
+    "hits": 46
   },
   "search_hit1_dev": {
-    "now": 0.6818181818181818,
+    "now": 0.6956521739130435,
     "best": 1.0,
-    "room": 0.31818181818181823,
-    "floor": 0.6818181818181818,
-    "n": 22,
+    "room": 0.30434782608695654,
+    "floor": 0.6956521739130435,
+    "n": 46,
     "direction": "higher",
-    "hits": 15
+    "hits": 32
   },
   "search_mrr_dev": {
-    "now": 0.8333333333333335,
+    "now": 0.8442028985507247,
     "best": 1.0,
-    "room": 0.16666666666666652,
-    "floor": 0.8333333333333335,
-    "n": 22,
+    "room": 0.15579710144927528,
+    "floor": 0.8442028985507247,
+    "n": 46,
     "direction": "higher"
   },
   "search_doc_p4_dev": {
-    "now": 0.9761904761904762,
+    "now": 0.9888888888888889,
     "best": 1.0,
-    "room": 0.023809523809523836,
-    "floor": 0.9761904761904762,
-    "n": 21,
+    "room": 0.011111111111111072,
+    "floor": 0.9888888888888889,
+    "n": 45,
     "direction": "higher"
   },
   "search_together_dev": {
@@ -142,11 +142,11 @@
     "hits": 3
   },
   "search_latency_ms": {
-    "now": 154.12050000899896,
-    "best": 143.55912727346137,
-    "room": 10.561372735537589,
-    "floor": 154.12050000899896,
-    "n": 22,
+    "now": 100.98251741399746,
+    "best": 100.98251741399746,
+    "room": 0.0,
+    "floor": 100.98251741399746,
+    "n": 46,
     "direction": "lower"
   },
   "search_hit4_holdout": {
@@ -154,9 +154,9 @@
     "best": 1.0,
     "room": 0.0,
     "floor": 1.0,
-    "n": 19,
+    "n": 35,
     "direction": "higher",
-    "hits": 19
+    "hits": 35
   },
   "check_status_exact": {
     "now": 1.0,
@@ -267,13 +267,13 @@
     "hits": 5
   },
   "answer_facts_dev": {
-    "now": 0.8181818181818182,
+    "now": 0.8913043478260869,
     "best": 1.0,
-    "room": 0.18181818181818177,
-    "floor": 0.8181818181818182,
-    "n": 22,
+    "room": 0.10869565217391308,
+    "floor": 0.8913043478260869,
+    "n": 46,
     "direction": "higher",
-    "hits": 18
+    "hits": 41
   },
   "answer_starts_dev": {
     "now": 1.0,
@@ -298,18 +298,18 @@
     "best": 1.0,
     "room": 0.0,
     "floor": 1.0,
-    "n": 22,
+    "n": 46,
     "direction": "higher",
-    "hits": 22
+    "hits": 46
   },
   "answer_noanswer_dev": {
     "now": 1.0,
     "best": 1.0,
     "room": 0.0,
     "floor": 1.0,
-    "n": 1,
+    "n": 2,
     "direction": "higher",
-    "hits": 1
+    "hits": 2
   },
   "answer_by_type_count": {
     "now": 1.0,
@@ -321,13 +321,13 @@
     "hits": 1
   },
   "answer_by_type_fact": {
-    "now": 0.8333333333333334,
+    "now": 0.9047619047619048,
     "best": 1.0,
-    "room": 0.16666666666666663,
-    "floor": 0.8333333333333334,
-    "n": 18,
+    "room": 0.09523809523809523,
+    "floor": 0.9047619047619048,
+    "n": 42,
     "direction": "higher",
-    "hits": 15
+    "hits": 38
   },
   "answer_by_type_list": {
     "now": 0.5,
@@ -343,9 +343,9 @@
     "best": 1.0,
     "room": 0.0,
     "floor": 1.0,
-    "n": 1,
+    "n": 2,
     "direction": "higher",
-    "hits": 1
+    "hits": 2
   },
   "answer_by_type_yesno": {
     "now": 1.0,
@@ -365,13 +365,13 @@
     "direction": "lower"
   },
   "e2e_dev": {
-    "now": 0.8260869565217391,
+    "now": 0.875,
     "best": 1.0,
-    "room": 0.17391304347826086,
-    "floor": 0.8260869565217391,
-    "n": 23,
+    "room": 0.125,
+    "floor": 0.875,
+    "n": 48,
     "direction": "higher",
-    "hits": 19
+    "hits": 42
   },
   "e2e_by_type_count": {
     "now": 1.0,
@@ -383,13 +383,13 @@
     "hits": 1
   },
   "e2e_by_type_fact": {
-    "now": 0.8333333333333334,
+    "now": 0.8809523809523809,
     "best": 1.0,
-    "room": 0.16666666666666663,
-    "floor": 0.8333333333333334,
-    "n": 18,
+    "room": 0.11904761904761907,
+    "floor": 0.8809523809523809,
+    "n": 42,
     "direction": "higher",
-    "hits": 15
+    "hits": 37
   },
   "e2e_by_type_list": {
     "now": 0.5,
@@ -405,9 +405,9 @@
     "best": 1.0,
     "room": 0.0,
     "floor": 1.0,
-    "n": 1,
+    "n": 2,
     "direction": "higher",
-    "hits": 1
+    "hits": 2
   },
   "e2e_by_type_yesno": {
     "now": 1.0,
@@ -419,11 +419,11 @@
     "hits": 1
   },
   "e2e_latency_s": {
-    "now": 35.32916813480425,
-    "best": 35.32916813480425,
+    "now": 33.95675493957242,
+    "best": 33.95675493957242,
     "room": 0.0,
-    "floor": 35.32916813480425,
-    "n": 23,
+    "floor": 33.95675493957242,
+    "n": 48,
     "direction": "lower"
   },
   "e2e_dialog": {
@@ -436,20 +436,20 @@
     "hits": 8
   },
   "e2e_holdout": {
-    "now": 0.5,
+    "now": 0.6756756756756757,
     "best": 1.0,
-    "room": 0.5,
-    "floor": 0.5,
-    "n": 20,
+    "room": 0.32432432432432434,
+    "floor": 0.6756756756756757,
+    "n": 37,
     "direction": "higher",
-    "hits": 10
+    "hits": 25
   },
   "code_knowledge_leakage": {
     "now": 0.0,
     "best": 0.0,
     "room": 0.0,
     "floor": 0.0,
-    "n": 84,
+    "n": 204,
     "direction": "lower",
     "hits": 0
   },

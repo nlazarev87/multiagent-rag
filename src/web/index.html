@@ -2,47 +2,433 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Документы</title>
   <style>
-    body { font-family: sans-serif; margin: 2rem; max-width: 46rem; }
-    section { margin-bottom: 2rem; }
-    #query { width: 100%; min-height: 6rem; box-sizing: border-box; }
-    #readiness { font-weight: bold; }
-    progress { width: 100%; }
-    .file { margin: 0.5rem 0; }
-    .turn { margin: 1rem 0; padding-bottom: 0.5rem; border-bottom: 1px solid #ddd; }
-    .question { font-weight: bold; }
-    .answer { margin: 0.3rem 0; white-space: pre-wrap; }
-    .status { color: #555; font-size: 0.9rem; }
-    .sources { color: #555; font-size: 0.85rem; margin: 0.2rem 0 0 1rem; padding: 0; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      --left: 260px;
+      --mid: 380px;
+      --chrome: #F3F3F3;
+      --editor: #FCFCFC;
+      --fg: #141414;
+      --fg2: #141414BD;
+      --fg3: #14141499;
+      --fg4: #1414145C;
+      --line: #14141414;
+      --line2: #1414141F;
+      --line3: #14141433;
+      --wash: #14141414;
+      --focus: #14141424;
+      --link: #0064B0;
+      --btn: #2778C1;
+      --btn-hover: #246AAB;
+      --ready: #007041;
+      --hit: #3B7E8424;
+      --danger: #BE1744;
+      background: var(--chrome);
+      color: var(--fg);
+      font-family: "Segoe UI", "Segoe WPC", system-ui, sans-serif;
+      font-size: 13px;
+      font-weight: 400;
+      line-height: 1.4;
+    }
+    .shell {
+      display: grid;
+      grid-template-columns: var(--left) 1px var(--mid) 1px minmax(0, 1fr);
+      height: 100%;
+      min-height: 0;
+    }
+    .pane {
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      background: var(--chrome);
+    }
+    .editor { background: var(--editor); }
+    .sash {
+      position: relative;
+      background: var(--line);
+      cursor: col-resize;
+      z-index: 2;
+    }
+    .sash:hover, .sash.drag { background: var(--line2); }
+    .sash::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -2px;
+      width: 4px;
+    }
+    button {
+      font: inherit;
+      color: inherit;
+      background: transparent;
+      border: 0;
+      cursor: pointer;
+      padding: 0;
+      border-radius: 8px;
+    }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .hidden { display: none !important; }
+    .side-head { padding: 6px 8px 4px; }
+    #fresh {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      height: 28px;
+      padding: 0 8px;
+      font-weight: 500;
+    }
+    #fresh:hover { background: var(--wash); }
+    #chats {
+      list-style: none;
+      margin: 4px 6px 0;
+      padding: 0;
+      flex: 1;
+      overflow: auto;
+    }
+    #chats li {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-height: 28px;
+      padding: 0 8px;
+      border-radius: 8px;
+      color: var(--fg2);
+    }
+    #chats li:hover { background: var(--wash); color: var(--fg); }
+    #chats li.on { background: var(--wash); color: var(--fg); font-weight: 500; }
+    #chats .title {
+      flex: 1;
+      text-align: left;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      padding: 0;
+      border-radius: 0;
+    }
+    #chats .kill {
+      width: 22px;
+      height: 22px;
+      color: var(--fg3);
+      opacity: 0;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      line-height: 1;
+    }
+    #chats li:hover .kill, #chats .kill:focus { opacity: 1; }
+    #chats .kill:hover { color: var(--danger); background: var(--focus); }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px 10px;
+      color: var(--fg2);
+      font-size: 12px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #C5C5C5;
+      flex-shrink: 0;
+    }
+    .dot.on { background: var(--ready); }
+    #readiness { margin: 0; }
+    .mid-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 36px;
+      padding: 4px 10px;
+    }
+    .seg { display: flex; gap: 12px; }
+    .seg button { height: 22px; color: var(--fg2); font-size: 12px; border-radius: 0; }
+    .seg button.on { color: var(--fg); font-weight: 500; }
+    .docs-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+    #find-toggle, #upload {
+      width: 26px;
+      height: 26px;
+      color: var(--fg2);
+      display: grid;
+      place-items: center;
+    }
+    #find-toggle:hover, #upload:hover { background: var(--wash); color: var(--fg); }
+    #find {
+      width: 9.5rem;
+      height: 26px;
+      padding: 0 8px;
+      border: 1px solid var(--line3);
+      border-radius: 8px;
+      background: var(--editor);
+      color: var(--fg);
+      font: inherit;
+    }
+    #find::placeholder { color: var(--fg4); }
+    #files { display: none; }
+    .mid-body {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    #agent-pane, #docs-pane {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    #log { flex: 1; overflow: auto; }
+    .turn {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px 14px;
+    }
+    .question {
+      align-self: flex-end;
+      max-width: 90%;
+      background: var(--wash);
+      border-radius: 12px;
+      padding: 6px 10px;
+    }
+    .answer { white-space: pre-wrap; line-height: 1.5; }
+    .rate {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--fg3);
+    }
+    .rate-label { min-width: 11.5rem; }
+    .n {
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      color: var(--fg3);
+    }
+    .n.on { background: var(--focus); color: var(--fg); font-weight: 500; }
+    .n:hover { background: var(--wash); color: var(--fg); }
+    .source-block { display: flex; flex-direction: column; gap: 4px; }
+    .chip {
+      align-self: flex-start;
+      height: 22px;
+      padding: 0 8px;
+      border-radius: 6px;
+      background: var(--wash);
+      color: var(--link);
+      font-size: 12px;
+    }
+    .chip:hover { background: var(--focus); }
+    #ask {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      margin: 8px 12px 12px;
+      padding: 8px 8px 8px 12px;
+      border: 1px solid var(--line3);
+      border-radius: 12px;
+      background: var(--editor);
+    }
+    #query {
+      flex: 1;
+      min-height: 36px;
+      max-height: 88px;
+      border: 0;
+      resize: none;
+      outline: none;
+      font: inherit;
+      background: transparent;
+      color: var(--fg);
+    }
+    #query::placeholder { color: var(--fg4); }
+    #send {
+      width: 26px;
+      height: 26px;
+      border-radius: 999px;
+      background: var(--btn);
+      color: var(--editor);
+    }
+    #send:hover { background: var(--btn-hover); }
+    #tree { list-style: none; margin: 4px 0 0; padding: 0 8px; flex: 1; min-height: 0; overflow: auto; }
+    #tree ul { list-style: none; margin: 0; padding: 0 0 0 14px; }
+    .node {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      min-height: 24px;
+      padding: 0 6px;
+      border-radius: 8px;
+      color: var(--fg2);
+      text-align: left;
+    }
+    .node:hover, .node.on { background: var(--wash); color: var(--fg); }
+    .node.drop { background: var(--focus); }
+    .node input {
+      flex: 1;
+      min-width: 0;
+      height: 22px;
+      border: 1px solid var(--line3);
+      border-radius: 4px;
+      font: inherit;
+      padding: 0 6px;
+    }
+    .menu {
+      position: absolute;
+      min-width: 10.5rem;
+      padding: 4px;
+      background: var(--editor);
+      border: 1px solid var(--line2);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px #14141424;
+      z-index: 5;
+    }
+    .menu button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      height: 26px;
+      padding: 0 8px;
+    }
+    .menu button:hover { background: var(--wash); }
+    #steps { padding: 0 10px 8px; font-size: 12px; color: var(--fg3); }
+    .tabs {
+      display: flex;
+      align-items: stretch;
+      min-height: 35px;
+      background: var(--chrome);
+      overflow-x: auto;
+    }
+    .tab {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 16rem;
+      padding: 0 10px 0 12px;
+      color: var(--fg2);
+      background: var(--chrome);
+      flex-shrink: 0;
+      border-radius: 0;
+      cursor: pointer;
+    }
+    .tab.on { background: var(--editor); color: var(--fg); }
+    .tab span {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .tab .x {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      color: var(--fg3);
+    }
+    .tab .x:hover { background: var(--focus); color: var(--fg); }
+    .canvas { flex: 1; overflow: auto; padding: 18px 28px 32px; background: var(--editor); }
+    .paper.idle { color: var(--fg3); }
+    .muted { margin: 24px 0 0; color: var(--fg3); font-size: 12px; }
+    .chunk { margin: 0; }
+    .chunk p {
+      margin: 0 0 12px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .chunk p.hit { background: var(--hit); padding: 2px 4px; }
+    .file { margin: 4px 0; }
   </style>
 </head>
 <body>
-  <p id="readiness">Модель загружается</p>
-  <section>
-    <h1>Документы</h1>
-    <input id="files" type="file" multiple accept=".txt,.md,.doc,.docx">
-    <button id="load" type="button">Загрузить</button>
-    <ul id="names"></ul>
-    <div id="steps"></div>
-  </section>
-  <section>
-    <h2>Чат</h2>
-    <form id="ask">
-      <textarea id="query" required></textarea>
-      <button id="send" type="submit">Спросить</button>
-      <button id="fresh" type="button">Новый диалог</button>
-    </form>
-    <div id="log"></div>
-  </section>
+  <main class="shell" id="shell">
+    <aside class="pane" aria-label="Диалоги">
+      <div class="side-head">
+        <button id="fresh" type="button">Новый диалог</button>
+      </div>
+      <ul id="chats"></ul>
+      <div class="status">
+        <span class="dot" id="ready-dot"></span>
+        <p id="readiness">Модель загружается…</p>
+      </div>
+    </aside>
+    <div class="sash" id="sash-left" role="separator" aria-orientation="vertical" aria-label="Граница диалогов"></div>
+    <section class="pane" aria-label="Агент">
+      <div class="mid-head">
+        <div class="seg" role="tablist" aria-label="Режим">
+          <button type="button" id="mode-agent" class="on" role="tab" aria-selected="true">Agent</button>
+          <button type="button" id="mode-docs" role="tab" aria-selected="false">Документы</button>
+        </div>
+        <div class="docs-tools hidden" id="docs-tools">
+          <input id="find" class="hidden" type="search" placeholder="Поиск документа" aria-label="Поиск документа">
+          <button id="find-toggle" type="button" aria-label="Поиск" aria-expanded="false">⌕</button>
+          <button id="upload" type="button" aria-label="Загрузить">↑</button>
+          <input id="files" type="file" multiple accept=".txt,.md,.doc,.docx">
+        </div>
+      </div>
+      <div class="mid-body">
+        <div id="agent-pane">
+          <div id="log"></div>
+          <form id="ask">
+            <textarea id="query" required placeholder="Спросить по документам"></textarea>
+            <button id="send" type="submit" aria-label="Спросить">→</button>
+          </form>
+        </div>
+        <div id="docs-pane" class="hidden">
+          <ul id="tree"></ul>
+          <div id="steps"></div>
+          <div id="menu" class="menu hidden" role="menu"></div>
+        </div>
+      </div>
+    </section>
+    <div class="sash" id="sash-right" role="separator" aria-orientation="vertical" aria-label="Граница документа"></div>
+    <section class="pane editor" aria-label="Документ">
+      <div class="tabs" id="tabs"></div>
+      <div class="canvas">
+        <div id="preview" class="paper idle"></div>
+      </div>
+    </section>
+  </main>
   <script>
+    const shell = document.getElementById("shell");
+    const chatsEl = document.getElementById("chats");
+    const log = document.getElementById("log");
+    const tabsEl = document.getElementById("tabs");
+    const preview = document.getElementById("preview");
+    const treeEl = document.getElementById("tree");
+    const menu = document.getElementById("menu");
+    const find = document.getElementById("find");
+    const files = document.getElementById("files");
+    const steps = document.getElementById("steps");
+    const query = document.getElementById("query");
+    const ask = document.getElementById("ask");
+    const send = document.getElementById("send");
     const readiness = document.getElementById("readiness");
+    const readyDot = document.getElementById("ready-dot");
+    const agentPane = document.getElementById("agent-pane");
+    const docsPane = document.getElementById("docs-pane");
+    const docsTools = document.getElementById("docs-tools");
+    const modeAgent = document.getElementById("mode-agent");
+    const modeDocs = document.getElementById("mode-docs");
+
     let systemReady = false;
-    let dialogId = sessionStorage.getItem("dialogId");
-    if (!dialogId) {
-      dialogId = crypto.randomUUID();
-      sessionStorage.setItem("dialogId", dialogId);
-    }
+    let dialogs = [];
+    let dialogId = "";
+    let tree = { id: "root", name: "", children: [] };
+    let filter = "";
+    let openTabs = [];
+    let activeTab = "";
+    let tabChunks = {};
+    let menuTarget = null;
+    let closedFolders = new Set();
 
     function element(tag, className, text) {
       const node = document.createElement(tag);
@@ -51,72 +437,656 @@
       return node;
     }
 
+    function tokens(text) {
+      return new Set(String(text || "").toLowerCase().replace(/ё/g, "е").match(/[0-9a-zа-я]+/g) || []);
+    }
+
+    function contentWords(text) {
+      return new Set([...tokens(text)].filter((word) => word.length >= 5));
+    }
+
+    function coverage(answer, paragraph) {
+      const have = contentWords(paragraph);
+      let score = 0;
+      for (const word of contentWords(answer)) if (have.has(word)) score += 1;
+      return score;
+    }
+
+    function blocks(text) {
+      return String(text || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    }
+
+    function bindSash(sash, prop, min, max) {
+      sash.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        const startX = event.clientX;
+        const start = parseInt(getComputedStyle(document.body).getPropertyValue(prop), 10);
+        sash.classList.add("drag");
+        function move(moveEvent) {
+          const next = Math.min(max, Math.max(min, start + (moveEvent.clientX - startX)));
+          document.body.style.setProperty(prop, next + "px");
+        }
+        function up() {
+          sash.classList.remove("drag");
+          window.removeEventListener("mousemove", move);
+          window.removeEventListener("mouseup", up);
+        }
+        window.addEventListener("mousemove", move);
+        window.addEventListener("mouseup", up);
+      });
+    }
+
+    bindSash(document.getElementById("sash-left"), "--left", 200, 480);
+    bindSash(document.getElementById("sash-right"), "--mid", 280, 640);
+
+    function current() {
+      return dialogs.find((row) => row.id === dialogId) || null;
+    }
+
+    function paintChats() {
+      chatsEl.replaceChildren();
+      dialogs.forEach((row) => {
+        const item = element("li", row.id === dialogId ? "on" : "");
+        const open = element("button", "title", row.title || "Новый диалог");
+        open.type = "button";
+        open.addEventListener("click", () => selectDialog(row.id));
+        const kill = element("button", "kill", "×");
+        kill.type = "button";
+        kill.setAttribute("aria-label", "Удалить диалог");
+        kill.addEventListener("click", (event) => {
+          event.stopPropagation();
+          removeDialog(row.id);
+        });
+        item.append(open, kill);
+        chatsEl.append(item);
+      });
+    }
+
+    function idlePreview() {
+      preview.classList.add("idle");
+      preview.replaceChildren(element("p", "muted", "Откройте документ из чата или из дерева."));
+    }
+
+    function paintTabs() {
+      tabsEl.replaceChildren();
+      openTabs.forEach((name) => {
+        const tab = element("div", name === activeTab ? "tab on" : "tab");
+        tab.append(element("span", "", name));
+        tab.addEventListener("click", () => showPreview(name));
+        const close = element("button", "x", "×");
+        close.type = "button";
+        close.setAttribute("aria-label", "Закрыть вкладку");
+        close.addEventListener("click", (event) => {
+          event.stopPropagation();
+          closeTab(name);
+        });
+        tab.append(close);
+        tabsEl.append(tab);
+      });
+    }
+
+    function closeTab(name) {
+      openTabs = openTabs.filter((item) => item !== name);
+      delete tabChunks[name];
+      if (activeTab === name) activeTab = openTabs[0] || "";
+      paintTabs();
+      if (!activeTab) {
+        idlePreview();
+        return;
+      }
+      paintChunks(tabChunks[activeTab] || [], {});
+    }
+
+    function paintChunks(chunks, where) {
+      where = where || {};
+      let target = -1;
+      if (where.chunkIndex !== undefined && where.chunkIndex !== "") {
+        const want = Number(where.chunkIndex);
+        target = chunks.findIndex((chunk) => Number(chunk.chunk_index) === want);
+      } else if (where.section) {
+        target = chunks.findIndex((chunk) => chunk.section === where.section);
+      }
+      let best = { score: 0, chunk: -1, part: -1 };
+      if (where.answer) {
+        chunks.forEach((chunk, index) => {
+          blocks(chunk.text).forEach((part, place) => {
+            const score = coverage(where.answer, part);
+            if (score < 1) return;
+            const inTarget = index === target;
+            const bestOutside = best.chunk !== target;
+            if (score > best.score || (score === best.score && inTarget && bestOutside)) {
+              best = { score, chunk: index, part: place };
+            }
+          });
+        });
+      }
+      preview.classList.remove("idle");
+      preview.replaceChildren(...chunks.map((chunk, index) => {
+        const article = element("article", "chunk");
+        article.setAttribute("data-index", String(chunk.chunk_index));
+        if (chunk.section) article.title = chunk.section;
+        for (const [place, part] of blocks(chunk.text).entries()) {
+          const hit = best.score > 0 && index === best.chunk && place === best.part;
+          article.append(element("p", hit ? "hit" : "", part));
+        }
+        return article;
+      }));
+      const marked = preview.querySelector(".hit");
+      if (marked) {
+        marked.scrollIntoView({ block: "center" });
+        return;
+      }
+      if (target >= 0) {
+        const article = preview.querySelector("[data-index=\"" + chunks[target].chunk_index + "\"]");
+        if (article) {
+          article.scrollIntoView({ block: "start" });
+          return;
+        }
+      }
+      preview.parentNode.scrollTop = 0;
+    }
+
+    async function showPreview(name, where) {
+      if (!name) return;
+      if (!openTabs.includes(name)) openTabs.push(name);
+      activeTab = name;
+      paintTabs();
+      if (!tabChunks[name]) {
+        preview.classList.add("idle");
+        preview.replaceChildren(element("p", "muted", "Открывается…"));
+        try {
+          const response = await fetch("/documents/" + encodeURIComponent(name) + "/preview", {
+            signal: AbortSignal.timeout(15000),
+          });
+          const data = await response.json().catch(() => ({}));
+          if (response.ok) tabChunks[name] = data.chunks || [];
+          if (activeTab !== name) return;
+          if (!response.ok) {
+            preview.replaceChildren(element("p", "muted", data.detail || "Документ не найден"));
+            return;
+          }
+        } catch (error) {
+          if (activeTab !== name) return;
+          preview.replaceChildren(element("p", "muted", "Сервер не ответил"));
+          return;
+        }
+      }
+      if (activeTab !== name) return;
+      const chunks = tabChunks[name] || [];
+      if (!chunks.length) {
+        preview.replaceChildren(element("p", "muted", "Нет текста"));
+        return;
+      }
+      paintChunks(chunks, where || {});
+    }
+
+    function rateRow(label, value, onPick) {
+      const row = element("div", "rate");
+      row.append(element("span", "rate-label", label));
+      for (let n = 1; n <= 5; n += 1) {
+        const btn = element("button", n === value ? "n on" : "n", String(n));
+        btn.type = "button";
+        btn.setAttribute("aria-label", label + " " + n);
+        btn.addEventListener("click", () => onPick(n));
+        row.append(btn);
+      }
+      return row;
+    }
+
+    async function saveRate(index, body) {
+      if (!dialogId || index < 0) return;
+      await fetch("/ui/dialogs/" + encodeURIComponent(dialogId) + "/turns/" + index + "/ratings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const row = current();
+      if (!row || !row.turns || !row.turns[index]) return;
+      const ratings = row.turns[index].ratings || {};
+      if (body.answer_complete !== undefined) ratings.answer_complete = body.answer_complete;
+      if (body.answer_correct !== undefined) ratings.answer_correct = body.answer_correct;
+      if (body.links) ratings.links = Object.assign({}, ratings.links, body.links);
+      if (body.documents) ratings.documents = Object.assign({}, ratings.documents, body.documents);
+      row.turns[index].ratings = ratings;
+    }
+
+    function sourceBlocks(sources, answer, ratings, turnIndex) {
+      const wrap = element("div", "source-block");
+      const seen = new Set();
+      const linkScores = (ratings && ratings.links) || {};
+      const docScores = (ratings && ratings.documents) || {};
+      for (const source of sources) {
+        const cite = element("button", "chip", "[" + source.number + "]");
+        cite.type = "button";
+        cite.setAttribute("data-document", source.document_name);
+        if (source.chunk_index != null && source.chunk_index !== "") {
+          cite.setAttribute("data-index", String(source.chunk_index));
+        }
+        if (source.section) cite.setAttribute("data-section", source.section);
+        if (answer) cite.setAttribute("data-answer", answer);
+        wrap.append(cite);
+        wrap.append(rateRow("Правильность ссылки", linkScores[String(source.number)], (n) => {
+          const payload = { links: {} };
+          payload.links[String(source.number)] = n;
+          saveRate(turnIndex, payload).then(() => paintLog());
+        }));
+        if (!seen.has(source.document_name)) {
+          seen.add(source.document_name);
+          const file = element("button", "chip", source.document_name);
+          file.type = "button";
+          file.setAttribute("data-document", source.document_name);
+          wrap.append(file);
+          wrap.append(rateRow("Правильность документа", docScores[source.document_name], (n) => {
+            const payload = { documents: {} };
+            payload.documents[source.document_name] = n;
+            saveRate(turnIndex, payload).then(() => paintLog());
+          }));
+        }
+      }
+      return wrap;
+    }
+
+    function paintTurn(turn, index) {
+      const box = element("div", "turn");
+      box.append(element("div", "question", turn.query || ""));
+      box.append(element("div", "answer", turn.answer || ""));
+      const ratings = turn.ratings || {};
+      box.append(rateRow("Полнота ответа", ratings.answer_complete, (n) => {
+        saveRate(index, { answer_complete: n }).then(() => paintLog());
+      }));
+      box.append(rateRow("Корректность ответа", ratings.answer_correct, (n) => {
+        saveRate(index, { answer_correct: n }).then(() => paintLog());
+      }));
+      const sources = turn.sources || [];
+      if (sources.length) box.append(sourceBlocks(sources, turn.answer, ratings, index));
+      return box;
+    }
+
+    function paintLog() {
+      const row = current();
+      const turns = (row && row.turns) || [];
+      if (!turns.length) {
+        log.replaceChildren(element("p", "muted", "Задайте вопрос по документам"));
+        return;
+      }
+      log.replaceChildren(...turns.map((turn, index) => paintTurn(turn, index)));
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function treeFiles(node) {
+      const names = [];
+      if (!node) return names;
+      if (node.document_name) names.push(node.document_name);
+      (node.children || []).forEach((child) => names.push(...treeFiles(child)));
+      return names;
+    }
+
+    function ensureTreeFiles(names) {
+      const have = new Set(treeFiles(tree));
+      tree.children = tree.children || [];
+      (names || []).forEach((name) => {
+        if (name && !have.has(name)) {
+          tree.children.push({ document_name: name });
+          have.add(name);
+        }
+      });
+    }
+
+    async function setMode(mode) {
+      const agentOn = mode === "agent";
+      modeAgent.classList.toggle("on", agentOn);
+      modeDocs.classList.toggle("on", !agentOn);
+      modeAgent.setAttribute("aria-selected", String(agentOn));
+      modeDocs.setAttribute("aria-selected", String(!agentOn));
+      agentPane.classList.toggle("hidden", !agentOn);
+      docsPane.classList.toggle("hidden", agentOn);
+      docsTools.classList.toggle("hidden", agentOn);
+      if (agentOn) return;
+      paintTree();
+      if (treeFiles(tree).length) return;
+      try {
+        const data = await (await fetch("/documents", { signal: AbortSignal.timeout(8000) })).json();
+        ensureTreeFiles(data.documents || []);
+        paintTree();
+      } catch (error) {
+        paintTree();
+      }
+    }
+
+    function nodeMatches(node) {
+      if (!filter) return true;
+      if (node.document_name) return node.document_name.toLowerCase().includes(filter);
+      if ((node.name || "").toLowerCase().includes(filter)) return true;
+      return (node.children || []).some(nodeMatches);
+    }
+
+    function findParent(list, pred, parent) {
+      for (const child of list) {
+        if (pred(child)) return { parent: parent, node: child, list: list };
+        if (child.children) {
+          const hit = findParent(child.children, pred, child);
+          if (hit) return hit;
+        }
+      }
+      return null;
+    }
+
+    function subtreeIds(node, acc) {
+      acc = acc || new Set();
+      if (node.id) acc.add(node.id);
+      (node.children || []).forEach((child) => subtreeIds(child, acc));
+      return acc;
+    }
+
+    async function persistTree() {
+      const response = await fetch("/ui", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tree: tree }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (data.tree) tree = data.tree;
+      paintTree();
+    }
+
+    function paintTree() {
+      treeEl.replaceChildren();
+      fillTree(treeEl, tree.children || [], tree);
+      if (treeEl.children.length) return;
+      const item = element("li");
+      item.append(element("p", "muted", "Нет документов"));
+      treeEl.append(item);
+    }
+
+    function fillTree(list, nodes, parent) {
+      nodes.forEach((node) => {
+        if (!nodeMatches(node)) return;
+        const item = element("li");
+        const btn = element("button", "node");
+        btn.type = "button";
+        btn.draggable = true;
+        const isFile = Boolean(node.document_name);
+        const closed = Boolean(node.id && closedFolders.has(node.id) && !filter);
+        btn.append(element("span", "", isFile ? "" : (closed ? "▸" : "▾")));
+        btn.append(element("span", "", isFile ? node.document_name : (node.name || "Папка")));
+        if (isFile && node.document_name === activeTab) btn.classList.add("on");
+        btn.addEventListener("click", () => {
+          if (isFile) {
+            showPreview(node.document_name);
+            paintTree();
+            return;
+          }
+          if (closedFolders.has(node.id)) closedFolders.delete(node.id);
+          else closedFolders.add(node.id);
+          paintTree();
+        });
+        btn.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          openMenu(event, node, parent);
+        });
+        btn.addEventListener("dragstart", (event) => {
+          event.dataTransfer.setData("text/plain", JSON.stringify({
+            folder: !isFile,
+            id: node.id || "",
+            name: node.document_name || "",
+          }));
+        });
+        if (!isFile) {
+          btn.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            btn.classList.add("drop");
+          });
+          btn.addEventListener("dragleave", () => btn.classList.remove("drop"));
+          btn.addEventListener("drop", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            btn.classList.remove("drop");
+            dropOn(node, event.dataTransfer.getData("text/plain"));
+          });
+        }
+        item.append(btn);
+        if (!isFile && !closed && node.children) {
+          const nested = element("ul");
+          fillTree(nested, node.children, node);
+          item.append(nested);
+        }
+        list.append(item);
+      });
+    }
+
+    function dropOn(folder, raw) {
+      let payload = {};
+      try { payload = JSON.parse(raw); } catch (error) { return; }
+      if (payload.folder && payload.id && subtreeIds(folder).has(payload.id)) return;
+      const pred = payload.folder
+        ? (node) => node.id === payload.id
+        : (node) => node.document_name === payload.name;
+      const found = findParent(tree.children || [], pred, tree);
+      if (!found) return;
+      found.list.splice(found.list.indexOf(found.node), 1);
+      folder.children = folder.children || [];
+      folder.children.push(found.node);
+      if (folder.id) closedFolders.delete(folder.id);
+      persistTree();
+    }
+
+    function openMenu(event, node, parent) {
+      menuTarget = { node: node, parent: parent };
+      menu.replaceChildren();
+      const isFile = Boolean(node.document_name);
+      if (!isFile) {
+        addMenu("Новая папка", () => addFolder(node));
+        if (node !== tree) {
+          addMenu("Переименовать", () => renameFolder(node));
+          addMenu("Удалить", () => removeFolder(node, parent));
+        }
+      } else {
+        addMenu("Удалить", () => removeFile(node.document_name));
+      }
+      menu.classList.remove("hidden");
+      const box = docsPane.getBoundingClientRect();
+      menu.style.left = Math.min(event.clientX - box.left, box.width - 180) + "px";
+      menu.style.top = Math.min(event.clientY - box.top, box.height - 90) + "px";
+    }
+
+    function addMenu(label, action) {
+      const btn = element("button", "", label);
+      btn.type = "button";
+      btn.setAttribute("role", "menuitem");
+      btn.addEventListener("click", () => {
+        menu.classList.add("hidden");
+        action();
+      });
+      menu.append(btn);
+    }
+
+    function addFolder(folder) {
+      folder.children = folder.children || [];
+      folder.children.unshift({ id: crypto.randomUUID(), name: "Папка", children: [] });
+      if (folder.id) closedFolders.delete(folder.id);
+      persistTree();
+    }
+
+    function renameFolder(folder) {
+      const name = window.prompt("Имя папки", folder.name || "Папка");
+      if (!name || !name.trim()) return;
+      folder.name = name.trim().slice(0, 80);
+      persistTree();
+    }
+
+    function removeFolder(folder, parent) {
+      if (!parent || !parent.children) return;
+      const index = parent.children.indexOf(folder);
+      if (index < 0) return;
+      const kids = folder.children || [];
+      parent.children.splice(index, 1, ...kids);
+      persistTree();
+    }
+
+    async function removeFile(name) {
+      await fetch("/documents/" + encodeURIComponent(name), { method: "DELETE" });
+      if (openTabs.includes(name)) closeTab(name);
+      await loadUi(false);
+    }
+
+    async function loadUi(selectStored) {
+      const data = await (await fetch("/ui", { signal: AbortSignal.timeout(8000) })).json();
+      dialogs = data.dialogs || [];
+      tree = data.tree || { id: "root", name: "", children: [] };
+      if (!dialogs.length) {
+        const created = await (await fetch("/ui/dialogs", { method: "POST" })).json();
+        dialogs = [created];
+      }
+      if (selectStored) {
+        const stored = sessionStorage.getItem("dialogId");
+        dialogId = dialogs.some((row) => row.id === stored) ? stored : dialogs[0].id;
+      } else if (!dialogs.some((row) => row.id === dialogId)) {
+        dialogId = dialogs[0].id;
+      }
+      sessionStorage.setItem("dialogId", dialogId);
+      paintChats();
+      paintTree();
+      await selectDialog(dialogId, true);
+    }
+
+    async function selectDialog(id, silent) {
+      dialogId = id;
+      sessionStorage.setItem("dialogId", dialogId);
+      const response = await fetch("/ui/dialogs/" + encodeURIComponent(id));
+      const row = await response.json().catch(() => null);
+      if (row && row.id) {
+        const index = dialogs.findIndex((item) => item.id === row.id);
+        if (index >= 0) dialogs[index] = row;
+        else dialogs.unshift(row);
+      }
+      paintChats();
+      paintLog();
+      if (!silent) setMode("agent");
+    }
+
+    async function removeDialog(id) {
+      const data = await (await fetch("/ui/dialogs/" + encodeURIComponent(id), { method: "DELETE" })).json();
+      dialogs = data.dialogs || [];
+      if (!dialogs.length) {
+        const created = await (await fetch("/ui/dialogs", { method: "POST" })).json();
+        dialogs = [created];
+      }
+      dialogId = dialogs[0].id;
+      sessionStorage.setItem("dialogId", dialogId);
+      paintChats();
+      await selectDialog(dialogId);
+    }
+
     async function showReady() {
       try {
         const response = await fetch("/ready", { signal: AbortSignal.timeout(4000) });
         if (response.status === 200) {
           systemReady = true;
           readiness.textContent = "Система готова";
+          readyDot.classList.add("on");
           return;
         }
         systemReady = false;
+        readyDot.classList.remove("on");
         const data = await response.json().catch(() => ({}));
         if (typeof data.elapsed_sec === "number") {
           readiness.textContent = data.eta_sec == null
-            ? `Модель загружается. Прошло ${data.elapsed_sec} с.`
-            : `Модель загружается. Прошло ${data.elapsed_sec} с. Осталось около ${data.eta_sec} с.`;
+            ? "Модель загружается. Прошло " + data.elapsed_sec + " с."
+            : "Модель загружается. Прошло " + data.elapsed_sec + " с. Осталось около " + data.eta_sec + " с.";
         } else {
-          readiness.textContent = "Модель загружается";
+          readiness.textContent = "Модель загружается…";
         }
       } catch (error) {
-        readiness.textContent = "Модель загружается";
+        readiness.textContent = "Модель загружается…";
+        readyDot.classList.remove("on");
       }
       setTimeout(showReady, 2000);
     }
 
-    async function showDocuments() {
-      try {
-        const data = await (await fetch("/documents", { signal: AbortSignal.timeout(4000) })).json();
-        names.replaceChildren(...(data.documents || []).map((name) => {
-          const item = element("li", "", `${name} `);
-          item.append(element("span", "", "готов к получению вопросов"), " ");
-          const remove = element("button", "", "Удалить");
-          remove.type = "button";
-          remove.dataset.name = name;
-          item.append(remove);
-          return item;
-        }));
-      } catch (error) {
-        setTimeout(showDocuments, 2000);
-      }
-    }
-
-    names.onclick = async (event) => {
-      const name = event.target.dataset.name;
-      if (!name) return;
-      await fetch("/documents/" + encodeURIComponent(name), { method: "DELETE" });
-      await showDocuments();
+    document.getElementById("fresh").onclick = async () => {
+      const row = await (await fetch("/ui/dialogs", { method: "POST" })).json();
+      dialogs = [row].concat(dialogs.filter((item) => item.id !== row.id));
+      dialogId = row.id;
+      sessionStorage.setItem("dialogId", dialogId);
+      paintChats();
+      paintLog();
+      setMode("agent");
+      query.focus();
     };
+
+    modeAgent.onclick = () => setMode("agent");
+    modeDocs.onclick = () => setMode("docs");
+    document.getElementById("find-toggle").onclick = () => {
+      const open = find.classList.toggle("hidden");
+      document.getElementById("find-toggle").setAttribute("aria-expanded", String(!open));
+      if (!open) find.focus();
+    };
+    find.addEventListener("input", () => {
+      filter = find.value.trim().toLowerCase();
+      paintTree();
+    });
+    treeEl.addEventListener("contextmenu", (event) => {
+      if (event.target.closest(".node")) return;
+      event.preventDefault();
+      openMenu(event, tree, null);
+    });
+    treeEl.addEventListener("dragover", (event) => {
+      if (!event.target.closest(".node")) event.preventDefault();
+    });
+    treeEl.addEventListener("drop", (event) => {
+      if (event.target.closest(".node")) return;
+      event.preventDefault();
+      dropOn(tree, event.dataTransfer.getData("text/plain"));
+    });
+    document.getElementById("upload").onclick = () => files.click();
+    document.addEventListener("click", (event) => {
+      if (!menu.contains(event.target)) menu.classList.add("hidden");
+    });
+
+    log.onclick = (event) => {
+      const node = event.target.closest("[data-document]");
+      if (!node) return;
+      const name = node.getAttribute("data-document");
+      if (!node.hasAttribute("data-index")) {
+        showPreview(name);
+        return;
+      }
+      showPreview(name, {
+        chunkIndex: node.getAttribute("data-index"),
+        section: node.getAttribute("data-section") || "",
+        answer: node.getAttribute("data-answer") || "",
+      });
+    };
+
+    query.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        ask.requestSubmit();
+      }
+    });
 
     function row(file) {
       const box = element("div", "file");
       box.dataset.file = file.name;
-      const bar = element("progress");
+      const bar = document.createElement("progress");
       bar.max = 3;
       bar.value = 0;
       box.append(element("div", "", file.name), bar, element("span", "", "загружен"));
       return box;
     }
 
-    function paint(name, step, label) {
+    function paintStep(name, step, label) {
       const box = [...steps.children].find((child) => child.dataset.file === name);
       if (!box) return;
       box.querySelector("progress").value = step;
       box.querySelector("span").textContent = label;
     }
 
-    load.onclick = async () => {
+    files.onchange = async () => {
       const chosen = [...files.files];
+      files.value = "";
+      if (!chosen.length) return;
+      setMode("docs");
       steps.replaceChildren(...chosen.map(row));
       const body = new FormData();
       for (const file of chosen) body.append("files", file);
@@ -124,7 +1094,7 @@
       request.open("POST", "/upload");
       request.upload.onprogress = (event) => {
         if (!event.lengthComputable) return;
-        for (const file of chosen) paint(file.name, Math.min(1, event.loaded / event.total), "загружен");
+        for (const file of chosen) paintStep(file.name, Math.min(1, event.loaded / event.total), "загружен");
       };
       request.onload = async () => {
         let data = {};
@@ -133,38 +1103,36 @@
           steps.append(element("p", "", data.detail || "Ошибка загрузки"));
           return;
         }
-        for (const file of chosen) paint(file.name, 2, "разобран");
-        await showDocuments();
+        for (const file of chosen) paintStep(file.name, 2, "разобран");
+        if (data.tree) tree = data.tree;
+        paintTree();
         const known = new Set(data.documents || []);
         for (const file of chosen) {
-          if (known.has(file.name)) paint(file.name, 3, "готов к получению вопросов");
+          if (known.has(file.name)) paintStep(file.name, 3, "готов к получению вопросов");
         }
       };
       request.onerror = () => steps.append(element("p", "", "Ошибка загрузки"));
       request.send(body);
     };
 
-    fresh.onclick = () => {
-      dialogId = crypto.randomUUID();
-      sessionStorage.setItem("dialogId", dialogId);
-      log.replaceChildren();
-      query.value = "";
-    };
-
     ask.onsubmit = async (event) => {
       event.preventDefault();
       const text = query.value.trim();
       if (!text) return;
-      const turn = element("div", "turn");
-      turn.append(element("div", "question", text));
-      const answer = element("div", "answer", "Ответ пишется… 0 с");
-      turn.append(answer);
-      log.append(turn);
+      const pending = { query: text, answer: "Ответ пишется… 0 с", sources: [], ratings: {} };
+      const row = current();
+      if (row) {
+        row.turns = (row.turns || []).concat([pending]);
+        if (!row.title || row.title === "Новый диалог") row.title = text;
+      }
+      paintChats();
+      paintLog();
       query.value = "";
       send.disabled = true;
       const started = Date.now();
       const timer = setInterval(() => {
-        answer.textContent = `Ответ пишется… ${Math.round((Date.now() - started) / 1000)} с`;
+        pending.answer = "Ответ пишется… " + Math.round((Date.now() - started) / 1000) + " с";
+        paintLog();
       }, 1000);
       try {
         const response = await fetch("/query", {
@@ -175,32 +1143,38 @@
         const data = await response.json().catch(() => ({}));
         clearInterval(timer);
         if (!response.ok) {
-          answer.textContent = data.detail || "Ошибка сервера";
+          pending.answer = data.detail || "Ошибка сервера";
+          paintLog();
           return;
         }
-        answer.textContent = data.answer;
-        const seconds = Math.round((Date.now() - started) / 1000);
-        turn.append(element("div", "status", `Статус: ${data.status}. Время: ${seconds} с.`));
-        const sources = data.sources || [];
-        if (sources.length) {
-          const list = element("ul", "sources");
-          for (const source of sources) {
-            const where = source.section ? ` — ${source.section}` : "";
-            list.append(element("li", "", `[${source.number}] ${source.document_name}${where}`));
-          }
-          turn.append(list);
-        }
+        pending.answer = data.answer;
+        pending.sources = data.sources || [];
+        pending.ratings = {
+          answer_complete: null,
+          answer_correct: null,
+          links: {},
+          documents: {},
+        };
+        paintLog();
+        await loadUi(false);
       } catch (error) {
         clearInterval(timer);
-        answer.textContent = "Сервер не ответил";
+        pending.answer = "Сервер не ответил";
+        paintLog();
       } finally {
         send.disabled = false;
-        if (systemReady) readiness.textContent = "Система готова";
+        if (systemReady) {
+          readiness.textContent = "Система готова";
+          readyDot.classList.add("on");
+        }
       }
     };
 
+    idlePreview();
     showReady();
-    showDocuments();
+    loadUi(true).catch(() => {
+      log.replaceChildren(element("p", "muted", "Сервер не ответил"));
+    });
   </script>
 </body>
 </html>
