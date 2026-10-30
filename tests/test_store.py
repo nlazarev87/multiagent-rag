@@ -10,6 +10,21 @@ def _fresh(tmp_path, monkeypatch):
     store.reset()
 
 
+def test_identical_text_is_stored_for_each_document(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
+    text = "Договор: оплата в течение 10 дней."
+
+    def chunk(name):
+        return {"text": text, "document_name": name, "chunk_index": 0, "checksum": "same", "section": ""}
+
+    store.upsert_chunks([chunk("draft.txt"), chunk("signed.txt")])
+    store.upsert_chunks([chunk("copy.txt")])
+    assert sorted(store.list_documents()) == ["copy.txt", "draft.txt", "signed.txt"]
+    assert store.chunks_for_document("signed.txt")[0]["text"] == text
+    assert store.collection().count() == 3
+
+
 def test_upsert_skips_same_checksum(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     chunks = split_chunks("Цех имеет номер 4. Мастер цеха Иванов.", "charter.txt")
