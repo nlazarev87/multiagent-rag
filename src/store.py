@@ -114,6 +114,12 @@ def _rows(col, **where):
         offset += 500
 
 
+def _chunk_id(chunk):
+    # The checksum covers the text only. Chroma keeps the first add() for an id
+    # and ignores the rest, so a second file with the same text must not reuse it.
+    return f"{chunk['document_name']}:{chunk['checksum']}:{chunk['chunk_index']}"
+
+
 def upsert_chunks(chunks):
     global _index
     if not chunks:
@@ -132,7 +138,7 @@ def upsert_chunks(chunks):
         for start in range(0, len(items), 64):
             batch = items[start:start + 64]
             col.add(
-                ids=[f"{chunk['checksum']}:{chunk['chunk_index']}" for chunk in batch],
+                ids=[_chunk_id(chunk) for chunk in batch],
                 documents=[chunk["text"] for chunk in batch],
                 embeddings=_embed(["passage: " + chunk.get("embed", chunk["text"]) for chunk in batch]),
                 metadatas=[{
