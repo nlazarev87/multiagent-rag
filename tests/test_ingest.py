@@ -3,8 +3,10 @@ from pathlib import Path
 import pytest
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
-from ingest import TOKENS, VERSION, count_tokens, ingest_dir, load_text, split_chunks
+from ingest import TOKENS, VERSION, _docx_blocks, count_tokens, ingest_dir, load_text, split_chunks
 
 
 def _toc_style(document):
@@ -185,6 +187,118 @@ def test_unreadable_file_does_not_block_other_documents(tmp_path, monkeypatch):
     assert {chunk["document_name"] for chunk in chunks} == {"good.txt"}
     assert any("4" in chunk["text"] for chunk in chunks)
     _word_tokens.cache_clear()
+
+
+def _word_run(text):
+    run = OxmlElement("w:r")
+    node = OxmlElement("w:t")
+    node.text = text
+    run.append(node)
+    return run
+
+
+def _word_mark(tag, *children):
+    node = OxmlElement(tag)
+    node.set(qn("w:id"), "1")
+    node.set(qn("w:author"), "Ed")
+    node.set(qn("w:date"), "2026-10-31T00:00:00Z")
+    for child in children:
+        node.append(child)
+    return node
+
+
+def _word_sdt(*children):
+    sdt = OxmlElement("w:sdt")
+    sdt.append(OxmlElement("w:sdtPr"))
+    content = OxmlElement("w:sdtContent")
+    for child in children:
+        content.append(child)
+    sdt.append(content)
+    return sdt
+
+
+def _save(document, path):
+    document.save(path)
+    return path
+
+
+def test_docx_keeps_an_inserted_value_and_drops_the_deleted_one(tmp_path):
+    document = Document()
+    paragraph = document.add_paragraph("Давление равно ")
+    deleted = _word_mark("w:del", _word_run("6 бар"))
+    # A deletion stores its text in delText. A normal run would still be visible.
+    deleted.find(qn("w:r")).find(qn("w:t")).tag = qn("w:delText")
+    paragraph._p.append(deleted)
+    paragraph._p.append(_word_mark("w:ins", _word_run("10 бар")))
+    _save(document, tmp_path / "revised.docx")
+    text = " ".join(block["text"] for block in _docx_blocks(tmp_path / "revised.docx"))
+    assert "10 бар" in text
+    assert "6 бар" not in text
+
+
+def test_docx_keeps_a_value_inside_a_content_control(tmp_path):
+    document = Document()
+    paragraph = document.add_paragraph("Давление равно ")
+    paragraph._p.append(_word_sdt(_word_run("10 бар")))
+    _save(document, tmp_path / "field.docx")
+    text = " ".join(block["text"] for block in _docx_blocks(tmp_path / "field.docx"))
+    assert "10 бар" in text
+
+
+def test_docx_keeps_a_paragraph_wrapped_in_a_content_control(tmp_path):
+    document = Document()
+    body = document.element.body
+    paragraph = OxmlElement("w:p")
+    paragraph.append(_word_run("Рабочее давление равно 10 бар."))
+    body.insert(len(body) - 1, _word_sdt(paragraph))
+    _save(document, tmp_path / "block-field.docx")
+    text = " ".join(block["text"] for block in _docx_blocks(tmp_path / "block-field.docx"))
+    assert "Рабочее давление равно 10 бар." in text
+
+
+def test_docx_keeps_an_inserted_table_cell(tmp_path):
+    document = Document()
+    table = document.add_table(rows=2, cols=2)
+    table.rows[0].cells[0].text = "Показатель"
+    table.rows[0].cells[1].text = "Значение"
+    table.rows[1].cells[0].text = "Давление"
+    table.rows[1].cells[1].paragraphs[0]._p.append(_word_mark("w:ins", _word_run("10 бар")))
+    _save(document, tmp_path / "table.docx")
+    table = next(block for block in _docx_blocks(tmp_path / "table.docx") if block["kind"] == "table")
+    values = [value for row in table["rows"] for _, value in row]
+    assert "Давление" in values
+    assert "10 бар" in values
+
+
+def test_docx_keeps_a_nested_control_inside_an_insertion(tmp_path):
+    document = Document()
+    paragraph = document.add_paragraph("Код ")
+    paragraph._p.append(_word_mark("w:ins", _word_sdt(_word_run("Н-12"))))
+    _save(document, tmp_path / "nested.docx")
+    text = " ".join(block["text"] for block in _docx_blocks(tmp_path / "nested.docx"))
+    assert "Н-12" in text
+
+
+def test_docx_keeps_text_when_a_revision_only_marks_formatting(tmp_path):
+    document = Document()
+    paragraph = document.add_paragraph("Давление равно 6 бар.")
+    mark = OxmlElement("w:ins")
+    mark.set(qn("w:id"), "7")
+    mark.set(qn("w:author"), "Ed")
+    mark.set(qn("w:date"), "2026-10-31T00:00:00Z")
+    paragraph.runs[0]._r.get_or_add_rPr().append(mark)
+    _save(document, tmp_path / "format.docx")
+    text = " ".join(block["text"] for block in _docx_blocks(tmp_path / "format.docx"))
+    assert text == "Давление равно 6 бар."
+
+
+def test_docx_revision_wrapper_leaves_a_plain_paragraph(tmp_path):
+    document = Document()
+    document.add_paragraph("Требования к содержанию доку-")
+    document.add_paragraph("мента приведены в приложении.")
+    _save(document, tmp_path / "plain.docx")
+    blocks = _docx_blocks(tmp_path / "plain.docx")
+    assert blocks[0]["text"] == "Требования к содержанию документа приведены в приложении."
 
 
 def test_doc_via_libreoffice(tmp_path):
