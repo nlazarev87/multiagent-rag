@@ -68,7 +68,21 @@ def _word_tokens(word):
 
 
 def _text(cell):
+    if cell is None:
+        return ""
     return " ".join(cell.text.split())
+
+
+def _same_cell(left, right):
+    return left is not None and right is not None and left._tc is right._tc
+
+
+def _aligned_row(row):
+    # A row that starts or ends in a later column simply omits those cells.
+    # Reading only the cells that are present slides each value under the
+    # previous header, so the minimum is stored as the name of the row.
+    cells = list(row.cells)
+    return [None] * row.grid_cols_before + cells + [None] * row.grid_cols_after
 
 
 def _style_names(style):
@@ -113,13 +127,15 @@ def _heading_level(paragraph):
 
 
 def _subheader(top, low):
-    spans = any(left._tc is right._tc for left, right in zip(top, top[1:]))
-    tied = any(upper._tc is lower._tc for upper, lower in zip(top, low))
+    spans = any(_same_cell(left, right) for left, right in zip(top, top[1:]))
+    tied = any(_same_cell(upper, lower) for upper, lower in zip(top, low))
     return spans and tied
 
 
 def _table_block(table, caption):
-    grid = [list(row.cells) for row in table.rows]
+    grid = [_aligned_row(row) for row in table.rows]
+    width = max((len(row) for row in grid), default=0)
+    grid = [row + [None] * (width - len(row)) for row in grid]
     grid = [row for row in grid if any(_text(cell) for cell in row)]
     if len(grid) < 2:
         text = " ".join(_text(cell) for row in grid for cell in row)
@@ -128,7 +144,7 @@ def _table_block(table, caption):
     start = 1
     if len(grid) > 2 and _subheader(grid[0], grid[1]):
         labels = [
-            top if upper._tc is lower._tc or not _text(lower) else f"{top} / {_text(lower)}"
+            top if _same_cell(upper, lower) or not _text(lower) else f"{top} / {_text(lower)}"
             for top, upper, lower in zip(labels, grid[0], grid[1])
         ]
         start = 2
@@ -137,7 +153,7 @@ def _table_block(table, caption):
         pairs = []
         last = None
         for label, cell in zip(labels, row):
-            if cell._tc is last:
+            if cell is None or cell._tc is last:
                 continue
             last = cell._tc
             value = _text(cell)
