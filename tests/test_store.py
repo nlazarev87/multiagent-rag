@@ -1,6 +1,7 @@
 from docx import Document
 
 import ingest
+import settings
 import store
 from ingest import ingest_dir, split_chunks
 
@@ -61,6 +62,60 @@ def test_chunks_for_document_orders_by_index(tmp_path, monkeypatch):
     assert [row["text"] for row in rows] == ["первый", "второй"]
     assert [row["section"] for row in rows] == ["A", "B"]
     assert [row["chunk_index"] for row in rows] == [0, 1]
+
+
+def test_delete_document_removes_only_that_file(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
+    store.upsert_chunks([
+        {"text": "Цех имеет номер 4.", "document_name": "charter.txt", "chunk_index": 0, "checksum": "c", "section": "A"},
+        {"text": "Насос синий.", "document_name": "pump.md", "chunk_index": 0, "checksum": "p", "section": ""},
+    ])
+    store.known("цех")
+    assert store._index is not None
+    store.delete_document("charter.txt")
+    assert store._index is None
+    assert set(store.list_documents()) == {"pump.md"}
+    assert store.chunks_for_document("charter.txt") == []
+    assert store.chunks_for_document("pump.md")[0]["text"] == "Насос синий."
+    store.delete_document("missing.txt")
+    assert store.chunks_for_document("pump.md")[0]["text"] == "Насос синий."
+    assert all("номер 4" not in chunk["text"] for chunk in store.search_chunks("номер цеха"))
+    assert any("синий" in chunk["text"] for chunk in store.search_chunks("насос"))
+
+
+def test_search_keeps_routing_where(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.2, 0.3, 0.4, 0.5] for _ in texts])
+    store.upsert_chunks([
+        {
+            "text": "Сушильная камера имеет площадь 25 квадратных метров.",
+            "document_name": "plain.txt",
+            "chunk_index": 0,
+            "checksum": "p",
+            "kind": "text",
+            "section": "",
+        },
+        {
+            "text": "Сушильная камера имеет площадь 40 квадратных метров.",
+            "document_name": "listed.txt",
+            "chunk_index": 0,
+            "checksum": "l",
+            "kind": "overview",
+            "section": "",
+        },
+    ])
+    monkeypatch.setattr(store, "route_where", lambda: {"kind": "overview"})
+    found = store.search_chunks("площадь сушильной камеры")
+    assert found
+    assert {chunk["document_name"] for chunk in found} == {"listed.txt"}
+
+
+def test_where_ignores_blank_filters(monkeypatch):
+    monkeypatch.setattr(settings, "routing", lambda: {
+        "where": {"kind": "", "collection": None, "section": [], "version": 0},
+    })
+    assert settings.where() == {"version": 0}
 
 
 def test_empty_search_returns_empty(tmp_path, monkeypatch):

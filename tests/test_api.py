@@ -181,6 +181,72 @@ def test_query_reloads_saved_history_after_memory_is_cleared(monkeypatch):
     assert seen == [[], ["первый"]]
 
 
+def test_upload_keeps_the_file_inside_inbox(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setattr("api.INBOX", inbox)
+    monkeypatch.setattr("api.ingest_dir", lambda folder: [])
+    monkeypatch.setattr("api.upsert_chunks", lambda chunks: None)
+    monkeypatch.setattr("api.list_documents", lambda: ["outside.txt"])
+    outside = tmp_path / "outside.txt"
+    outside.write_text("чужой файл", encoding="utf-8")
+    response = TestClient(app).post(
+        "/upload",
+        files=[("files", ("../outside.txt", "новый текст".encode(), "text/plain"))],
+    )
+    assert response.status_code == 200
+    assert outside.read_text(encoding="utf-8") == "чужой файл"
+    assert (inbox / "outside.txt").read_text(encoding="utf-8") == "новый текст"
+
+
+def test_missing_dialog_and_turn_return_404(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: [])
+    client = TestClient(app)
+    assert client.get("/ui/dialogs/missing").status_code == 404
+    created = client.post("/ui/dialogs").json()
+    missing = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_complete": 4},
+    )
+    assert missing.status_code == 404
+
+
+def test_query_error_does_not_store_a_turn(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: [])
+
+    def run(query, dialog_id):
+        raise RuntimeError("model down")
+
+    monkeypatch.setattr("api.run", run)
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    response = client.post("/query", json={"query": "номер", "dialog_id": created["id"]})
+    assert response.status_code == 500
+    saved = workspace.load()["dialogs"]
+    assert all(turn.get("query") != "номер" for row in saved for turn in row.get("turns") or [])
+
+
+def test_rating_outside_one_to_five_is_stored_empty(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
+    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+        "answer": "Цех имеет номер 4 [1].",
+        "status": "подтверждён",
+        "document_names": ["note.txt"],
+        "sources": [],
+    })
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    assert client.post("/query", json={"query": "номер", "dialog_id": created["id"]}).status_code == 200
+    patched = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_complete": 6, "answer_correct": 0, "documents": {"../secret/note.txt": 3}},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["ratings"]["answer_complete"] is None
+    assert patched.json()["ratings"]["answer_correct"] is None
+    assert patched.json()["ratings"]["documents"] == {"note.txt": 3}
+
+
 def test_query_does_not_restore_a_dialog_deleted_while_answering(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: [])
 
