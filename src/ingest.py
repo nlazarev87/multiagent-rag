@@ -185,7 +185,16 @@ def _table_block(table, caption, depth=0):
         pairs = []
         last = None
         for label, cell in zip(labels, row):
-            if cell is None or cell._tc is last:
+            if cell is None:
+                # The cell is absent, but the column is not. Dropping it here
+                # slides the next value into this column: a two-column row stores
+                # the measurement as the name, and the column summary counts it
+                # under the previous header.
+                if not pairs or pairs[-1][0] != label:
+                    pairs.append((label, ""))
+                last = None
+                continue
+            if cell._tc is last:
                 continue
             last = cell._tc
             value = _text(cell, depth)
