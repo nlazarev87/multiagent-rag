@@ -404,3 +404,45 @@ def test_run_searches_again_when_feedback_names_a_document(monkeypatch):
     result = coordinator.run("Какой номер у цеха?", "d-doc")
     assert order == ["select", "clarify", "search", "answer", "check", "search", "answer", "check", "save"]
     assert result == {"answer": agents.NO_ANSWER, "status": agents.MISSING, "document_names": [], "sources": []}
+
+
+def test_catalog_reports_an_empty_library(monkeypatch):
+    monkeypatch.setattr(coordinator, "list_documents", lambda: [])
+    monkeypatch.setattr(
+        coordinator,
+        "search_agent",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("search")),
+    )
+    result = coordinator.run("Какие документы загружены в систему?", "empty-catalog")
+    assert result == {
+        "answer": agents.NO_ANSWER,
+        "status": agents.MISSING,
+        "document_names": [],
+        "sources": [],
+    }
+
+
+def test_catalog_keeps_a_short_code_and_ignores_a_short_word(monkeypatch):
+    monkeypatch.setattr(
+        coordinator,
+        "search_agent",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("search")),
+    )
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["api.txt", "заметка.txt"])
+    code = coordinator.run("Какие api загружены в систему?", "short-code")
+    assert code["status"] == agents.CONFIRMED
+    assert code["answer"] == "api.txt"
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["цех.txt", "насос.txt"])
+    word = coordinator.run("Какие цех загружены в систему?", "short-word")
+    assert word["answer"] == "цех.txt, насос.txt"
+
+
+def test_overview_source_skips_a_number_outside_the_fragments():
+    chunk = {"document_name": "library.txt", "section": "Залы", "chunk_index": 2}
+    assert coordinator._overview_sources("2 Зал [99] [1].", [chunk]) == [{
+        "number": 1,
+        "document_name": "library.txt",
+        "section": "Залы",
+        "chunk_index": 2,
+    }]
+    assert coordinator._overview_sources("2 Зал [1].", []) == []
