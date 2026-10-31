@@ -507,6 +507,30 @@ def test_catalog_lists_every_file_when_the_names_do_not_overlap(monkeypatch):
     assert result["answer"] == "ГОСТ_1.docx, насос.md"
     assert result["sources"] == []
 
+
+def test_catalog_skips_a_negated_or_prefixed_load_and_accepts_yo(monkeypatch):
+    # «не загружены» and «перезагружен» are not the inventory phrase.
+    # «загружёны» is the same phrase with ё and still lists every file.
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["Документ.docx", "Паспорт насоса.docx"])
+    for query, dialog_id in (
+        ("Какие документы не загружены в систему?", "negated-load"),
+        ("Какой модуль перезагружен в систему?", "prefixed-load"),
+    ):
+        order = []
+        _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+        coordinator.run(query, dialog_id)
+        assert order[0] == "select"
+        assert "search" in order
+
+    order = []
+    _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+    listed = coordinator.run("Какие документы загружёны в систему?", "yo-load")
+    assert order == ["save"]
+    assert listed["status"] == agents.CONFIRMED
+    assert listed["answer"] == "Документ.docx, Паспорт насоса.docx"
+    assert listed["sources"] == []
+
+
 def test_finish_drops_only_the_invalid_number_in_a_citation(monkeypatch):
     order = []
     _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])

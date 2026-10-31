@@ -911,6 +911,37 @@ def test_docx_keeps_text_moved_by_a_revision(tmp_path):
     assert "10 бар" in text
     assert "6 бар" not in text
 
+
+def test_docx_keeps_a_hyperlink_revision_a_smart_tag_and_a_joined_link(tmp_path):
+    document = Document()
+    paragraph = document.add_paragraph("Давление равно ")
+    link = OxmlElement("w:hyperlink")
+    link.set(qn("r:id"), "rId1")
+    deleted = _word_mark("w:del", _word_run("6 бар"))
+    deleted.find(qn("w:r")).find(qn("w:t")).tag = qn("w:delText")
+    link.append(deleted)
+    link.append(_word_mark("w:ins", _word_run("10 бар")))
+    paragraph._p.append(link)
+    coded = document.add_paragraph("Код ")
+    smart = OxmlElement("w:smartTag")
+    smart.append(_word_run("Н-12"))
+    coded._p.append(smart)
+    split = document.add_paragraph("Требования к содержанию ")
+    broken = _word_run("мента приведены.")
+    broken.insert(0, OxmlElement("w:br"))
+    linked = OxmlElement("w:hyperlink")
+    linked.append(_word_run("доку-"))
+    linked.append(broken)
+    split._p.append(linked)
+    _save(document, tmp_path / "linked.docx")
+    text = "\n".join(block["text"] for block in _docx_blocks(tmp_path / "linked.docx"))
+    assert "Давление равно 10 бар" in text
+    assert "6 бар" not in text
+    assert "Код Н-12" in text
+    assert "документа приведены" in text
+    assert "доку-" not in text
+
+
 def test_missing_parser_aborts_instead_of_skipping_the_file(tmp_path, monkeypatch):
     monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text or "").split())))
     from ingest import _word_tokens
