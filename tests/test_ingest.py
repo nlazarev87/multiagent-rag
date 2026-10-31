@@ -880,3 +880,49 @@ def test_long_paragraph_is_split_to_the_budget(monkeypatch):
         assert "слово79" in chunks[-1]["text"]
     finally:
         _word_tokens.cache_clear()
+
+def test_docx_keeps_text_moved_by_a_revision(tmp_path):
+    document = Document()
+    body = document.element.body
+    old = OxmlElement("w:p")
+    old.append(_word_run("Давление равно 6 бар."))
+    new = OxmlElement("w:p")
+    new.append(_word_run("Давление равно 10 бар."))
+    body.insert(len(body) - 1, _word_mark("w:moveFrom", old))
+    body.insert(len(body) - 1, _word_mark("w:moveTo", new))
+    table = document.add_table(rows=2, cols=2)
+    table.rows[0].cells[0].text = "Показатель"
+    table.rows[0].cells[1].text = "Значение"
+    table.rows[1].cells[0].text = "Давление"
+    value = table.rows[1].cells[1].paragraphs[0]._p
+    value.append(_word_mark("w:moveFrom", _word_run("6 бар")))
+    value.append(_word_mark("w:moveTo", _word_sdt(_word_run("10 бар"))))
+    _save(document, tmp_path / "moved.docx")
+    blocks = _docx_blocks(tmp_path / "moved.docx")
+    texts = []
+    for block in blocks:
+        if block["kind"] == "table":
+            texts.extend(value for row in block["rows"] for _, value in row)
+        else:
+            texts.append(block["text"])
+    text = "\n".join(texts)
+    assert "Давление равно 10 бар." in text
+    assert "Давление равно 6 бар." not in text
+    assert "10 бар" in text
+    assert "6 бар" not in text
+
+def test_missing_parser_aborts_instead_of_skipping_the_file(tmp_path, monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text or "").split())))
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+
+    def missing(_path):
+        raise ImportError("python-docx")
+
+    monkeypatch.setattr("ingest._docx_blocks", missing)
+    (tmp_path / "a.txt").write_text("Цех имеет номер 4.", encoding="utf-8")
+    (tmp_path / "z.docx").write_bytes(b"PK")
+    with pytest.raises(ImportError, match="python-docx"):
+        ingest_dir(tmp_path)
+    _word_tokens.cache_clear()

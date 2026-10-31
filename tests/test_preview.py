@@ -388,3 +388,17 @@ def test_preview_and_tree_save_ignore_a_stale_result():
     )
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip() == "ok"
+
+def test_preview_ignores_a_stale_document_and_a_stale_tree_save():
+    page = HTML.read_text(encoding="utf-8")
+    assert "if (activeTab !== name) return;" in page
+    assert "if (!ok || treePending) continue;" in page
+    completed = subprocess.run(
+        [NODE, "-e", SCRIPT],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "TREE_HTML": str(HTML)},
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "ok"

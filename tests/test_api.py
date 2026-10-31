@@ -1088,3 +1088,24 @@ def test_upload_keeps_the_file_when_indexing_fails(tmp_path, monkeypatch):
     assert response.json()["detail"] == "index down"
     assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "Цех имеет номер 4."
     cache.cache_clear()
+
+def test_upload_restores_the_file_when_the_parser_is_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr("api.INBOX", tmp_path)
+    original = b"previous-docx"
+    (tmp_path / "note.docx").write_bytes(original)
+    (tmp_path / "keep.txt").write_text("Цех имеет номер 4.", encoding="utf-8")
+    called = []
+    monkeypatch.setattr("api.upsert_chunks", called.append)
+
+    def missing(_path):
+        raise ImportError("python-docx")
+
+    monkeypatch.setattr("ingest._docx_blocks", missing)
+    response = TestClient(app).post(
+        "/upload",
+        files=[("files", ("note.docx", b"new-docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))],
+    )
+    assert response.status_code == 500
+    assert called == []
+    assert (tmp_path / "note.docx").read_bytes() == original
+    assert (tmp_path / "keep.txt").read_text(encoding="utf-8") == "Цех имеет номер 4."

@@ -40,3 +40,28 @@ def test_clarify_keeps_the_previous_question_when_the_answer_has_no_number(monke
     work = agents.select_agent(query, turns)
     assert work == turns
     assert agents.clarify_agent(query, work) == "Как выглядит насос? Какой у него цвет?"
+
+def test_pronoun_stays_on_the_latest_turn_and_keeps_a_code(monkeypatch):
+    monkeypatch.setattr(agents, "complete", _fail)
+    pump = {
+        "query": "Что умеет насос Н-12?",
+        "answer": "Насос имеет обозначение Н-12.",
+        "document_names": ["pump.md"],
+    }
+    shift = {
+        "query": "Сколько длится смена?",
+        "answer": "Смена длится 8 часов.",
+        "document_names": ["charter.txt"],
+    }
+    assert agents.select_agent("Сколько она длится?", []) == []
+    assert agents.select_agent("Сколько она длится?", [pump, shift]) == [shift]
+    assert agents.select_agent("Какое давление у Н-12?", [pump, shift]) == [pump]
+    assert agents.clarify_agent("Какое у него давление?", [pump]) == (
+        "Что умеет насос Н-12? Какое у него давление? Н-12"
+    )
+    plain = {
+        "query": "Как зовут мастера?",
+        "answer": "Мастер Иванов.",
+        "document_names": ["charter.txt"],
+    }
+    assert agents.clarify_agent("Где он работает?", [plain]) == "Как зовут мастера? Где он работает?"
