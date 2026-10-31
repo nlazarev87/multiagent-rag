@@ -23,8 +23,8 @@ PAGE = Path(__file__).parent / "web" / "index.html"
 ROOT = Path(__file__).resolve().parents[1]
 LOAD_TIME = ROOT / "data" / "load_time.txt"
 _state = {"started": None, "done": False}
-# Upload reads and replaces inbox files, then may roll them back. Two requests
-# must not interleave that replace with a rollback.
+# Upload reads the inbox and then indexes that snapshot. A delete or another
+# ingest in between removes a document and the snapshot puts it back.
 _upload_lock = threading.Lock()
 
 
@@ -50,7 +50,8 @@ def _warm():
     from store import _embed
     _embed(["passage: готов"])
     if INBOX.is_dir():
-        upsert_chunks(ingest_dir(INBOX))
+        with _upload_lock:
+            upsert_chunks(ingest_dir(INBOX))
     _state["done"] = True
     time.sleep(1)
     load()
@@ -141,12 +142,13 @@ def documents_preview(document_name: str):
 def documents_delete(document_name: str):
     """Удалить файл из inbox и индекса, не трогая диалоги."""
     name = Path(document_name).name
-    delete_document(name)
-    path = INBOX / name
-    if path.is_file():
-        path.unlink()
-    known = list_documents()
-    return {"documents": known, "tree": workspace.forget_file(name, known, _on_disk())}
+    with _upload_lock:
+        delete_document(name)
+        path = INBOX / name
+        if path.is_file():
+            path.unlink()
+        known = list_documents()
+        return {"documents": known, "tree": workspace.forget_file(name, known, _on_disk())}
 
 
 @app.post("/documents")
@@ -155,7 +157,8 @@ def documents(body: Docs):
     folder = Path(body.directory).resolve()
     if folder != INBOX.resolve():
         raise HTTPException(400, detail="Загружать можно только папку data/inbox")
-    upsert_chunks(ingest_dir(folder))
+    with _upload_lock:
+        upsert_chunks(ingest_dir(folder))
     return {"ok": True}
 
 
@@ -185,6 +188,11 @@ def _rollback_upload(saved):
 
 
 def _save_uploads(payloads):
+    with _upload_lock:
+        return _save_uploads_locked(payloads)
+
+
+def _save_uploads_locked(payloads):
     saved = []
     try:
         INBOX.mkdir(parents=True, exist_ok=True)
@@ -225,8 +233,7 @@ def _save_uploads(payloads):
 async def upload(files: list[UploadFile] = File(...)):
     """Записать файлы в inbox и обновить индекс. Сбой пакета откатывает байты."""
     payloads = [(_upload_name(item.filename), await item.read()) for item in files]
-    with _upload_lock:
-        return _save_uploads(payloads)
+    return _save_uploads(payloads)
 
 
 @app.get("/ui")
