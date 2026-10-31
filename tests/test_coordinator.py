@@ -167,6 +167,20 @@ def test_relative_inventory_question_still_lists_files(monkeypatch):
     result = coordinator.run("Какие документы, которые загружены в систему?", "relative-list")
     assert result["status"] == agents.CONFIRMED
     assert result["answer"] == "Документ.docx, Паспорт насоса.docx"
+    for query in (
+        "Какой документ, который загружен в систему?",
+        "Какая документация, которая загружена в систему?",
+        "Какое из документов, которое загружено в систему?",
+        "Какую из документов, которую загружена в систему?",
+    ):
+        listed = coordinator.run(query, "singular-list")
+        assert listed["status"] == agents.CONFIRMED
+        assert listed["answer"] == "Документ.docx, Паспорт насоса.docx"
+    order = []
+    _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+    coordinator.run("Какое давление у документа, который загружен в систему?", "pressure-relative")
+    assert order[0] == "select"
+    assert "search" in order
     names[:] = ["Схема.docx", "заметка.txt"]
     scheme = coordinator.run("Какая схема загружена в систему?", "finite")
     assert scheme["status"] == agents.CONFIRMED
