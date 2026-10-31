@@ -55,10 +55,26 @@ def _name_words(name):
     return set(re.findall(r"[0-9a-zа-яё]+", stem))
 
 
+def _catalog_noise(token):
+    # The inventory question itself says "документы" and "систему". Those words
+    # are not a file name: a file called Документ.docx must stay in the full list.
+    for raw in routing().get("catalog_skip") or []:
+        skip = str(raw).lower().replace("ё", "е")
+        if len(skip) < 4:
+            if token == skip:
+                return True
+            continue
+        if token == skip or token.startswith(skip):
+            return True
+    return False
+
+
 def _catalog_names(query, names):
     words = {name: _name_words(name) for name in names}
     marks = []
     for token in re.findall(r"[0-9a-zа-яё]{3,}", (query or "").lower().replace("ё", "е")):
+        if _catalog_noise(token):
+            continue
         pieces = {token}
         if len(token) >= 5:
             pieces.add(token[:4])
