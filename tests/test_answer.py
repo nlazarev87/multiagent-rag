@@ -76,6 +76,63 @@ def test_definition_prefers_a_name_over_a_protocol_role(monkeypatch):
     assert "система-получатель" not in calls[0]
 
 
+def test_definition_keeps_the_role_when_the_name_is_about_something_else(monkeypatch):
+    protocol = {
+        "text": "NPP ExS — система-получатель.",
+        "document_name": "note.txt",
+        "section": "Протоколы интеграционного взаимодействия",
+        "chunk_index": 1,
+    }
+    other = {
+        "text": "Наименование: другая система.",
+        "document_name": "note.txt",
+        "section": "Характеристики",
+        "chunk_index": 2,
+    }
+    monkeypatch.setattr(agents, "chunks_for_document", lambda name: [other] if name == "note.txt" else [])
+    calls = []
+
+    def complete(_system, user, examples=()):
+        calls.append(user)
+        return "NPP ExS — система-получатель [1]."
+
+    monkeypatch.setattr(agents, "count_tokens", _words)
+    monkeypatch.setattr(agents, "complete", complete)
+    agents.answer_agent("что такое NPP ExS?", "что такое NPP ExS?", [protocol], [])
+    assert calls
+    assert "система-получатель" in calls[0]
+    assert "другая система" not in calls[0]
+
+
+def test_answer_does_not_reload_a_latin_token_already_in_the_chunk(monkeypatch):
+    monkeypatch.setattr(agents, "chunks_for_document", lambda name: (_ for _ in ()).throw(AssertionError(name)))
+    monkeypatch.setattr(agents, "count_tokens", _words)
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: "Версия Python равна 3 [1].")
+    chunk = {"text": "Версия Python равна 3.", "document_name": "note.txt", "section": "", "chunk_index": 0}
+    assert agents.answer_agent("Какая версия Python?", "Какая версия Python?", [chunk], []) == "Версия Python равна 3 [1]."
+
+
+def test_check_accepts_a_purpose_only_when_the_source_names_the_term():
+    answer = "ГОСТ устанавливает структуру обозначения программ [1]."
+    query = "что такое ГОСТ"
+    foreign = {
+        "text": "Настоящий стандарт устанавливает структуру обозначения программ.",
+        "document_name": "note.txt",
+        "section": "",
+    }
+    rejected = agents.check_agent(answer, [foreign], query)
+    assert rejected["status"] == agents.UNCONFIRMED
+    assert rejected["feedback"] == agents.DEFINE
+    owned = {
+        "text": "ГОСТ устанавливает структуру обозначения программ.",
+        "document_name": "note.txt",
+        "section": "",
+    }
+    kept = agents.check_agent(answer, [owned], query)
+    assert kept["status"] == agents.CONFIRMED
+    assert [source["document_name"] for source in kept["sources"]] == ["note.txt"]
+
+
 def test_check_rejects_a_word_from_outside_the_fragments():
     chunk = {"text": "Потоков четыре: A, B, C, D.", "document_name": "note.txt"}
     verdict = agents.check_agent(
