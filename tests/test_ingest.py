@@ -18,6 +18,14 @@ def _toc_style(document):
         return document.styles.add_style("toc 1", WD_STYLE_TYPE.PARAGRAPH)
 
 
+def _set_outline(element, level):
+    marker = element.get_or_add_pPr().find(qn("w:outlineLvl"))
+    if marker is None:
+        marker = OxmlElement("w:outlineLvl")
+        element.get_or_add_pPr().append(marker)
+    marker.set(qn("w:val"), str(level))
+
+
 def test_txt_and_md(tmp_path):
     (tmp_path / "a.txt").write_text("Цех имеет номер 4.", encoding="utf-8")
     (tmp_path / "b.md").write_text("# Насос\nНасос Н-12.", encoding="utf-8")
@@ -1085,3 +1093,58 @@ def test_missing_parser_aborts_instead_of_skipping_the_file(tmp_path, monkeypatc
     with pytest.raises(ImportError, match="python-docx"):
         ingest_dir(tmp_path)
     _word_tokens.cache_clear()
+
+
+def test_heading_follows_a_russian_style_an_outline_or_a_base_style(tmp_path, monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text or "").split())))
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    try:
+        document = Document()
+        contents = document.styles.add_style("оглавление 1", WD_STYLE_TYPE.PARAGRAPH)
+        document.add_paragraph("Скрытая строка оглавления", style=contents)
+        heading = document.styles.add_style("Заголовок 1", WD_STYLE_TYPE.PARAGRAPH)
+        document.add_paragraph("Общие сведения", style=heading)
+        document.add_paragraph("Назначение системы описано здесь.")
+        parent = document.styles.add_style("Заголовок 2", WD_STYLE_TYPE.PARAGRAPH)
+        note = document.styles.add_style("Примечание", WD_STYLE_TYPE.PARAGRAPH)
+        note.base_style = parent
+        special = document.add_paragraph("Особые условия")
+        special.style = note
+        document.add_paragraph("Текст особых условий.")
+        mode = document.add_paragraph("Режим работы")
+        _set_outline(mode._p, 0)
+        document.add_paragraph("Смена длится 8 часов.")
+        ordinary = document.add_paragraph("Это не заголовок раздела.")
+        _set_outline(ordinary._p, 9)
+        document.add_paragraph("1 введение в предмет остаётся абзацем.")
+        base = document.styles.add_style("Основа", WD_STYLE_TYPE.PARAGRAPH)
+        _set_outline(base.element, 0)
+        derived = document.styles.add_style("Производный", WD_STYLE_TYPE.PARAGRAPH)
+        derived.base_style = base
+        inherited = document.add_paragraph("Унаследованный раздел")
+        inherited.style = derived
+        document.add_paragraph("Текст унаследованного раздела.")
+        document.save(tmp_path / "guide.docx")
+        chunks = ingest.chunks_from_blocks(_docx_blocks(tmp_path / "guide.docx"), "guide.docx")
+    finally:
+        _word_tokens.cache_clear()
+
+    grouped = {}
+    for chunk in chunks:
+        grouped.setdefault(chunk["section"], []).append(chunk["text"])
+    assert set(grouped) == {
+        "Общие сведения",
+        "Общие сведения > Особые условия",
+        "Режим работы",
+        "Унаследованный раздел",
+    }
+    assert "Назначение системы описано здесь." in grouped["Общие сведения"][0]
+    assert "Текст особых условий." in grouped["Общие сведения > Особые условия"][0]
+    mode_text = grouped["Режим работы"][0]
+    assert "Смена длится 8 часов." in mode_text
+    assert "Это не заголовок раздела." in mode_text
+    assert "1 введение в предмет остаётся абзацем." in mode_text
+    assert "Текст унаследованного раздела." in grouped["Унаследованный раздел"][0]
+    assert all("Скрытая строка оглавления" not in chunk["text"] for chunk in chunks)
