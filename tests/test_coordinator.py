@@ -61,6 +61,19 @@ def test_run_gives_up_after_second_failure(monkeypatch):
     assert result == {"answer": agents.NO_ANSWER, "status": agents.MISSING, "document_names": [], "sources": []}
 
 
+def test_run_researches_when_feedback_names_a_document(monkeypatch):
+    order = []
+    feedback = _wire(
+        monkeypatch,
+        order,
+        [_verdict(agents.UNCONFIRMED, feedback="Уточни документ."), _verdict(agents.CONFIRMED, [SOURCE])],
+    )
+    result = coordinator.run("Какой номер у цеха?", "d6")
+    assert order == ["select", "clarify", "search", "answer", "check", "search", "answer", "check", "save"]
+    assert feedback == [None, "Уточни документ."]
+    assert result["status"] == agents.CONFIRMED
+
+
 def test_run_researches_when_list_is_incomplete(monkeypatch):
     order = []
     feedback = _wire(

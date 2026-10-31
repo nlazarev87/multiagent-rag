@@ -1,6 +1,7 @@
 from docx import Document
 
 import ingest
+import settings
 import store
 from ingest import ingest_dir, split_chunks
 
@@ -101,6 +102,43 @@ def test_search_finds_exact_code(tmp_path, monkeypatch):
     store.upsert_chunks(split_chunks("\n".join(lines * 20), "flows.txt"))
     found = store.search_chunks("Что передаёт поток X_9.2?")
     assert any("X_9.2" in chunk["text"] for chunk in found)
+
+
+def test_search_stays_inside_the_routed_collection(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
+    store.upsert_chunks([{
+        "text": "Насос имеет обозначение Н-12.",
+        "document_name": "pump.md",
+        "chunk_index": 0,
+        "checksum": "a",
+        "section": "",
+        "collection": "alpha",
+    }])
+    store.upsert_chunks([{
+        "text": "Кран имеет обозначение К-9.",
+        "document_name": "valve.md",
+        "chunk_index": 0,
+        "checksum": "b",
+        "section": "",
+        "collection": "beta",
+    }])
+    monkeypatch.setattr(settings, "routing", lambda: {"where": {}})
+    assert store.route_where() == {}
+    assert store._chroma_where(None) is None
+    assert store._chroma_where(["pump.md"]) == {"document_name": {"$in": ["pump.md"]}}
+    assert {chunk["document_name"] for chunk in store.search_chunks("обозначение")} == {"pump.md", "valve.md"}
+    monkeypatch.setattr(
+        settings,
+        "routing",
+        lambda: {"where": {"collection": "alpha", "tenant": "", "site": None, "tags": []}},
+    )
+    assert store.route_where() == {"collection": "alpha"}
+    assert store._chroma_where(["pump.md"]) == {
+        "$and": [{"collection": "alpha"}, {"document_name": {"$in": ["pump.md"]}}],
+    }
+    assert {chunk["document_name"] for chunk in store.search_chunks("обозначение")} == {"pump.md"}
+    assert store.search_chunks("обозначение", document_names=["valve.md"]) == []
 
 
 def test_table_row_comes_with_its_table(tmp_path, monkeypatch):
