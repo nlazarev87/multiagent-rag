@@ -771,11 +771,9 @@
       return null;
     }
 
-    function subtreeIds(node, acc) {
-      acc = acc || new Set();
-      if (node.id) acc.add(node.id);
-      (node.children || []).forEach((child) => subtreeIds(child, acc));
-      return acc;
+    function containsNode(node, target) {
+      if (!node || node === target) return node === target;
+      return (node.children || []).some((child) => containsNode(child, target));
     }
 
     async function persistTree() {
@@ -857,13 +855,18 @@
     function dropOn(folder, raw) {
       let payload = {};
       try { payload = JSON.parse(raw); } catch (error) { return; }
-      if (payload.folder && payload.id && subtreeIds(folder).has(payload.id)) return;
       const pred = payload.folder
         ? (node) => node.id === payload.id
         : (node) => node.document_name === payload.name;
       const found = findParent(tree.children || [], pred, tree);
       if (!found) return;
-      found.list.splice(found.list.indexOf(found.node), 1);
+      // Dropping a folder onto itself or onto something already inside it cycles
+      // the tree. The next paint walks that cycle and the tab never recovers.
+      // An ancestor, including the root, is a real target and must stay allowed.
+      if (payload.folder && containsNode(found.node, folder)) return;
+      const index = found.list.indexOf(found.node);
+      if (index < 0) return;
+      found.list.splice(index, 1);
       folder.children = folder.children || [];
       folder.children.push(found.node);
       if (folder.id) closedFolders.delete(folder.id);
