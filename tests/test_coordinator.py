@@ -173,6 +173,26 @@ def test_relative_inventory_question_still_lists_files(monkeypatch):
     assert scheme["answer"] == "Схема.docx"
 
 
+def test_relative_clause_keeps_a_three_letter_subject_on_search(monkeypatch):
+    # Words shorter than three letters are inventory boilerplate. A three-letter
+    # subject, including a number, is the document the question is about.
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["Документ.docx", "Паспорт насоса.docx"])
+    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    listed = coordinator.run("Какие из документов, которые загружены в систему?", "short-before")
+    assert listed["status"] == agents.CONFIRMED
+    assert listed["answer"] == "Документ.docx, Паспорт насоса.docx"
+    assert listed["sources"] == []
+    for question in (
+        "Какой газ у документа, который загружен в систему?",
+        "Какой 220 у документа, который загружен в систему?",
+    ):
+        order = []
+        _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+        coordinator.run(question, "content-before")
+        assert order[0] == "select", question
+        assert "search" in order
+
+
 def test_finish_drops_citations_without_a_source(monkeypatch):
     order = []
     _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
