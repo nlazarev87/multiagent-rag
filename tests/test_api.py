@@ -73,6 +73,144 @@ def test_upload_lists_document(tmp_path, monkeypatch):
     assert "data-document" in page.text and "data-index" in page.text
 
 
+def _token_count(monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    return _word_tokens
+
+
+def test_upload_replaces_readable_file(tmp_path, monkeypatch):
+    monkeypatch.setattr("api.INBOX", tmp_path)
+    cache = _token_count(monkeypatch)
+    (tmp_path / "note.txt").write_text("старое значение", encoding="utf-8")
+    saved = []
+    monkeypatch.setattr("api.upsert_chunks", lambda chunks: saved.extend(chunks))
+    monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
+    response = TestClient(app).post(
+        "/upload",
+        files=[("files", ("note.txt", "новое значение 8".encode(), "text/plain"))],
+    )
+    assert response.status_code == 200
+    assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "новое значение 8"
+    assert any(chunk["document_name"] == "note.txt" and "новое значение 8" in chunk["text"] for chunk in saved)
+    cache.cache_clear()
+
+
+def test_upload_keeps_previous_file_when_replacement_cannot_be_read(tmp_path, monkeypatch):
+    monkeypatch.setattr("api.INBOX", tmp_path)
+    original = "Давление равно 6 бар."
+    (tmp_path / "note.txt").write_text(original, encoding="utf-8")
+    (tmp_path / "other.txt").write_text("Цех имеет номер 4.", encoding="utf-8")
+    called = []
+    monkeypatch.setattr("api.upsert_chunks", called.append)
+    response = TestClient(app).post(
+        "/upload",
+        files=[("files", ("note.txt", b"\xff\xfe not text", "text/plain"))],
+    )
+    assert response.status_code == 400
+    assert "note.txt" in response.json()["detail"]
+    assert "сохран" in response.json()["detail"]
+    assert called == []
+    assert (tmp_path / "note.txt").read_text(encoding="utf-8") == original
+    assert (tmp_path / "other.txt").read_text(encoding="utf-8") == "Цех имеет номер 4."
+
+
+def test_upload_keeps_previous_file_when_replacement_has_no_text(tmp_path, monkeypatch):
+    monkeypatch.setattr("api.INBOX", tmp_path)
+    original = "Давление равно 6 бар."
+    (tmp_path / "note.txt").write_text(original, encoding="utf-8")
+    called = []
+    monkeypatch.setattr("api.upsert_chunks", called.append)
+    response = TestClient(app).post(
+        "/upload",
+        files=[("files", ("note.txt", b" \n\n\t", "text/plain"))],
+    )
+    assert response.status_code == 400
+    assert "нет текста" in response.json()["detail"]
+    assert called == []
+    assert (tmp_path / "note.txt").read_bytes() == original.encode()
+
+
+def test_upload_keeps_previous_docx_when_replacement_is_corrupt(tmp_path, monkeypatch):
+    monkeypatch.setattr("api.INBOX", tmp_path)
+    original = b"previous-document-bytes"
+    (tmp_path / "note.docx").write_bytes(original)
+    called = []
+    monkeypatch.setattr("api.upsert_chunks", called.append)
+    response = TestClient(app).post(
+        "/upload",
+        files=[("files", ("note.docx", b"not a docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))],
+    )
+    assert response.status_code == 400
+    assert "note.docx" in response.json()["detail"]
+    assert called == []
+    assert (tmp_path / "note.docx").read_bytes() == original
+
+
+def test_upload_drops_an_empty_new_file(tmp_path, monkeypatch):
+    monkeypatch.setattr("api.INBOX", tmp_path)
+    called = []
+    monkeypatch.setattr("api.upsert_chunks", called.append)
+    response = TestClient(app).post("/upload", files=[("files", ("empty.txt", b"\n", "text/plain"))])
+    assert response.status_code == 400
+    assert called == []
+    assert not (tmp_path / "empty.txt").exists()
+
+
+def test_upload_rolls_back_the_batch_when_a_later_file_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr("api.INBOX", tmp_path)
+    cache = _token_count(monkeypatch)
+    (tmp_path / "note.txt").write_text("старое значение", encoding="utf-8")
+    called = []
+    monkeypatch.setattr("api.upsert_chunks", called.append)
+    response = TestClient(app).post(
+        "/upload",
+        files=[
+            ("files", ("note.txt", "новое значение 8".encode(), "text/plain")),
+            ("files", ("other.txt", b"\xff", "text/plain")),
+        ],
+    )
+    assert response.status_code == 400
+    assert called == []
+    assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "старое значение"
+    assert not (tmp_path / "other.txt").exists()
+    cache.cache_clear()
+
+
+def test_upload_does_not_follow_a_symlink(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("секрет", encoding="utf-8")
+    try:
+        (inbox / "note.txt").symlink_to(outside)
+    except OSError:
+        pytest.skip("symlinks are not available")
+    monkeypatch.setattr("api.INBOX", inbox)
+    called = []
+    monkeypatch.setattr("api.upsert_chunks", called.append)
+    response = TestClient(app).post(
+        "/upload",
+        files=[("files", ("note.txt", "новое".encode(), "text/plain"))],
+    )
+    assert response.status_code == 400
+    assert called == []
+    assert outside.read_text(encoding="utf-8") == "секрет"
+    assert (inbox / "note.txt").is_symlink()
+
+
+def test_upload_rejects_a_parent_directory_name(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setattr("api.INBOX", inbox)
+    response = TestClient(app).post("/upload", files=[("files", ("..", b"x", "text/plain"))])
+    assert response.status_code == 400
+    assert list(tmp_path.iterdir()) == [inbox]
+    assert list(inbox.iterdir()) == []
+
+
 def test_ready(tmp_path, monkeypatch):
     model = tmp_path / "model.gguf"
     model.write_bytes(b"x")
