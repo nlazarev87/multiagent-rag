@@ -72,11 +72,34 @@ def _word_tokens(word):
     return max(1, count_tokens(word))
 
 
+def _plain_text(text):
+    # A Word line break is a break inside the paragraph, not a new paragraph.
+    # Collapsing it to a space stores "доку- мента", so the word never matches.
+    # Join only when the next line continues a letter, as across paragraphs.
+    # "6-" + "10" and "ISO-" + "9001" keep the hyphen instead of becoming 610.
+    lines = []
+    for raw in (text or "").splitlines():
+        line = " ".join(raw.split())
+        if not line:
+            continue
+        if (
+            lines
+            and len(lines[-1]) >= 2
+            and lines[-1].endswith("-")
+            and lines[-1][-2].isalpha()
+            and line[:1].islower()
+        ):
+            lines[-1] = lines[-1][:-1] + line
+            continue
+        lines.append(line)
+    return " ".join(lines)
+
+
 def _text(cell, depth=0):
     # cell.text is the paragraphs only. A table nested in the cell is the value
     # Word shows there; leaving it out stores the row with an empty cell.
     if cell is None or depth >= 4 or not getattr(cell, "tables", None):
-        return "" if cell is None else " ".join(cell.text.split())
+        return "" if cell is None else _plain_text(cell.text)
     from docx.table import Table
 
     parts = []
@@ -84,7 +107,7 @@ def _text(cell, depth=0):
         if isinstance(block, Table):
             parts.extend(_nested_lines(block, depth + 1))
             continue
-        text = " ".join(block.text.split())
+        text = _plain_text(block.text)
         if text:
             parts.append(text)
     return " ".join(parts)
@@ -267,7 +290,7 @@ def _docx_blocks(path):
                 blocks.append(block)
             previous = ""
             continue
-        text = " ".join(item.text.split())
+        text = _plain_text(item.text)
         if not text:
             continue
         if any(_TOC.match(name) for name in _style_names(item.style)):
