@@ -641,3 +641,52 @@ def test_scope_keeps_a_shorter_index_off_a_longer_one():
     tied = {"vocabulary": {"a.txt": {"альфа"}, "b.txt": {"альфа"}}}
     assert store.scope(tied, "Где описана система АЛЬФА?") is None
     assert store.scope({"vocabulary": {"only.txt": {"альфа"}}}, "Где описана система АЛЬФА?") is None
+
+
+def test_filename_stems_need_two_words_and_keep_a_named_file():
+    pair = {"vocabulary": {"тестовое задание.txt": set(), "прочее описание.txt": set()}}
+    assert store.scope(pair, "какие сведения приведены в тестовом протоколе") is None
+    three = {
+        "vocabulary": {
+            "тестовое задание.txt": set(),
+            "годовой отчет.txt": set(),
+            "прочее описание.txt": set(),
+        }
+    }
+    assert store.scope(three, "сведения тестового годового документа") is None
+    named = {
+        "vocabulary": {
+            "notes.txt": {"npp"},
+            "other.txt": set(),
+            "тестовое задание.txt": set(),
+        }
+    }
+    assert store.scope(named, "Что делает NPP в тестовом задании?") == [
+        "notes.txt",
+        "тестовое задание.txt",
+    ]
+
+
+def test_lexical_matches_a_code_suffix_and_skips_a_short_piece(monkeypatch):
+    monkeypatch.setattr(store, "route_where", lambda: {})
+    monkeypatch.setattr(store, "_candidates", lambda: 10)
+
+    def pack(text):
+        return Counter(store._terms(text))
+
+    parts = {
+        "iso.txt": pack("Стандарт ISO-9001 принят."),
+        "point.txt": pack("Пункт 1.2 описывает насос."),
+    }
+    index = {
+        "counts": [parts["iso.txt"], parts["point.txt"]],
+        "lengths": [sum(parts["iso.txt"].values()), sum(parts["point.txt"].values())],
+        "metas": [{"document_name": "iso.txt"}, {"document_name": "point.txt"}],
+        "frequency": parts,
+        "size": {name: sum(count.values()) for name, count in parts.items()},
+        "chunks": {name: 1 for name in parts},
+        "ids": ["iso.txt", "point.txt"],
+    }
+    assert store._lexical(index, "код 9001", None) == ["iso.txt"]
+    assert store._lexical(index, "пункт 1.2", None) == ["point.txt"]
+    assert store._lexical(index, "цифра 1", None) == []

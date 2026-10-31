@@ -744,6 +744,36 @@ def test_docx_keeps_a_hyphen_before_a_heading_or_a_capital(tmp_path):
         ("p", "словопродолжение в том же слове."),
     ]
 
+def test_overview_skips_a_column_of_plain_numbers(monkeypatch):
+    monkeypatch.setattr(ingest, "count_tokens", lambda text: max(1, len(str(text).split())))
+    monkeypatch.setattr(ingest, "runtime", lambda: {"tokens": 30, "overlap": 0, "intro": 5})
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    try:
+        def table(labels, rows):
+            return [{
+                "kind": "table",
+                "caption": "Таблица 1",
+                "labels": labels,
+                "width": len(labels),
+                "rows": rows,
+            }]
+
+        named = [[("Код", str(number)), ("Имя", f"Насос{number}")] for number in range(1, 21)]
+        chunks = ingest.chunks_from_blocks(table(["Код", "Имя"], named), "meters.txt")
+        overview = next(chunk["text"] for chunk in chunks if chunk["kind"] == "overview")
+        assert "«Имя»" in overview
+        assert "«Код»" not in overview
+        assert "Насос1" in overview and "Насос20" in overview
+        numeric = [[("Код", str(number)), ("Значение", f"{number}.5")] for number in range(1, 21)]
+        chunks = ingest.chunks_from_blocks(table(["Код", "Значение"], numeric), "meters.txt")
+        assert all(chunk["kind"] != "overview" for chunk in chunks)
+        assert any(chunk["kind"] == "table" for chunk in chunks)
+    finally:
+        _word_tokens.cache_clear()
+
+
 def test_long_line_ignores_a_sentence_end_in_the_first_half(monkeypatch):
     monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
     from ingest import _cut, _word_tokens
