@@ -1908,3 +1908,15 @@ def test_check_moves_wording_to_the_fragment_that_contains_it():
     assert [(source["number"], source["document_name"], source["chunk_index"]) for source in verdict["sources"]] == [
         (2, "y.txt", 4)
     ]
+
+
+def test_check_rejects_a_yes_when_the_fragment_forbids_the_act():
+    forbidden = {"text": "Курить в цехе нельзя.", "document_name": "rules.md"}
+    assert agents.check_agent("Да, курить можно [1].", [forbidden], "Можно ли курить в цехе?")["feedback"] == agents.INVERT
+    assert agents.check_agent("Нет, курить нельзя [1].", [forbidden], "Можно ли курить в цехе?")["status"] == agents.CONFIRMED
+    mixed = {"text": "Курить можно, хранить растворитель нельзя.", "document_name": "rules.md"}
+    assert agents.check_agent("Да, курить можно [1].", [mixed], "Можно ли курить?")["status"] == agents.CONFIRMED
+    assert agents.check_agent("Нет, курить нельзя [1].", [mixed], "Можно ли курить?")["feedback"] == agents.INVERT
+    later = {"text": "Курить в цехе можно. Растворитель хранить нельзя.", "document_name": "rules.md"}
+    assert agents.check_agent("Да, курить можно [1].", [later], "Можно ли курить в цехе?")["status"] == agents.CONFIRMED
+    assert agents.check_agent("Нет, курить нельзя [1].", [later], "Можно ли курить в цехе?")["feedback"] == agents.INVERT

@@ -535,6 +535,51 @@ def test_catalog_lists_every_file_when_the_names_do_not_overlap(monkeypatch):
     assert result["answer"] == "ГОСТ_1.docx, насос.md"
     assert result["sources"] == []
 
+def test_catalog_accepts_each_finite_loaded_form(monkeypatch):
+    names = ["Паспорт насоса.docx", "Руководство.docx", "Пособие.docx"]
+    monkeypatch.setattr(coordinator, "list_documents", lambda: list(names))
+    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    listed = ", ".join(names)
+    passport = coordinator.run("Какой паспорт загружен в систему?", "finite-m")
+    assert passport["status"] == agents.CONFIRMED
+    assert passport["answer"] == "Паспорт насоса.docx"
+    guide = coordinator.run("Какое руководство загружено в систему?", "finite-n")
+    assert guide["answer"] == "Руководство.docx"
+    booklet = coordinator.run("Какое пособие загружено в систему?", "finite-book")
+    assert booklet["answer"] == "Пособие.docx"
+    yo = coordinator.run("Какие документы загружёны в систему?", "finite-yo")
+    assert yo["answer"] == listed
+    spaced = coordinator.run("Какие  ДОКУМЕНТЫ\nзагружены   в   систему?", "finite-space")
+    assert spaced["answer"] == listed
+    # «некоторые» содержит «котор», но это не относительное «который».
+    some = coordinator.run("Какие некоторые документы загружены в систему?", "finite-some")
+    assert some["answer"] == listed
+    relative = coordinator.run("Какие документы, которое загружено в систему?", "finite-rel")
+    assert relative["status"] == agents.CONFIRMED
+    assert relative["answer"] == listed
+
+
+def test_loaded_clause_and_negation_stay_on_search(monkeypatch):
+    questions = [
+        "Какое давление в загруженной в систему схеме?",
+        "Что сказано про загруженную в систему схему?",
+        "Какие схемы из загруженных в систему паспортов?",
+        "Что сказано про загруженные в систему схемы?",
+        "Почему документы не загружены в систему?",
+        "Почему схема не загружена в систему?",
+        "Почему пособие не загружено в систему?",
+        "Почему файл НЕ  загружен\nв систему?",
+        "Какое давление в документе, загружённом в систему?",
+        "Какое пособие, которое загружено в систему?",
+        "Какой ход у схемы, которая загружена в систему?",
+    ]
+    for question in questions:
+        order = []
+        _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+        coordinator.run(question, "loaded-search")
+        assert order[0] == "select", question
+
+
 def test_finish_drops_only_the_invalid_number_in_a_citation(monkeypatch):
     order = []
     _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])

@@ -51,3 +51,36 @@ def test_set_dialog_reads_names_from_sources():
         "sources": [{"document_name": "note.txt"}, {"document_name": "note.txt"}],
     }])
     assert dialog.get_dialog("d")[0]["document_names"] == ["note.txt"]
+
+
+def test_get_dialog_copy_ignores_later_edits():
+    dialog.reset()
+    turn = {"query": "q", "answer": "a", "document_names": ["note.txt"]}
+    dialog.set_dialog("d", [turn])
+    turn["query"] = "changed"
+    turn["document_names"].append("other.txt")
+    rows = dialog.get_dialog("d")
+    assert rows == [{"query": "q", "answer": "a", "document_names": ["note.txt"]}]
+    rows.clear()
+    rows.append({"query": "other", "answer": "b", "document_names": []})
+    assert dialog.get_dialog("d") == [{"query": "q", "answer": "a", "document_names": ["note.txt"]}]
+
+
+def test_set_dialog_reads_sources_when_listed_names_are_blank():
+    dialog.reset()
+    dialog.set_dialog("d", [{
+        "query": "q",
+        "answer": "a",
+        "document_names": ["", None],
+        "sources": [
+            {"document_name": ""},
+            {"document_name": "note.txt"},
+            {"document_name": "note.txt"},
+            {},
+        ],
+    }])
+    assert dialog.get_dialog("d") == [{
+        "query": "q",
+        "answer": "a",
+        "document_names": ["note.txt"],
+    }]
