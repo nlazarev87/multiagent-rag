@@ -61,6 +61,42 @@ def test_run_gives_up_after_second_failure(monkeypatch):
     assert result == {"answer": agents.NO_ANSWER, "status": agents.MISSING, "document_names": [], "sources": []}
 
 
+def test_run_researches_when_feedback_names_a_document(monkeypatch):
+    order = []
+    feedback = _wire(
+        monkeypatch,
+        order,
+        [
+            _verdict(agents.UNCONFIRMED, feedback="Возьми другой документ."),
+            _verdict(agents.CONFIRMED, [SOURCE]),
+        ],
+    )
+    result = coordinator.run("Какой номер у цеха?", "d6")
+    assert order == ["select", "clarify", "search", "answer", "check", "search", "answer", "check", "save"]
+    assert feedback == [None, "Возьми другой документ."]
+    assert result["status"] == agents.CONFIRMED
+
+
+def test_run_scopes_a_followup_to_the_previous_document(monkeypatch):
+    seen = []
+    turns = [{"query": "Какой номер у цеха?", "answer": "4", "document_names": ["charter.txt"]}]
+
+    def search(_clear, names=None):
+        seen.append(names)
+        return [CHUNK]
+
+    monkeypatch.setattr(coordinator, "get_dialog", lambda _id: [])
+    monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: turns)
+    monkeypatch.setattr(coordinator, "clarify_agent", lambda *_args: "уточнение")
+    monkeypatch.setattr(coordinator, "search_agent", search)
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Цех имеет номер 4 [1].")
+    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    coordinator.run("Сколько она длится?", "d7")
+    coordinator.run("Какое давление у насоса?", "d8")
+    assert seen == [["charter.txt"], None]
+
+
 def test_run_researches_when_list_is_incomplete(monkeypatch):
     order = []
     feedback = _wire(

@@ -181,6 +181,41 @@ def test_query_reloads_saved_history_after_memory_is_cleared(monkeypatch):
     assert seen == [[], ["первый"]]
 
 
+def test_missing_dialog_and_turn_are_not_found():
+    client = TestClient(app)
+    assert client.get("/ui/dialogs/missing").status_code == 404
+    created = client.post("/ui/dialogs").json()
+    missing_turn = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_complete": 5},
+    )
+    assert missing_turn.status_code == 404
+    assert client.patch(
+        "/ui/dialogs/missing/turns/0/ratings",
+        json={"answer_complete": 5},
+    ).status_code == 404
+
+
+def test_query_ignores_memory_for_an_unsaved_dialog(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: [])
+    seen = []
+
+    def run(query, dialog_id):
+        seen.append(dialog.get_dialog(dialog_id))
+        return {"answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []}
+
+    monkeypatch.setattr("api.run", run)
+    dialog.reset()
+    dialog.add_turn("ghost", {"query": "секрет", "answer": "x", "document_names": ["hidden.txt"]})
+    client = TestClient(app)
+    response = client.post("/query", json={"query": "новый", "dialog_id": "ghost"})
+    assert response.status_code == 200
+    assert seen == [[]]
+    saved = next(row for row in workspace.load()["dialogs"] if row["id"] == "ghost")
+    assert saved["turns"][0]["query"] == "новый"
+    assert saved["turns"][0]["document_names"] == []
+
+
 def test_query_does_not_restore_a_dialog_deleted_while_answering(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: [])
 
