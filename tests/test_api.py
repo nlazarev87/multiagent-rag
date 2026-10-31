@@ -9,6 +9,7 @@ import api
 import dialog
 import workspace
 from api import app
+import time
 
 SOURCE = {"number": 1, "document_name": "pump.md", "section": ""}
 
@@ -1031,4 +1032,59 @@ def test_upload_rejects_a_directory_and_restores_the_earlier_file(tmp_path, monk
     assert (inbox / "note.txt").read_text(encoding="utf-8") == "старое значение"
     assert occupied.is_dir()
     assert (occupied / "secret.txt").read_text(encoding="utf-8") == "секрет"
+    cache.cache_clear()
+
+def test_ready_ignores_a_corrupt_load_time(tmp_path, monkeypatch):
+    previous = dict(api._state)
+    monkeypatch.setattr(api, "LOAD_TIME", tmp_path / "load_time.txt")
+    monkeypatch.setenv("LLM_MODEL_PATH", str(tmp_path / "missing.gguf"))
+    api._state["done"] = False
+    api._state["started"] = time.time() - 5
+    try:
+        (tmp_path / "load_time.txt").write_text("nope", encoding="utf-8")
+        assert TestClient(app).get("/ready").json()["eta_sec"] is None
+        (tmp_path / "load_time.txt").write_text("3", encoding="utf-8")
+        assert TestClient(app).get("/ready").json()["eta_sec"] == 0
+        (tmp_path / "load_time.txt").write_text("100000", encoding="utf-8")
+        assert TestClient(app).get("/ready").json()["eta_sec"] > 1000
+    finally:
+        api._state.clear()
+        api._state.update(previous)
+
+def test_rollback_continues_after_one_file_fails(tmp_path):
+    restored = tmp_path / "restored.txt"
+    restored.write_text("new", encoding="utf-8")
+
+    class Locked:
+        def unlink(self, missing_ok=True):
+            raise OSError("busy")
+
+        def write_bytes(self, _data):
+            raise AssertionError("locked file should be removed, not rewritten")
+
+    class Restored:
+        def unlink(self, missing_ok=True):
+            raise AssertionError("previous bytes should be written back")
+
+        def write_bytes(self, data):
+            restored.write_bytes(data)
+
+    api._rollback_upload([(Restored(), "старое".encode()), (Locked(), None)])
+    assert restored.read_text(encoding="utf-8") == "старое"
+
+def test_upload_keeps_the_file_when_indexing_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr("api.INBOX", tmp_path)
+    cache = _token_count(monkeypatch)
+
+    def boom(_chunks):
+        raise RuntimeError("index down")
+
+    monkeypatch.setattr("api.upsert_chunks", boom)
+    response = TestClient(app).post(
+        "/upload",
+        files=[("files", ("note.txt", "Цех имеет номер 4.".encode(), "text/plain"))],
+    )
+    assert response.status_code == 500
+    assert response.json()["detail"] == "index down"
+    assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "Цех имеет номер 4."
     cache.cache_clear()

@@ -790,3 +790,93 @@ def test_long_line_ignores_a_sentence_end_in_the_first_half(monkeypatch):
     assert pieces[0].endswith("граница?")
     assert "хвост0" not in pieces[0]
     _word_tokens.cache_clear()
+
+
+def test_empty_key_keeps_the_value_under_its_column(monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", _token_count)
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    try:
+        blocks = [{
+            "kind": "table",
+            "caption": "",
+            "labels": ["Показатель", "Давление"],
+            "width": 2,
+            "rows": [[("Показатель", ""), ("Давление", "6 бар")]],
+        }]
+        text = ingest.chunks_from_blocks(blocks, "pressure.txt")[0]["text"]
+        assert "Давление: 6 бар" in text
+        assert text.replace("Давление: 6 бар", "").count(": 6 бар") == 0
+    finally:
+        _word_tokens.cache_clear()
+
+
+def test_numeric_columns_do_not_become_an_overview(monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", _token_count)
+    monkeypatch.setattr(ingest, "runtime", lambda: {"tokens": 8, "overlap": 0, "intro": 5})
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    try:
+        blocks = [{
+            "kind": "table",
+            "caption": "Замеры",
+            "labels": ["Точка", "Давление"],
+            "width": 2,
+            "rows": [[("Точка", str(number)), ("Давление", f"{number},0")] for number in range(1, 12)],
+        }]
+        chunks = ingest.chunks_from_blocks(blocks, "meters.txt")
+        assert chunks
+        assert all(chunk["kind"] != "overview" for chunk in chunks)
+        assert any("6,0" in chunk["text"] for chunk in chunks)
+    finally:
+        _word_tokens.cache_clear()
+
+
+def test_wide_row_keeps_short_lead_columns(monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", _token_count)
+    monkeypatch.setattr(ingest, "runtime", lambda: {"tokens": 40, "overlap": 0, "intro": 5})
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    try:
+        name = " ".join(f"имя{number}" for number in range(40))
+        tail = " ".join(f"хвост{number}" for number in range(40))
+        blocks = [{
+            "kind": "table",
+            "caption": "Таблица 1",
+            "labels": ["Код", "Цех", "Имя", "Хвост"],
+            "width": 4,
+            "rows": [[("Код", "A1"), ("Цех", "4"), ("Имя", name), ("Хвост", tail)]],
+        }]
+        tables = [chunk["text"] for chunk in ingest.chunks_from_blocks(blocks, "wide.txt") if chunk["kind"] == "table"]
+        assert len(tables) > 1
+        assert all("Код: A1" in text and "Цех: 4" in text for text in tables)
+        assert "имя0" in tables[0] and "хвост39" in tables[-1]
+    finally:
+        _word_tokens.cache_clear()
+
+
+def test_long_paragraph_is_split_to_the_budget(monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", _token_count)
+    monkeypatch.setattr(ingest, "runtime", lambda: {"tokens": 30, "overlap": 0, "intro": 5})
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    try:
+        words = " ".join(f"слово{number}" for number in range(80))
+        chunks = ingest.chunks_from_blocks(
+            [
+                {"kind": "p", "text": "Короткая строка остаётся целиком."},
+                {"kind": "p", "text": words},
+            ],
+            "long.txt",
+        )
+        assert chunks[0]["text"] == "Короткая строка остаётся целиком."
+        assert len(chunks) > 2
+        assert all(_token_count(chunk["text"]) <= 60 for chunk in chunks)
+        assert "слово0" in chunks[1]["text"] and "Короткая" not in chunks[1]["text"]
+        assert "слово79" in chunks[-1]["text"]
+    finally:
+        _word_tokens.cache_clear()

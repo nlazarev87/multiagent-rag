@@ -690,3 +690,132 @@ def test_lexical_matches_a_code_suffix_and_skips_a_short_piece(monkeypatch):
     assert store._lexical(index, "код 9001", None) == ["iso.txt"]
     assert store._lexical(index, "пункт 1.2", None) == ["point.txt"]
     assert store._lexical(index, "цифра 1", None) == []
+
+def test_scope_stays_open_when_filename_words_point_different_ways():
+    index = {"vocabulary": {"насосный агрегат.txt": set(), "складской учет.txt": set()}}
+    assert store.scope(index, "насосный агрегат на площадке") == ["насосный агрегат.txt"]
+    assert store.scope(index, "насосный агрегат и складской учет") is None
+
+def test_search_finds_a_number_hidden_in_a_code(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
+
+    def chunk(text, name):
+        return {"text": text, "document_name": name, "chunk_index": 0, "checksum": name, "section": ""}
+
+    store.upsert_chunks([
+        chunk("Насос ХН-100 стоит в цехе.", "coded.txt"),
+        chunk("Насос без номера стоит на складе.", "plain.txt"),
+    ])
+    found = store.search_chunks("100")
+    assert found
+    assert found[0]["document_name"] == "coded.txt"
+    assert "12" not in store._terms("Обозначение Н-12.")
+
+def test_empty_upsert_keeps_the_index_and_skips_a_repeat(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    assert store.known("цех") is False
+    calls = {"n": 0}
+
+    def embed(texts):
+        calls["n"] += 1
+        return [[0.1, 0.2, 0.3, 0.4] for _ in texts]
+
+    monkeypatch.setattr(store, "_embed", embed)
+    chunk = {
+        "text": "Цех имеет номер 4.",
+        "document_name": "charter.txt",
+        "chunk_index": 0,
+        "checksum": "c",
+        "section": "",
+    }
+    store.upsert_chunks([chunk])
+    store.upsert_chunks([])
+    store.upsert_chunks([chunk])
+    assert calls["n"] == 1
+    assert store.list_documents() == ["charter.txt"]
+    assert store.known("цех") is True
+    assert store.known("насос") is False
+
+def test_rows_past_the_first_page_stay_in_the_document(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
+    store.upsert_chunks([
+        {
+            "text": f"строка {number} уникальна",
+            "document_name": "long.txt",
+            "chunk_index": number,
+            "checksum": "page",
+            "section": "",
+        }
+        for number in range(501)
+    ])
+    rows = store.chunks_for_document("long.txt")
+    assert len(rows) == 501
+    assert rows[0]["text"] == "строка 0 уникальна"
+    assert rows[-1]["text"] == "строка 500 уникальна"
+    assert store.list_documents() == ["long.txt"]
+
+def test_table_rows_render_in_document_order(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.2, 0.1, 0.0, 0.4] for _ in texts])
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    try:
+        store.upsert_chunks([
+            {
+                "text": "Показатель\nМаксимум: 10",
+                "document_name": "pump.md",
+                "chunk_index": 1,
+                "checksum": "t",
+                "section": "Замеры",
+                "kind": "table",
+                "group": "t1",
+                "head": "Показатель",
+            },
+            {
+                "text": "Показатель\nМинимум: 6",
+                "document_name": "pump.md",
+                "chunk_index": 0,
+                "checksum": "t",
+                "section": "Замеры",
+                "kind": "table",
+                "group": "t1",
+                "head": "Показатель",
+            },
+        ])
+        found = store.search_chunks("минимум максимум")
+        assert found
+        text = found[0]["text"]
+        assert text.index("Минимум") < text.index("Максимум")
+    finally:
+        _word_tokens.cache_clear()
+
+def test_reset_clears_the_index_when_shutdown_fails(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
+    store.upsert_chunks([{
+        "text": "Цех имеет номер 4.",
+        "document_name": "charter.txt",
+        "chunk_index": 0,
+        "checksum": "c",
+        "section": "",
+    }])
+
+    real = store._client
+
+    class System:
+        def stop(self):
+            raise RuntimeError("stop")
+
+    store._index = {"ids": ["stale"]}
+    store._client = type("Client", (), {"_system": System()})()
+    store.reset()
+    assert store._client is None
+    assert store._index is None
+    try:
+        real._system.stop()
+    except Exception:
+        pass

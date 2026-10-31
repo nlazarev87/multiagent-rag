@@ -31,3 +31,12 @@ def test_select_two_words_code_and_last(monkeypatch):
     assert agents.select_agent("Напомни номер у цеха", [first]) == [first]
     assert agents.select_agent("Какое давление у Н-12?", [pump]) == [pump]
     assert agents.select_agent("Напомни номер у цеха", [first, pump, last]) == [last]
+
+
+def test_clarify_keeps_the_previous_question_when_the_answer_has_no_number(monkeypatch):
+    monkeypatch.setattr(agents, "complete", _fail)
+    turns = [{"query": "Как выглядит насос?", "answer": "Насос синий.", "document_names": ["pump.md"]}]
+    query = "Какой у него цвет?"
+    work = agents.select_agent(query, turns)
+    assert work == turns
+    assert agents.clarify_agent(query, work) == "Как выглядит насос? Какой у него цвет?"
