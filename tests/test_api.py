@@ -494,3 +494,69 @@ def test_upload_writes_only_the_file_name(tmp_path, monkeypatch):
     assert not (inbox / "subdir").exists()
     assert outside.read_text(encoding="utf-8") == "чужой файл"
     assert result["documents"] == ["outside.txt", "note.txt"]
+
+def test_delete_document_keeps_the_saved_answer(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    known = ["note.txt", "gone.txt"]
+    monkeypatch.setattr("api.INBOX", inbox)
+    monkeypatch.setattr("api.list_documents", lambda: list(known))
+
+    def forget(name):
+        if name in known:
+            known.remove(name)
+
+    monkeypatch.setattr("api.delete_document", forget)
+    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+        "answer": "ответ",
+        "status": "подтверждён",
+        "document_names": ["gone.txt"],
+        "sources": [],
+    })
+    (inbox / "gone.txt").write_text("текст", encoding="utf-8")
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    assert client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]}).status_code == 200
+    placed = client.put("/ui", json={
+        "tree": {
+            "id": "root",
+            "name": "",
+            "children": [{"document_name": "gone.txt"}, {"document_name": "note.txt"}],
+        },
+    })
+    assert placed.status_code == 200
+    response = client.delete("/documents/gone.txt")
+    assert response.status_code == 200
+    assert response.json()["documents"] == ["note.txt"]
+    assert workspace.iter_files(response.json()["tree"]) == ["note.txt"]
+    saved = next(item for item in workspace.load()["dialogs"] if item["id"] == created["id"])
+    assert saved["turns"][0]["query"] == "вопрос"
+    assert saved["turns"][0]["answer"] == "ответ"
+    assert "gone.txt" not in workspace.iter_files(workspace.load()["tree"])
+    assert not (inbox / "gone.txt").exists()
+
+def test_missing_dialog_and_turn_are_not_found():
+    client = TestClient(app)
+    assert client.get("/ui/dialogs/missing").status_code == 404
+    created = client.post("/ui/dialogs").json()
+    missing_turn = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_complete": 3},
+    )
+    assert missing_turn.status_code == 404
+    assert client.patch(
+        "/ui/dialogs/missing/turns/0/ratings",
+        json={"answer_complete": 3},
+    ).status_code == 404
+
+def test_query_failure_does_not_save_a_turn(monkeypatch):
+    def run(query, dialog_id):
+        raise RuntimeError("model down")
+
+    monkeypatch.setattr("api.run", run)
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    response = client.post("/query", json={"query": "номер", "dialog_id": created["id"]})
+    assert response.status_code == 500
+    assert response.json()["detail"] == "model down"
+    assert workspace.get_dialog_row(created["id"])["turns"] == []

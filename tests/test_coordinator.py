@@ -201,3 +201,15 @@ def test_dependent_question_without_documents_stays_unscoped(monkeypatch):
     monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
     coordinator.run("Сколько она длится?", "d8")
     assert seen == [None]
+
+def test_run_researches_when_feedback_names_a_document(monkeypatch):
+    order = []
+    feedback = _wire(
+        monkeypatch,
+        order,
+        [_verdict(agents.UNCONFIRMED, feedback="Возьми другой Документ."), _verdict(agents.CONFIRMED, [SOURCE])],
+    )
+    result = coordinator.run("Какое давление у насоса?", "d6")
+    assert order == ["select", "clarify", "search", "answer", "check", "search", "answer", "check", "save"]
+    assert feedback == [None, "Возьми другой Документ."]
+    assert result["status"] == agents.CONFIRMED
