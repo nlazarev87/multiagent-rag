@@ -267,3 +267,26 @@ def test_run_scopes_a_followup_to_the_previous_document(monkeypatch):
     coordinator.run("Сколько она длится?", "d7")
     coordinator.run("Какое давление у насоса?", "d8")
     assert seen == [["charter.txt"], None]
+
+def test_run_limits_follow_up_search_to_previous_documents(monkeypatch):
+    seen = []
+    history = [{
+        "query": "Какой номер у цеха?",
+        "answer": "Смена длится 8 часов.",
+        "document_names": ["charter.txt"],
+    }]
+    monkeypatch.setattr(coordinator, "get_dialog", lambda _id: history)
+    monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
+    monkeypatch.setattr(coordinator, "search_agent", lambda clear, names=None: seen.append(names) or [CHUNK])
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "8 часов [1].")
+    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    coordinator.run("Сколько она длится?", "d6")
+    assert seen == [["charter.txt"]]
+    seen.clear()
+    history[0] = {**history[0], "document_names": []}
+    coordinator.run("Сколько она длится?", "d6")
+    assert seen == [None]
+    seen.clear()
+    history[0] = {**history[0], "document_names": ["charter.txt"]}
+    coordinator.run("Какое давление у насоса?", "d6")
+    assert seen == [None]

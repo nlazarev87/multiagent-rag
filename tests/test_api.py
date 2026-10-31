@@ -628,3 +628,51 @@ def test_query_ignores_memory_for_an_unsaved_dialog(monkeypatch):
     saved = next(row for row in workspace.load()["dialogs"] if row["id"] == "ghost")
     assert saved["turns"][0]["query"] == "новый"
     assert saved["turns"][0]["document_names"] == []
+
+def test_rating_rejects_out_of_range_and_missing_turn(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
+    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+        "answer": "ответ",
+        "status": "подтверждён",
+        "document_names": ["note.txt"],
+        "sources": [],
+    })
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    assert client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]}).status_code == 200
+    patched = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_complete": 9, "answer_correct": 1, "documents": {"../note.txt": 4}, "links": {"1": 0}},
+    )
+    assert patched.status_code == 200
+    ratings = patched.json()["ratings"]
+    assert ratings["answer_complete"] is None
+    assert ratings["answer_correct"] == 1
+    assert ratings["documents"] == {"note.txt": 4}
+    assert ratings["links"] == {"1": None}
+    assert client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/3/ratings",
+        json={"answer_complete": 2},
+    ).status_code == 404
+    assert client.get("/ui/dialogs/missing").status_code == 404
+
+def test_query_after_delete_does_not_reuse_the_answer_memory(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: [])
+    seen = []
+
+    def run(query, dialog_id):
+        if query == "первый":
+            workspace.delete_dialog(dialog_id)
+            dialog.add_turn(dialog_id, {"query": query, "answer": "хвост", "document_names": ["note.txt"]})
+        seen.append([turn["query"] for turn in dialog.get_dialog(dialog_id)])
+        return {"answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []}
+
+    monkeypatch.setattr("api.run", run)
+    dialog.reset()
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    assert client.post("/query", json={"query": "первый", "dialog_id": created["id"]}).status_code == 200
+    assert client.post("/query", json={"query": "второй", "dialog_id": created["id"]}).status_code == 200
+    assert seen == [["первый"], []]
+    saved = workspace.load()["dialogs"]
+    assert [turn.get("query") for row in saved for turn in row.get("turns") or []] == ["второй"]

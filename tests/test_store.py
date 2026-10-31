@@ -328,3 +328,25 @@ def test_search_stays_on_requested_documents(tmp_path, monkeypatch):
     named = store.search_chunks("По какому протоколу передаёт данные БЕТА?", document_names=["a.txt"])
     assert {chunk["document_name"] for chunk in named} == {"a.txt"}
     assert all("HTTP" in chunk["text"] for chunk in named)
+
+def test_search_limits_follow_up_to_named_documents(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
+
+    def chunk(text, name, checksum):
+        return {
+            "text": text,
+            "document_name": name,
+            "chunk_index": 0,
+            "checksum": checksum,
+            "section": "",
+        }
+
+    store.upsert_chunks([
+        chunk("Система АЛЬФА передаёт данные по протоколу HTTP.", "a.txt", "a"),
+        chunk("Система БЕТА передаёт данные по протоколу FTP.", "b.txt", "b"),
+    ])
+    limited = store.search_chunks("По какому протоколу передаёт данные?", document_names=["a.txt", "missing.txt"])
+    assert {chunk["document_name"] for chunk in limited} == {"a.txt"}
+    unknown = store.search_chunks("По какому протоколу передаёт данные?", document_names=["missing.txt"])
+    assert {chunk["document_name"] for chunk in unknown} == {"a.txt", "b.txt"}
