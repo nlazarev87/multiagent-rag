@@ -145,6 +145,34 @@ def test_system_fact_is_not_answered_with_the_file_list(monkeypatch):
     assert order[0] == "select"
 
 
+def test_loaded_document_question_is_not_answered_with_the_file_list(monkeypatch):
+    order = []
+    _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+    coordinator.run("Какое давление в документе, загруженном в систему?", "participle")
+    assert order[0] == "select"
+    order.clear()
+    _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+    coordinator.run("Какие требования к испытаниям у документа, который загружен в систему?", "relative")
+    assert order[0] == "select"
+    order.clear()
+    _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+    coordinator.run("Что сказано в загруженном в систему паспорте про давление?", "inside")
+    assert order[0] == "select"
+
+
+def test_relative_inventory_question_still_lists_files(monkeypatch):
+    names = ["Документ.docx", "Паспорт насоса.docx"]
+    monkeypatch.setattr(coordinator, "list_documents", lambda: list(names))
+    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    result = coordinator.run("Какие документы, которые загружены в систему?", "relative-list")
+    assert result["status"] == agents.CONFIRMED
+    assert result["answer"] == "Документ.docx, Паспорт насоса.docx"
+    names[:] = ["Схема.docx", "заметка.txt"]
+    scheme = coordinator.run("Какая схема загружена в систему?", "finite")
+    assert scheme["status"] == agents.CONFIRMED
+    assert scheme["answer"] == "Схема.docx"
+
+
 def test_finish_drops_citations_without_a_source(monkeypatch):
     order = []
     _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])

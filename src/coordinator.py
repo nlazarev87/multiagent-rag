@@ -52,7 +52,29 @@ def _overview_sources(answer, chunks):
 
 def _catalog_query(query):
     text = " ".join((query or "").lower().replace("ё", "е").split())
-    return any(re.search(pattern, text) for pattern in (routing().get("catalog") or []))
+    for pattern in routing().get("catalog") or []:
+        match = re.search(pattern, text)
+        if match and _inventory_verb(match, text):
+            return True
+    return False
+
+
+def _inventory_verb(match, text):
+    # The inventory verb is the finite form: загружен, загружена, загружено,
+    # загружены. A declined participle such as "загруженном" does not match.
+    # "который загружен" is a relative clause. It is still the inventory
+    # question when every word before it is boilerplate ("какие документы,
+    # которые загружены"), and a content question when any other word remains
+    # ("какое давление у документа, который загружен").
+    if not match.group(0).startswith("загружен"):
+        return True
+    before = text[:match.start()]
+    if not re.search(r"\bкотор", before):
+        return True
+    return not any(
+        not _catalog_noise(token)
+        for token in re.findall(r"[0-9a-zа-яё]{3,}", before)
+    )
 
 
 def _name_words(name):
