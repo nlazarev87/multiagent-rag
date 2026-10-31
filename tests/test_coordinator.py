@@ -61,6 +61,62 @@ def test_run_gives_up_after_second_failure(monkeypatch):
     assert result == {"answer": agents.NO_ANSWER, "status": agents.MISSING, "document_names": [], "sources": []}
 
 
+def _watch_search(monkeypatch, work):
+    seen = []
+    monkeypatch.setattr(coordinator, "get_dialog", lambda _id: work)
+    monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: work)
+    monkeypatch.setattr(coordinator, "clarify_agent", lambda *_args: "ясный")
+
+    def search(clear, names=None):
+        seen.append((clear, names))
+        return [CHUNK]
+
+    monkeypatch.setattr(coordinator, "search_agent", search)
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Цех имеет номер 4 [1].")
+    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    return seen
+
+
+def test_run_limits_a_follow_up_to_the_previous_document(monkeypatch):
+    turn = {"query": "Какой номер у цеха?", "answer": "4", "document_names": ["charter.txt"]}
+    seen = _watch_search(monkeypatch, [turn])
+    coordinator.run("Сколько она длится?", "d-follow")
+    assert seen == [("ясный", ["charter.txt"])]
+    turn["document_names"] = []
+    coordinator.run("Сколько она длится?", "d-follow")
+    assert seen[-1] == ("ясный", None)
+
+
+def test_run_searches_every_document_for_a_new_question(monkeypatch):
+    turn = {"query": "Какой номер у цеха?", "answer": "4", "document_names": ["charter.txt"]}
+    seen = _watch_search(monkeypatch, [turn])
+    coordinator.run("Какое давление у насоса?", "d-new")
+    assert seen == [("ясный", None)]
+
+
+def test_run_does_not_scope_a_follow_up_without_history(monkeypatch):
+    seen = _watch_search(monkeypatch, [])
+    coordinator.run("Сколько она длится?", "d-empty")
+    assert seen == [("ясный", None)]
+
+
+def test_run_researches_when_feedback_names_a_document(monkeypatch):
+    order = []
+    feedback = _wire(
+        monkeypatch,
+        order,
+        [
+            _verdict(agents.UNCONFIRMED, feedback="Сверься с другим Документом."),
+            _verdict(agents.CONFIRMED, [SOURCE]),
+        ],
+    )
+    result = coordinator.run("Какой номер у цеха?", "d6")
+    assert order == ["select", "clarify", "search", "answer", "check", "search", "answer", "check", "save"]
+    assert feedback == [None, "Сверься с другим Документом."]
+    assert result["status"] == agents.CONFIRMED
+
+
 def test_run_researches_when_list_is_incomplete(monkeypatch):
     order = []
     feedback = _wire(

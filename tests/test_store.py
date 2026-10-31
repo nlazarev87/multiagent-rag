@@ -1,6 +1,9 @@
+from collections import Counter
+
 from docx import Document
 
 import ingest
+import settings
 import store
 from ingest import ingest_dir, split_chunks
 
@@ -101,6 +104,111 @@ def test_search_finds_exact_code(tmp_path, monkeypatch):
     store.upsert_chunks(split_chunks("\n".join(lines * 20), "flows.txt"))
     found = store.search_chunks("Что передаёт поток X_9.2?")
     assert any("X_9.2" in chunk["text"] for chunk in found)
+
+
+def _index(docs):
+    names = list(docs)
+    return {
+        "vocabulary": docs,
+        "ids": names,
+        "texts": ["" for _ in names],
+        "metas": [{"document_name": name, "chunk_index": 0, "section": ""} for name in names],
+        "counts": [Counter() for _ in names],
+        "lengths": [1 for _ in names],
+        "frequency": {name: Counter() for name in names},
+        "size": {name: 1 for name in names},
+        "chunks": {name: 1 for name in names},
+        "groups": {},
+        "position": {name: number for number, name in enumerate(names)},
+    }
+
+
+def test_scope_stays_open_without_a_unique_document():
+    single = _index({"only.txt": {"цех"}})
+    assert store.scope(single, "Что сказано в ONLY про цех?") is None
+    pair = _index({"ALFA.txt": set(), "BETA.txt": set()})
+    assert store.scope(pair, "Чем отличаются ALFA и BETA?") is None
+    unknown = _index({"a.txt": {"альфа"}, "b.txt": {"бета"}})
+    assert store.scope(unknown, "Как работает ZZ-9?") is None
+
+
+def test_scope_picks_the_file_named_by_a_number():
+    index = _index({"STD_1.2-99.txt": set(), "STD_1.3-99.txt": set()})
+    assert store.scope(index, "Что указано в STD 1.2-99?") == ["STD_1.2-99.txt"]
+
+
+def test_focus_drops_the_filename_when_words_remain():
+    query = "Что указывают в разделе Назначение программы по STD 1.2-99?"
+    focused = store._focus(query, ["STD_1.2-99.txt"])
+    assert "STD" not in focused.split()
+    assert "1.2-99" not in focused
+    assert "Назначение" in focused
+    assert store._focus("Что STD?", ["STD.txt"]) == "Что STD?"
+    assert store._focus(query, None) == query
+
+
+def test_where_ignores_blank_filters(monkeypatch):
+    monkeypatch.setattr(settings, "routing", lambda: {
+        "where": {"collection": "", "kind": None, "tags": [], "lang": "ru"},
+    })
+    assert settings.where() == {"lang": "ru"}
+
+
+def test_metadata_filter_hides_another_collection(monkeypatch):
+    state = {"where": {"collection": "library"}}
+    monkeypatch.setattr(store, "route_where", lambda: state["where"])
+    assert store._meta_ok({"collection": "library"})
+    assert not store._meta_ok({"collection": "other"})
+    assert not store._meta_ok({"document_name": "c.txt"})
+    assert store._chroma_where(["a.txt"]) == {
+        "$and": [{"collection": "library"}, {"document_name": {"$in": ["a.txt"]}}],
+    }
+    assert store._chroma_where([]) == {"collection": "library"}
+    terms = store._terms("насос")
+    count = Counter(terms)
+    index = {
+        "counts": [Counter(count), Counter(count)],
+        "lengths": [sum(count.values()), sum(count.values())],
+        "frequency": {"a.txt": Counter(count), "b.txt": Counter(count)},
+        "size": {"a.txt": sum(count.values()), "b.txt": sum(count.values())},
+        "chunks": {"a.txt": 1, "b.txt": 1},
+        "metas": [
+            {"document_name": "a.txt", "collection": "library"},
+            {"document_name": "b.txt", "collection": "other"},
+        ],
+        "ids": ["a", "b"],
+    }
+    assert store._lexical(index, "насос", None) == ["a"]
+    state["where"] = {}
+    assert store._meta_ok({"document_name": "c.txt"})
+    assert store._chroma_where(None) is None
+    assert store._chroma_where(["a.txt"]) == {"document_name": {"$in": ["a.txt"]}}
+    assert store._lexical(index, "насос", None) == ["a", "b"]
+
+
+class _Count:
+    def count(self):
+        return 2
+
+
+def test_document_argument_overrides_a_matching_name(monkeypatch):
+    index = _index({"a.txt": {"http"}, "b.txt": {"ftp"}})
+    monkeypatch.setattr(store, "_index", index)
+    monkeypatch.setattr(store, "collection", lambda: _Count())
+    seen = []
+
+    def dense(_col, query, allowed, _total):
+        seen.append((query, list(allowed) if allowed is not None else None))
+        return []
+
+    monkeypatch.setattr(store, "_dense", dense)
+    store.search_chunks("Какой порт у HTTP?", document_names=["b.txt"])
+    store.search_chunks("Какой порт у HTTP?", document_names=["gone.txt"])
+    store.search_chunks("Какой порт у HTTP?")
+    assert seen[0][1] == ["b.txt"]
+    assert seen[1][1] == ["a.txt"]
+    assert seen[2][1] == ["a.txt"]
+    assert "HTTP" not in seen[0][0].split()
 
 
 def test_table_row_comes_with_its_table(tmp_path, monkeypatch):
