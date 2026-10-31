@@ -1009,6 +1009,36 @@ def test_docx_keeps_text_moved_by_a_revision(tmp_path):
     assert "10 бар" in text
     assert "6 бар" not in text
 
+def test_docx_joins_yo_and_a_second_hyphen_break(tmp_path):
+    document = Document()
+    document.add_paragraph("Рабочий объ-\nём указан в паспорте.")
+    document.add_paragraph("Содержание доку-\nмен-\nта приведено ниже.")
+    document.add_paragraph("Диапазон 6-\nём указан отдельно.")
+    document.add_paragraph("Содержание доку-")
+    document.add_paragraph("мен-")
+    document.add_paragraph("та повторено в следующем абзаце.")
+    document.add_paragraph("Рабочий объ-")
+    document.add_paragraph("Ём указан с большой буквы.")
+    table = document.add_table(rows=2, cols=2)
+    table.rows[0].cells[0].text = "Показатель"
+    table.rows[0].cells[1].text = "Значение"
+    table.rows[1].cells[0].text = "Объём"
+    table.rows[1].cells[1].text = "объ-\nём"
+    document.save(tmp_path / "yo.docx")
+    blocks = _docx_blocks(tmp_path / "yo.docx")
+    texts = [block["text"] for block in blocks if block["kind"] != "table"]
+    text = "\n".join(texts)
+    assert "Рабочий объём указан в паспорте." in text
+    assert "Содержание документа приведено ниже." in text
+    assert "Содержание документа повторено в следующем абзаце." in text
+    assert "Диапазон 6- ём указан отдельно." in text
+    assert "6ём" not in text
+    assert "Рабочий объ-" in texts
+    assert "Ём указан с большой буквы." in texts
+    assert "объЁм" not in text
+    table_block = next(block for block in blocks if block["kind"] == "table")
+    assert ("Значение", "объём") in table_block["rows"][0]
+
 
 def test_docx_keeps_a_hyperlink_revision_a_smart_tag_and_a_joined_link(tmp_path):
     document = Document()
