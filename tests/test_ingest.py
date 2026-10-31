@@ -163,6 +163,36 @@ def test_docx_does_not_join_a_hyphen_to_a_new_sentence(tmp_path):
     assert all("дефисомНовое" not in text for text in texts)
 
 
+def test_docx_joins_a_hyphen_split_by_a_line_break(tmp_path):
+    document = Document()
+    document.add_paragraph("Требования к содержанию доку-\nмента приведены в приложении.")
+    document.add_paragraph("Обозначение приведено в ГОСТ 19.201-\n78 и действует далее.")
+    document.add_paragraph("Рабочий диапазон 6-\n10 бар указан в паспорте.")
+    document.add_paragraph("Норма ISO-\n9001 указана в договоре.")
+    document.add_paragraph("Смысл значения -\nниже предела.")
+    table = document.add_table(rows=2, cols=2)
+    table.rows[0].cells[0].text = "Показатель"
+    table.rows[0].cells[1].text = "Значение"
+    table.rows[1].cells[0].text = "Раздел"
+    table.rows[1].cells[1].text = "доку-\nментация"
+    document.save(tmp_path / "break.docx")
+    blocks = _docx_blocks(tmp_path / "break.docx")
+    text = "\n".join(block["text"] for block in blocks if block["kind"] != "table")
+    assert "документа приведены" in text
+    assert "доку- мента" not in text
+    assert "доку-" not in text
+    assert "19.20178" not in text
+    assert "ГОСТ 19.201-" in text
+    assert "610" not in text
+    assert "6-" in text
+    assert "ISO9001" not in text
+    assert "ISO-" in text
+    assert "значения -" in text
+    assert "значения ниже" not in text
+    table_block = next(block for block in blocks if block["kind"] == "table")
+    assert ("Значение", "документация") in table_block["rows"][0]
+
+
 def test_docx_joins_hyphen_line_break(tmp_path):
     document = Document()
     document.add_paragraph("Требования к содержанию доку-")
