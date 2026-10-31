@@ -27,6 +27,22 @@ def test_drop_dialog_forgets_turns():
     assert dialog.get_dialog("d") == []
 
 
+def test_set_dialog_uses_listed_names_without_sources():
+    dialog.reset()
+    dialog.set_dialog("d", [{
+        "query": "q",
+        "document_names": ["note.txt", "", "note.txt", "other.txt"],
+        "sources": [{"document_name": "ignored.txt"}],
+    }])
+    assert dialog.get_dialog("d") == [{
+        "query": "q",
+        "answer": "",
+        "document_names": ["note.txt", "other.txt"],
+    }]
+    dialog.set_dialog("d", None)
+    assert dialog.get_dialog("d") == []
+
+
 def test_set_dialog_reads_names_from_sources():
     dialog.reset()
     dialog.set_dialog("d", [{
