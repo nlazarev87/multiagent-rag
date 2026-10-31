@@ -98,6 +98,27 @@ def test_merged_cells_are_not_repeated(tmp_path):
     assert "ИД: A_1; Описание: Запрос; Передача данных" in row
 
 
+def test_table_row_that_starts_late_keeps_its_columns(tmp_path):
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from ingest import _docx_blocks
+
+    document = Document()
+    table = document.add_table(rows=2, cols=3)
+    for cell, text in zip(table.rows[0].cells, ("Показатель", "Минимум", "Максимум")):
+        cell.text = text
+    for cell, text in zip(table.rows[1].cells, ("", "6 бар", "10 бар")):
+        cell.text = text
+    data = table.rows[1]._tr
+    data.remove(data.tc_lst[0])
+    mark = OxmlElement("w:gridBefore")
+    mark.set(qn("w:val"), "1")
+    data.get_or_add_trPr().append(mark)
+    document.save(tmp_path / "range.docx")
+    block = _docx_blocks(tmp_path / "range.docx")[0]
+    assert block["rows"] == [[("Минимум", "6 бар"), ("Максимум", "10 бар")]]
+
+
 def test_chunks_fit_tokens_and_overlap():
     text = " ".join(f"слово{i}" for i in range(900))
     chunks = split_chunks(text, "long.txt")
