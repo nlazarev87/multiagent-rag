@@ -556,3 +556,44 @@ def test_ingest_dir_indexes_only_supported_files(tmp_path, monkeypatch):
         assert "Первая строка." in chunks[0]["text"]
     finally:
         _word_tokens.cache_clear()
+
+def test_docx_keeps_a_hyphen_before_a_heading_or_a_capital(tmp_path):
+    document = Document()
+    document.add_paragraph("Конец строки-")
+    document.add_paragraph("Новое предложение остаётся отдельным.")
+    document.add_paragraph("префикс-")
+    document.add_heading("Заголовок не склеивается", level=1)
+    document.add_heading("Раздел-", level=2)
+    document.add_paragraph("не часть заголовка.")
+    document.add_paragraph("слово-")
+    document.add_paragraph("продолжение в том же слове.")
+    document.save(tmp_path / "breaks.docx")
+    from ingest import _docx_blocks
+
+    texts = [(block["kind"], block["text"]) for block in _docx_blocks(tmp_path / "breaks.docx")]
+    assert texts == [
+        ("p", "Конец строки-"),
+        ("p", "Новое предложение остаётся отдельным."),
+        ("p", "префикс-"),
+        ("heading", "Заголовок не склеивается"),
+        ("heading", "Раздел-"),
+        ("p", "не часть заголовка."),
+        ("p", "словопродолжение в том же слове."),
+    ]
+
+def test_long_line_ignores_a_sentence_end_in_the_first_half(monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
+    from ingest import _cut, _word_tokens
+
+    _word_tokens.cache_clear()
+    early = ["Короткое."] + [f"слово{number}" for number in range(20)]
+    pieces = _cut(early + ["Хвост", "готов?"], 20)
+    assert pieces[0].startswith("Короткое.")
+    assert pieces[0].endswith("слово18")
+    assert "Хвост" not in pieces[0]
+    head = [f"слово{number}" for number in range(12)]
+    tail = ["граница?"] + [f"хвост{number}" for number in range(12)]
+    pieces = _cut(head + tail, 20)
+    assert pieces[0].endswith("граница?")
+    assert "хвост0" not in pieces[0]
+    _word_tokens.cache_clear()

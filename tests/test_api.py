@@ -457,6 +457,23 @@ def test_rating_outside_one_to_five_is_stored_empty(monkeypatch):
     assert patched.json()["ratings"]["documents"] == {"note.txt": 3}
 
 
+def test_query_drops_stale_memory_when_the_dialog_is_not_on_disk(monkeypatch):
+    seen = []
+
+    def run(query, dialog_id):
+        seen.append([turn["query"] for turn in dialog.get_dialog(dialog_id)])
+        return {"answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []}
+
+    monkeypatch.setattr("api.run", run)
+    dialog.reset()
+    dialog.add_turn("fresh", {"query": "устарело", "answer": "x", "document_names": ["secret.txt"]})
+    client = TestClient(app)
+    assert client.post("/query", json={"query": "новый", "dialog_id": "fresh"}).status_code == 200
+    assert seen == [[]]
+    stored = next(row for row in workspace.load()["dialogs"] if row["id"] == "fresh")
+    assert [turn["query"] for turn in stored["turns"]] == ["новый"]
+
+
 def test_query_does_not_restore_a_dialog_deleted_while_answering(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: [])
 
@@ -865,3 +882,58 @@ def test_delete_document_drops_tree_node_and_keeps_dialog(tmp_path, monkeypatch)
     assert saved["dialogs"][0]["turns"][0]["answer"] == "ответ"
     assert not (inbox / "note.txt").exists()
     assert (inbox / "keep.txt").read_text(encoding="utf-8") == "остаётся"
+
+def test_ratings_out_of_range_are_cleared_and_missing_turns_are_404(monkeypatch):
+    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+        "answer": "ответ", "status": "подтверждён", "document_names": [], "sources": [],
+    })
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    assert client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]}).status_code == 200
+    patched = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_complete": 0, "answer_correct": 6},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["ratings"]["answer_complete"] is None
+    assert patched.json()["ratings"]["answer_correct"] is None
+    assert client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/4/ratings",
+        json={"answer_complete": 3},
+    ).status_code == 404
+    dialog.add_turn("ghost", {"query": "жив", "answer": "a", "document_names": []})
+    assert client.get("/ui/dialogs/ghost").status_code == 404
+    assert dialog.get_dialog("ghost")[0]["query"] == "жив"
+
+def test_delete_document_keeps_the_dialog(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    listed = {"names": ["note.txt", "kept.txt"]}
+    monkeypatch.setattr("api.INBOX", inbox)
+    monkeypatch.setattr("api.list_documents", lambda: list(listed["names"]))
+    monkeypatch.setattr("api.delete_document", lambda name: listed.update(names=["kept.txt"]))
+    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+        "answer": "ответ", "status": "подтверждён", "document_names": ["note.txt"], "sources": [],
+    })
+    (inbox / "note.txt").write_text("текст", encoding="utf-8")
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    assert client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]}).status_code == 200
+    client.put("/ui", json={
+        "tree": {
+            "id": "root",
+            "name": "",
+            "children": [
+                {"id": "folder", "name": "Папка", "children": [{"document_name": "note.txt"}]},
+                {"document_name": "kept.txt"},
+            ],
+        }
+    })
+    response = client.delete("/documents/note.txt")
+    assert response.status_code == 200
+    assert response.json()["documents"] == ["kept.txt"]
+    assert "note.txt" not in workspace.iter_files(response.json()["tree"])
+    assert {"document_name": "kept.txt"} in response.json()["tree"]["children"]
+    saved = next(row for row in workspace.load()["dialogs"] if row["id"] == created["id"])
+    assert saved["turns"][0]["query"] == "вопрос"
+    assert not (inbox / "note.txt").exists()

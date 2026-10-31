@@ -374,3 +374,33 @@ def test_run_scopes_a_follow_up_and_not_a_new_question(monkeypatch):
         (["pump.md"], "Какое давление у насоса? А? 6"),
         (None, "Какое давление у насоса? Сколько оно составляет? 6"),
     ]
+
+def test_run_scopes_a_follow_up_to_the_previous_document(monkeypatch):
+    dialog.reset()
+    seen = []
+
+    def search(_clear, names=None):
+        seen.append(names)
+        return [CHUNK]
+
+    monkeypatch.setattr(coordinator, "search_agent", search)
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Цех имеет номер 4 [1].")
+    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    coordinator.run("Какой номер у цеха?", "d-scope")
+    coordinator.run("Сколько она длится?", "d-scope")
+    coordinator.run("Какое давление у насоса?", "d-scope")
+    assert seen == [None, ["charter.txt"], None]
+
+def test_run_searches_again_when_feedback_names_a_document(monkeypatch):
+    order = []
+    _wire(
+        monkeypatch,
+        order,
+        [
+            _verdict(agents.UNCONFIRMED, feedback="Сведения относятся к другому документу."),
+            _verdict(agents.UNCONFIRMED, feedback="Сведения относятся к другому документу."),
+        ],
+    )
+    result = coordinator.run("Какой номер у цеха?", "d-doc")
+    assert order == ["select", "clarify", "search", "answer", "check", "search", "answer", "check", "save"]
+    assert result == {"answer": agents.NO_ANSWER, "status": agents.MISSING, "document_names": [], "sources": []}
