@@ -371,7 +371,10 @@ def test_query_reloads_saved_history_after_memory_is_cleared(monkeypatch):
     seen = []
 
     def run(query, dialog_id):
-        seen.append([turn["query"] for turn in dialog.get_dialog(dialog_id)])
+        seen.append([
+            (turn["query"], turn["document_names"])
+            for turn in dialog.get_dialog(dialog_id)
+        ])
         return {"answer": "ответ", "status": "подтверждён", "document_names": ["note.txt"], "sources": []}
 
     monkeypatch.setattr("api.run", run)
@@ -379,9 +382,9 @@ def test_query_reloads_saved_history_after_memory_is_cleared(monkeypatch):
     client = TestClient(app)
     created = client.post("/ui/dialogs").json()
     assert client.post("/query", json={"query": "первый", "dialog_id": created["id"]}).status_code == 200
-    dialog.add_turn(created["id"], {"query": "устарело", "answer": "x", "document_names": []})
+    dialog.add_turn(created["id"], {"query": "устарело", "answer": "x", "document_names": ["other.md"]})
     assert client.post("/query", json={"query": "второй", "dialog_id": created["id"]}).status_code == 200
-    assert seen == [[], ["первый"]]
+    assert seen == [[], [("первый", ["note.txt"])]]
 
 
 def test_upload_keeps_the_file_inside_inbox(tmp_path, monkeypatch):
@@ -729,3 +732,62 @@ def test_ready_waits_until_the_model_file_is_present(tmp_path, monkeypatch):
     response = TestClient(app).get("/ready")
     assert response.status_code == 503
     assert isinstance(response.json()["elapsed_sec"], int)
+
+def test_rating_patch_keeps_fields_the_body_omits(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
+    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+        "answer": "Цех имеет номер 4 [1].",
+        "status": "подтверждён",
+        "document_names": ["note.txt"],
+        "sources": [{"number": 1, "document_name": "note.txt", "section": "", "chunk_index": 0}],
+    })
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    assert client.post("/query", json={"query": "номер", "dialog_id": created["id"]}).status_code == 200
+    base = "/ui/dialogs/" + created["id"] + "/turns/"
+    assert client.patch(base + "0/ratings", json={"answer_complete": 4}).status_code == 200
+    second = client.patch(base + "0/ratings", json={"answer_correct": 5, "links": {"1": 3}})
+    assert second.status_code == 200
+    assert second.json()["ratings"]["answer_complete"] == 4
+    assert second.json()["ratings"]["answer_correct"] == 5
+    assert second.json()["ratings"]["links"] == {"1": 3}
+    denied = client.patch(base + "-1/ratings", json={"answer_correct": 1})
+    assert denied.status_code == 404
+    stored = client.get("/ui/dialogs/" + created["id"]).json()
+    assert stored["turns"][0]["ratings"]["answer_complete"] == 4
+    assert stored["turns"][0]["ratings"]["answer_correct"] == 5
+    assert stored["turns"][0]["answer"] == "Цех имеет номер 4 [1]."
+
+def test_upload_keeps_the_name_inside_inbox(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    monkeypatch.setattr("api.INBOX", inbox)
+    saved = []
+    seen = []
+
+    def remember(chunks):
+        saved.extend(chunk["document_name"] for chunk in chunks)
+
+    def ingest(folder):
+        seen.append(folder)
+        return [
+            {"document_name": path.name}
+            for path in sorted(folder.iterdir())
+            if path.is_file()
+        ]
+
+    monkeypatch.setattr("api.upsert_chunks", remember)
+    monkeypatch.setattr("api.ingest_dir", ingest)
+    monkeypatch.setattr("api.list_documents", lambda: saved)
+    outside = tmp_path / "outside.txt"
+    client = TestClient(app)
+    response = client.post("/upload", files=[
+        ("files", ("../outside.txt", "Секретный текст.", "text/plain")),
+        ("files", ("nested/secret.txt", "Второй текст.", "text/plain")),
+    ])
+    assert response.status_code == 200
+    assert seen == [inbox]
+    assert not outside.exists()
+    assert not (inbox / "nested").exists()
+    assert (inbox / "outside.txt").read_text(encoding="utf-8") == "Секретный текст."
+    assert (inbox / "secret.txt").read_text(encoding="utf-8") == "Второй текст."
+    assert saved == ["outside.txt", "secret.txt"]

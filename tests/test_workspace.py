@@ -1091,3 +1091,185 @@ def test_failed_replace_keeps_saved_dialogs(tmp_path, monkeypatch):
     saved = workspace.load()
     assert saved["dialogs"][0]["id"] == row["id"]
     assert saved["dialogs"][0]["turns"] == []
+
+def _freeze_clock(monkeypatch):
+    clock = {"n": 0}
+
+    def now():
+        clock["n"] += 1
+        return f"2020-01-01T00:00:{clock['n']:02d}+00:00"
+
+    monkeypatch.setattr(workspace, "_now", now)
+
+def _run_beside_append(monkeypatch, dialog_id, other):
+    entered = threading.Event()
+    release = threading.Event()
+    state = {"stalled": False}
+
+    def stall(_data):
+        if state["stalled"]:
+            return
+        state["stalled"] = True
+        entered.set()
+        release.wait(5)
+
+    monkeypatch.setattr(workspace, "_before_write", stall)
+    errors = []
+
+    def add_turn():
+        try:
+            workspace.append_turn(dialog_id, "второй", _answer("новый"))
+        except Exception as exc:
+            errors.append(exc)
+
+    def side():
+        try:
+            other()
+        except Exception as exc:
+            errors.append(exc)
+
+    writer = threading.Thread(target=add_turn)
+    extra = threading.Thread(target=side)
+    writer.start()
+    started = False
+    try:
+        assert entered.wait(5)
+        extra.start()
+        started = True
+        extra.join(0.5)
+        assert extra.is_alive()
+    finally:
+        release.set()
+    writer.join(5)
+    if started:
+        extra.join(5)
+    assert errors == []
+    assert not writer.is_alive()
+    assert not extra.is_alive()
+
+def test_load_keeps_a_broken_file_until_the_next_save(tmp_path, monkeypatch):
+    path = tmp_path / "workspace.json"
+    monkeypatch.setattr(workspace, "PATH", path)
+    path.write_text("{", encoding="utf-8")
+    assert workspace.load() == workspace.empty()
+    assert path.read_text(encoding="utf-8") == "{"
+    path.write_text("[]", encoding="utf-8")
+    assert workspace.load() == workspace.empty()
+    assert path.read_text(encoding="utf-8") == "[]"
+    raw = '{"dialogs": {"id": "x"}, "tree": []}'
+    path.write_text(raw, encoding="utf-8")
+    loaded = workspace.load()
+    assert loaded["dialogs"] == []
+    assert loaded["tree"] == {"id": "root", "name": "", "children": []}
+    assert path.read_text(encoding="utf-8") == raw
+    row = workspace.create_dialog()
+    saved = workspace.load()
+    assert saved["dialogs"][0]["id"] == row["id"]
+    assert saved["tree"]["id"] == "root"
+
+def test_prepare_dialog_restores_saved_scope_without_creating_a_row(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    dialog.reset()
+    row = workspace.create_dialog()
+    data = workspace.load()
+    data["dialogs"][0]["turns"] = [{
+        "query": "где насос",
+        "answer": "в цехе",
+        "sources": [
+            {"document_name": "pump.md"},
+            {"document_name": "pump.md"},
+            {"document_name": "note.txt"},
+        ],
+    }]
+    workspace.save(data)
+    dialog.add_turn(row["id"], {"query": "устарело", "answer": "x", "document_names": ["other.md"]})
+    found = workspace.prepare_dialog(row["id"])
+    assert found["id"] == row["id"]
+    assert dialog.get_dialog(row["id"]) == [{
+        "query": "где насос",
+        "answer": "в цехе",
+        "document_names": ["pump.md", "note.txt"],
+    }]
+    dialog.add_turn("missing", {"query": "устарело", "answer": "x", "document_names": ["other.md"]})
+    assert workspace.prepare_dialog("missing") is None
+    assert dialog.get_dialog("missing") == []
+    assert all(item["id"] != "missing" for item in workspace.load()["dialogs"])
+
+def test_append_turn_names_sources_and_keeps_the_title(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    dialog.reset()
+    _freeze_clock(monkeypatch)
+    first = workspace.create_dialog()
+    second = workspace.create_dialog()
+    saved = workspace.append_turn(first["id"], "а" * 61, {
+        "answer": "6 бар",
+        "document_names": [],
+        "sources": [
+            {"document_name": "pump.md"},
+            {"document_name": "pump.md"},
+            {"document_name": ""},
+            {"document_name": "note.txt"},
+        ],
+    })
+    assert saved["title"] == ("а" * 60) + "…"
+    assert saved["turns"][0]["document_names"] == ["pump.md", "note.txt"]
+    again = workspace.append_turn(first["id"], "другой вопрос", _answer("дальше"))
+    assert again["title"] == ("а" * 60) + "…"
+    assert [item["id"] for item in workspace.load()["dialogs"]][0] == first["id"]
+    blank = workspace.append_turn(second["id"], "   ", _answer("пусто"))
+    assert blank["title"] == workspace.TITLE
+    assert [item["id"] for item in workspace.load()["dialogs"]][0] == second["id"]
+
+def test_sanitize_tree_stops_on_a_repeated_folder_and_strips_paths():
+    tree = workspace.sanitize_tree({
+        "id": "root",
+        "name": "",
+        "children": [
+            {
+                "id": "loop",
+                "name": "",
+                "children": [
+                    {"id": "loop", "name": "снова", "children": [{"document_name": "note.txt"}]},
+                    {"document_name": "sub/note.txt"},
+                    {"document_name": "../secret.txt"},
+                    "nope",
+                ],
+            },
+            {"id": "long", "name": "П" * 90, "children": []},
+        ],
+    }, {"note.txt"})
+    assert tree == {
+        "id": "root",
+        "name": "",
+        "children": [
+            {"id": "loop", "name": "Папка", "children": [{"document_name": "note.txt"}]},
+            {"id": "long", "name": "П" * 80, "children": []},
+        ],
+    }
+
+def test_patch_ratings_merges_and_rejects_out_of_range(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    dialog.reset()
+    row = workspace.create_dialog()
+    workspace.append_turn(row["id"], "вопрос", {
+        "answer": "ответ",
+        "sources": [{"number": 1, "document_name": "note.txt"}],
+        "document_names": ["note.txt"],
+    })
+    assert workspace.patch_ratings(row["id"], 0, {"answer_complete": 4})["ratings"]["answer_complete"] == 4
+    workspace.patch_ratings(row["id"], 0, {"answer_correct": "5"})
+    workspace.patch_ratings(row["id"], 0, {"links": {"1": 3}})
+    workspace.patch_ratings(row["id"], 0, {"links": {"2": "4", "3": "нет"}})
+    workspace.patch_ratings(row["id"], 0, {"documents": {"note.txt": 2}})
+    workspace.patch_ratings(row["id"], 0, {"documents": {"../../note.txt": 1, "other.txt": 6}})
+    workspace.patch_ratings(row["id"], 0, {"answer_complete": 0})
+    assert workspace.patch_ratings(row["id"], -1, {"answer_correct": 1}) is None
+    assert workspace.patch_ratings(row["id"], 3, {"answer_correct": 1}) is None
+    assert workspace.patch_ratings("missing", 0, {"answer_correct": 1}) is None
+    ratings = workspace.load()["dialogs"][0]["turns"][0]["ratings"]
+    assert ratings == {
+        "answer_complete": None,
+        "answer_correct": 5,
+        "links": {"1": 3, "2": 4, "3": None},
+        "documents": {"note.txt": 1, "other.txt": None},
+    }
