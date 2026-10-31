@@ -507,6 +507,19 @@ def test_catalog_lists_every_file_when_the_names_do_not_overlap(monkeypatch):
     assert result["answer"] == "ГОСТ_1.docx, насос.md"
     assert result["sources"] == []
 
+
+def test_catalog_short_skip_matches_only_the_whole_token(monkeypatch):
+    rules = dict(coordinator.routing())
+    rules["catalog_skip"] = ["api"]
+    monkeypatch.setattr(coordinator, "routing", lambda: rules)
+    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["api.txt", "apis.txt", "заметка.txt"])
+    exact = coordinator.run("Какие api загружены в систему?", "short-skip")
+    assert exact["status"] == agents.CONFIRMED
+    assert exact["answer"] == "api.txt, apis.txt, заметка.txt"
+    longer = coordinator.run("Какие apis загружены в систему?", "longer-code")
+    assert longer["answer"] == "apis.txt"
+
 def test_finish_drops_only_the_invalid_number_in_a_citation(monkeypatch):
     order = []
     _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
