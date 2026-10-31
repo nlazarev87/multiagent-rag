@@ -124,6 +124,21 @@ def test_long_line_splits_after_a_sentence(monkeypatch):
     _word_tokens.cache_clear()
 
 
+def test_docx_does_not_join_a_capitalized_line(tmp_path):
+    from ingest import _docx_blocks
+
+    document = Document()
+    document.add_paragraph("Требования к содержанию доку-")
+    document.add_paragraph("Мента приведены отдельно.")
+    path = tmp_path / "split.docx"
+    document.save(path)
+    texts = [block["text"] for block in _docx_blocks(path)]
+    assert texts == [
+        "Требования к содержанию доку-",
+        "Мента приведены отдельно.",
+    ]
+
+
 def test_docx_joins_hyphen_line_break(tmp_path):
     document = Document()
     document.add_paragraph("Требования к содержанию доку-")
