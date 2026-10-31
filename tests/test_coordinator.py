@@ -128,6 +128,19 @@ def test_finish_drops_citations_without_a_source(monkeypatch):
     assert [source["number"] for source in result["sources"]] == [1]
 
 
+def test_finish_keeps_only_known_numbers_inside_one_citation(monkeypatch):
+    order = []
+    _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+    monkeypatch.setattr(
+        coordinator,
+        "answer_agent",
+        lambda *_args: "Факт [1, 9] и лишнее [8, 7].",
+    )
+    result = coordinator.run("Какой номер у цеха?", "cite-group")
+    assert result["answer"] == "Факт [1] и лишнее."
+    assert [source["number"] for source in result["sources"]] == [1]
+
+
 def test_run_researches_when_list_is_incomplete(monkeypatch):
     order = []
     feedback = _wire(

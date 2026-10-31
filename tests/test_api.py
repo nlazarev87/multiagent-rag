@@ -937,3 +937,30 @@ def test_delete_document_keeps_the_dialog(tmp_path, monkeypatch):
     saved = next(row for row in workspace.load()["dialogs"] if row["id"] == created["id"])
     assert saved["turns"][0]["query"] == "вопрос"
     assert not (inbox / "note.txt").exists()
+
+
+def test_upload_rejects_a_directory_and_restores_the_earlier_file(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "note.txt").write_text("старое значение", encoding="utf-8")
+    occupied = inbox / "slot.txt"
+    occupied.mkdir()
+    (occupied / "secret.txt").write_text("секрет", encoding="utf-8")
+    monkeypatch.setattr("api.INBOX", inbox)
+    cache = _token_count(monkeypatch)
+    called = []
+    monkeypatch.setattr("api.upsert_chunks", called.append)
+    response = TestClient(app).post(
+        "/upload",
+        files=[
+            ("files", ("note.txt", "новое значение".encode(), "text/plain")),
+            ("files", ("slot.txt", "внутрь".encode(), "text/plain")),
+        ],
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Некорректное имя файла"
+    assert called == []
+    assert (inbox / "note.txt").read_text(encoding="utf-8") == "старое значение"
+    assert occupied.is_dir()
+    assert (occupied / "secret.txt").read_text(encoding="utf-8") == "секрет"
+    cache.cache_clear()
