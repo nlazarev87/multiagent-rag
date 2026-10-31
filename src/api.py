@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 import workspace
 from coordinator import run
-from ingest import ingest_dir
+from ingest import SUFFIXES, ingest_dir
 from store import chunks_for_document, delete_document, list_documents, upsert_chunks
 
 app = FastAPI()
@@ -85,6 +85,16 @@ def _fields(body):
     return body.dict(exclude_unset=True)
 
 
+def _on_disk():
+    if not INBOX.is_dir():
+        return set()
+    return {
+        path.name
+        for path in INBOX.iterdir()
+        if path.is_file() and path.suffix.lower() in SUFFIXES
+    }
+
+
 @app.get("/")
 def page():
     return FileResponse(PAGE, headers={"Cache-Control": "no-store"})
@@ -123,7 +133,7 @@ def documents_delete(document_name: str):
     if path.is_file():
         path.unlink()
     known = list_documents()
-    return {"documents": known, "tree": workspace.forget_file(name, known)}
+    return {"documents": known, "tree": workspace.forget_file(name, known, _on_disk())}
 
 
 @app.post("/documents")
@@ -143,19 +153,19 @@ async def upload(files: list[UploadFile] = File(...)):
             (INBOX / Path(item.filename).name).write_bytes(await item.read())
         upsert_chunks(ingest_dir(INBOX))
         names = list_documents()
-        return {"documents": names, "tree": workspace.snapshot(names)["tree"]}
+        return {"documents": names, "tree": workspace.snapshot(names, _on_disk())["tree"]}
     except Exception as exc:
         raise HTTPException(500, detail=str(exc)) from exc
 
 
 @app.get("/ui")
 def ui_get():
-    return workspace.snapshot(list_documents())
+    return workspace.snapshot(list_documents(), _on_disk())
 
 
 @app.put("/ui")
 def ui_put(body: UiTree):
-    return workspace.put_tree(body.tree, list_documents())
+    return workspace.put_tree(body.tree, list_documents(), _on_disk())
 
 
 @app.post("/ui/dialogs")

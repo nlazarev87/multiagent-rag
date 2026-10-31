@@ -429,6 +429,9 @@
     let tabChunks = {};
     let menuTarget = null;
     let closedFolders = new Set();
+    let treeStamp = 0;
+    let treePending = false;
+    let treeWriting = false;
 
     function element(tag, className, text) {
       const node = document.createElement(tag);
@@ -778,15 +781,39 @@
       return acc;
     }
 
-    async function persistTree() {
-      const response = await fetch("/ui", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tree: tree }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (data.tree) tree = data.tree;
-      paintTree();
+    function persistTree() {
+      treePending = true;
+      treeStamp += 1;
+      if (treeWriting) return;
+      treeWriting = true;
+      const run = async () => {
+        try {
+          while (treePending) {
+            treePending = false;
+            const payload = JSON.stringify({ tree: tree });
+            let data = {};
+            let ok = false;
+            try {
+              const response = await fetch("/ui", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: payload,
+              });
+              ok = response.ok;
+              data = await response.json().catch(() => ({}));
+            } catch (error) {
+              return;
+            }
+            if (!ok || treePending) continue;
+            if (data.tree) tree = data.tree;
+            paintTree();
+          }
+        } finally {
+          treeWriting = false;
+          if (treePending) persistTree();
+        }
+      };
+      run();
     }
 
     function paintTree() {
@@ -930,9 +957,12 @@
     }
 
     async function loadUi(selectStored) {
+      const stamp = treeStamp;
       const data = await (await fetch("/ui", { signal: AbortSignal.timeout(8000) })).json();
       dialogs = data.dialogs || [];
-      tree = data.tree || { id: "root", name: "", children: [] };
+      if (stamp === treeStamp && !treePending && !treeWriting) {
+        tree = data.tree || { id: "root", name: "", children: [] };
+      }
       if (!dialogs.length) {
         const created = await (await fetch("/ui/dialogs", { method: "POST" })).json();
         dialogs = [created];
@@ -1084,6 +1114,7 @@
 
     files.onchange = async () => {
       const chosen = [...files.files];
+      const stamp = treeStamp;
       files.value = "";
       if (!chosen.length) return;
       setMode("docs");
@@ -1104,7 +1135,8 @@
           return;
         }
         for (const file of chosen) paintStep(file.name, 2, "разобран");
-        if (data.tree) tree = data.tree;
+        if (data.tree && stamp === treeStamp && !treePending && !treeWriting) tree = data.tree;
+        else ensureTreeFiles(data.documents || []);
         paintTree();
         const known = new Set(data.documents || []);
         for (const file of chosen) {
