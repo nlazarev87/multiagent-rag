@@ -85,6 +85,29 @@ def test_search_keeps_to_document_named_in_question(tmp_path, monkeypatch):
     assert {chunk["document_name"] for chunk in found} == {"b.txt"}
 
 
+def test_search_limits_follow_up_to_named_documents(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
+
+    def chunk(text, name, checksum):
+        return {
+            "text": text,
+            "document_name": name,
+            "chunk_index": 0,
+            "checksum": checksum,
+            "section": "",
+        }
+
+    store.upsert_chunks([
+        chunk("Система АЛЬФА передаёт данные по протоколу HTTP.", "a.txt", "a"),
+        chunk("Система БЕТА передаёт данные по протоколу FTP.", "b.txt", "b"),
+    ])
+    limited = store.search_chunks("По какому протоколу передаёт данные?", document_names=["a.txt", "missing.txt"])
+    assert {chunk["document_name"] for chunk in limited} == {"a.txt"}
+    unknown = store.search_chunks("По какому протоколу передаёт данные?", document_names=["missing.txt"])
+    assert {chunk["document_name"] for chunk in unknown} == {"a.txt", "b.txt"}
+
+
 def test_search_keeps_to_numbered_filename_in_question(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     same = "В разделе Назначение программы должны быть указаны сведения о назначении программы."
