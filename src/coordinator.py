@@ -1,3 +1,8 @@
+"""Один вопрос: каталог имён или граф select → clarify → search → answer → check.
+
+Каталог смотрит на слова имени файла, не на подстроку. Неподтверждённый ответ
+после повторов заменяется отказом, кроме числа из обзора таблицы.
+"""
 from pathlib import Path
 
 import re
@@ -56,6 +61,7 @@ def _name_words(name):
 
 
 def _catalog_names(query, names):
+    """Оставить имена, чьи слова совпали с вопросом. Подстрока внутри слова не считается."""
     words = {name: _name_words(name) for name in names}
     marks = []
     for token in re.findall(r"[0-9a-zа-яё]{3,}", (query or "").lower().replace("ё", "е")):
@@ -67,6 +73,7 @@ def _catalog_names(query, names):
                 continue
             hits = [
                 name for name in names
+                # Слово имени целиком или его начало. Кусок из середины слова не подходит.
                 if any(word == piece or (len(word) >= 4 and piece.startswith(word)) for word in words[name])
             ]
             if hits and len(hits) < len(names):
@@ -89,6 +96,7 @@ def _catalog_result(query, dialog_id):
 
 
 def run(query, dialog_id):
+    """Вернуть ответ, статус, имена документов и источники для одного вопроса."""
     listed = _catalog_result(query, dialog_id)
     if listed is not None:
         return listed
@@ -121,6 +129,7 @@ def run(query, dialog_id):
         return state
 
     def route(state):
+        # «документ» и обзор таблицы просят другой поиск. Остальной отзыв переписывает ответ.
         if state["status"] != UNCONFIRMED or state["attempts"] >= _attempts():
             return "finish"
         feedback = state.get("feedback") or ""
@@ -130,6 +139,7 @@ def run(query, dialog_id):
 
     def finish(state):
         overview = None
+        # Вопрос «сколько» не заменяется отказом, если в чанках уже есть полная строка обзора.
         if state["status"] in (MISSING, UNCONFIRMED) and _count_ask(state.get("query", "")):
             overview = _from_overview(state.get("query", ""), state.get("chunks") or [])
         if state["status"] in (MISSING, UNCONFIRMED) and not overview:

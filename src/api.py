@@ -1,3 +1,8 @@
+"""HTTP-страница, загрузка файлов и вопрос к координатору.
+
+Пока индекс строится, /ui отдаёт сохранённое дерево и не трогает Chroma.
+Неудачная замена файла возвращает прежние байты.
+"""
 import os
 import threading
 import time
@@ -100,11 +105,13 @@ def _on_disk():
 
 @app.get("/")
 def page():
+    """Отдать страницу интерфейса."""
     return FileResponse(PAGE, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/ready")
 def ready():
+    """200, когда модель и эмбеддинги на месте и индекс достроен."""
     from llm import loaded
     if (_state["done"] or loaded) and _files_ok():
         return {"ready": True}
@@ -117,11 +124,13 @@ def ready():
 
 @app.get("/documents")
 def documents_list():
+    """Имена документов в индексе."""
     return {"documents": list_documents()}
 
 
 @app.get("/documents/{document_name:path}/preview")
 def documents_preview(document_name: str):
+    """Текст одного документа из индекса. Чужое имя не читает диск напрямую."""
     name = Path(document_name).name
     if name not in list_documents():
         raise HTTPException(404, detail="Документ не найден")
@@ -130,6 +139,7 @@ def documents_preview(document_name: str):
 
 @app.delete("/documents/{document_name:path}")
 def documents_delete(document_name: str):
+    """Удалить файл из inbox и индекса, не трогая диалоги."""
     name = Path(document_name).name
     delete_document(name)
     path = INBOX / name
@@ -141,6 +151,7 @@ def documents_delete(document_name: str):
 
 @app.post("/documents")
 def documents(body: Docs):
+    """Переиндексировать только data/inbox."""
     folder = Path(body.directory).resolve()
     if folder != INBOX.resolve():
         raise HTTPException(400, detail="Загружать можно только папку data/inbox")
@@ -197,6 +208,7 @@ def _save_uploads(payloads):
                 raise HTTPException(400, detail=_upload_detail(name, previous, empty=True))
         chunks = ingest_dir(INBOX)
     except Exception as exc:
+        # Замена, которую не удалось проиндексировать, не должна оставлять новый файл вместо старого.
         _rollback_upload(saved)
         if isinstance(exc, HTTPException):
             raise
@@ -211,6 +223,7 @@ def _save_uploads(payloads):
 
 @app.post("/upload")
 async def upload(files: list[UploadFile] = File(...)):
+    """Записать файлы в inbox и обновить индекс. Сбой пакета откатывает байты."""
     payloads = [(_upload_name(item.filename), await item.read()) for item in files]
     with _upload_lock:
         return _save_uploads(payloads)
@@ -218,6 +231,7 @@ async def upload(files: list[UploadFile] = File(...)):
 
 @app.get("/ui")
 def ui_get():
+    """Снимок диалогов и дерева. До готовности индекса Chroma не вызывается."""
     if not _state["done"]:
         return workspace.load()
     return workspace.snapshot(list_documents(), _on_disk())
@@ -225,16 +239,19 @@ def ui_get():
 
 @app.put("/ui")
 def ui_put(body: UiTree):
+    """Сохранить дерево. Узел файла, который ещё на диске, остаётся в папке."""
     return workspace.put_tree(body.tree, list_documents(), _on_disk())
 
 
 @app.post("/ui/dialogs")
 def ui_dialog_create():
+    """Новый пустой диалог."""
     return workspace.create_dialog()
 
 
 @app.get("/ui/dialogs/{dialog_id}")
 def ui_dialog_get(dialog_id: str):
+    """Один диалог с ходами и оценками."""
     row = workspace.get_dialog_row(dialog_id)
     if row is None:
         raise HTTPException(404, detail="Диалог не найден")
@@ -243,11 +260,13 @@ def ui_dialog_get(dialog_id: str):
 
 @app.delete("/ui/dialogs/{dialog_id}")
 def ui_dialog_delete(dialog_id: str):
+    """Удалить диалог и забыть его ходы в памяти процесса."""
     return workspace.delete_dialog(dialog_id)
 
 
 @app.patch("/ui/dialogs/{dialog_id}/turns/{turn_index}/ratings")
 def ui_ratings(dialog_id: str, turn_index: int, body: Ratings):
+    """Записать оценки 1–5. Число вне диапазона не сохраняется."""
     turn = workspace.patch_ratings(dialog_id, turn_index, _fields(body))
     if turn is None:
         raise HTTPException(404, detail="Ход не найден")
@@ -256,6 +275,7 @@ def ui_ratings(dialog_id: str, turn_index: int, body: Ratings):
 
 @app.post("/query")
 def query(body: Query):
+    """Ответить на вопрос. Перед этим поднять ходы с диска, после — дописать ход."""
     try:
         existed = workspace.prepare_dialog(body.dialog_id) is not None
         result = run(body.query, body.dialog_id)

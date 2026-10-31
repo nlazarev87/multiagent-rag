@@ -1,3 +1,8 @@
+"""Разбор inbox в чанки.
+
+Битый файл пропускается и не обнуляет остальные. VERSION входит в checksum:
+смена правил разбора без новой версии оставляет в индексе старый текст.
+"""
 import hashlib
 import json
 import os
@@ -444,6 +449,7 @@ def _table_pieces(block, section):
 
 
 def chunks_from_blocks(blocks, document_name=""):
+    """Собрать чанки из уже разобранных блоков одного документа."""
     # Upsert skips a document when this hash matches. Overlap, chunk size and the
     # intro limit change the stored text and kind without changing the source, and
     # often without changing how many chunks there are.
@@ -507,10 +513,12 @@ def chunks_from_blocks(blocks, document_name=""):
 
 
 def split_chunks(text, document_name=""):
+    """Нарезать плоский текст так же, как файл без таблиц."""
     return chunks_from_blocks(_text_blocks(text), document_name)
 
 
 def load_text(path):
+    """Вернуть видимый текст файла. Для docx это уже склеенные блоки."""
     lines = []
     for block in _blocks(path):
         if block["kind"] == "table":
@@ -522,6 +530,7 @@ def load_text(path):
 
 
 def ingest_dir(directory):
+    """Прочитать каталог и вернуть чанки. Битый файл не отменяет остальные."""
     # Upload and startup both read the whole inbox. One file that cannot be
     # parsed used to abort that pass, so nothing was indexed, and the bad file
     # never appeared in the document list where it could be deleted.

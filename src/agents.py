@@ -1,3 +1,8 @@
+"""Выбор истории, уточнение, поиск, ответ и проверка.
+
+Фактов корпуса здесь нет: пороги и словарь единиц читаются из config и prompts.
+Проверка не вызывает модель.
+"""
 import re
 
 from llm import complete, count_tokens
@@ -80,6 +85,7 @@ def _dependent(query):
 
 
 def select_agent(query, turns):
+    """Один прошлый ход или пусто. Зависимый вопрос берёт последний ход."""
     if not turns:
         return []
     if _dependent(query):
@@ -96,6 +102,7 @@ def select_agent(query, turns):
 
 
 def clarify_agent(query, work_turns):
+    """Строка для поиска. Независимый вопрос возвращается как есть."""
     if not work_turns or not _dependent(query):
         return query
     previous = work_turns[-1]
@@ -106,6 +113,7 @@ def clarify_agent(query, work_turns):
 
 
 def search_agent(clear_query, document_names=None):
+    """Найти чанки. Имена передаются в индекс только когда список непустой."""
     limit = runtime().get("search_limit", 4)
     if document_names:
         return search_chunks(clear_query, limit, document_names)
@@ -414,6 +422,7 @@ def _drop_repeat_cite(answer):
 
 
 def answer_agent(query, clear_query, chunks, work_turns, feedback=None):
+    """Текст ответа. Пустые чанки дают отказ, обзор таблицы может обойтись без модели."""
     if not chunks:
         return NO_ANSWER
     chunks = _cover_latin(query, chunks)
@@ -2009,6 +2018,7 @@ def _keep_cited(used, scores, facts, bodies):
 
 
 def check_agent(answer, chunks, query="", known=None):
+    """Подтвердить ответ по чанкам или вернуть отзыв. Модель не вызывается."""
     text = answer.strip()
     known = known or (lambda _term: True)
     absent = [token for token in _specific(query) if not known(_flat(token))]
@@ -2058,6 +2068,7 @@ def check_agent(answer, chunks, query="", known=None):
         for word in _words(item.get("reply", ""))
         if len(word) >= 5
     }
+    # Слово из примера короче 8 букв ответ не бракует. Иначе отказ ловит обычные слова вроде «равно».
     borrowed = [
         word for word in extra
         if len(word[1]) >= 8 and word[1][:5] in example_stems and not any(_grounded(word, body) for body in bodies)

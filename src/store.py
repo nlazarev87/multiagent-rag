@@ -1,3 +1,8 @@
+"""Индекс Chroma и поиск BM25 + RRF.
+
+Два файла с одним текстом не делят id чанка. Поиск, который уже открыл индекс,
+не падает, если параллельная запись этот индекс очистила.
+"""
 import math
 import os
 import re
@@ -126,6 +131,7 @@ def _chunk_id(chunk):
 
 
 def upsert_chunks(chunks):
+    """Записать чанки. Тот же checksum и то же число чанков документ не переписывают."""
     global _index
     if not chunks:
         return
@@ -163,6 +169,7 @@ def upsert_chunks(chunks):
 
 
 def delete_document(document_name):
+    """Удалить из индекса только чанки этого файла."""
     global _index
     with _index_lock:
         col = collection()
@@ -173,6 +180,7 @@ def delete_document(document_name):
 
 
 def list_documents():
+    """Имена файлов, которые сейчас есть в индексе."""
     with _index_lock:
         names = []
         for meta in _rows(collection())[2]:
@@ -182,6 +190,7 @@ def list_documents():
 
 
 def chunks_for_document(name):
+    """Все чанки одного файла по возрастанию chunk_index."""
     with _index_lock:
         _, texts, metas = _rows(collection(), where={"document_name": name})
         rows = [
@@ -308,6 +317,7 @@ def _marker_hit(name, markers, words):
 
 
 def scope(index, query):
+    """Сузить поиск до файлов, которые вопрос сам назвал. Иначе None — весь индекс."""
     documents = sorted(index["vocabulary"])
     if len(documents) < 2:
         return None
@@ -336,6 +346,7 @@ def scope(index, query):
             doc: sum(_marker_hit(name, marks[doc], index["vocabulary"][doc]) for name in known)
             for doc in documents
         }
+    # Одна основа имени не привязывает поиск к файлу: «задания» есть у многих документов.
     if len(query_stems) >= 2:
         stemmed = set.intersection(*query_stems)
         if stemmed:
@@ -490,6 +501,10 @@ def _contexts(index, ranked, limit):
 
 
 def search_chunks(clear_query, limit=4, document_names=None):
+    """Вернуть до limit чанков. document_names ограничивает уже выбранными файлами.
+
+    Пустой список означает весь индекс: третьим аргументом его не передают.
+    """
     global calls
     calls += 1
     col, total, index = _open_index()

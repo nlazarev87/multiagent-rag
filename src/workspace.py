@@ -1,3 +1,8 @@
+"""Диалоги, оценки и дерево папок в data/ui/workspace.json.
+
+Запись под замком: оценка не затирает ход, который параллельно дописывает ответ.
+Файл, который индекс временно скрыл, остаётся в своей папке, пока он на диске.
+"""
 import json
 import threading
 import uuid
@@ -199,6 +204,7 @@ def _catalog(tree, known, keep):
 
 
 def snapshot(known=None, keep=None):
+    """Дерево и диалоги для страницы. keep удерживает файл, который ещё лежит в inbox."""
     with _lock:
         data = _read()
         names = list(known or [])
@@ -258,6 +264,7 @@ def get_dialog_row(dialog_id):
 
 
 def prepare_dialog(dialog_id):
+    """Поднять ходы в память процесса. Новый диалог здесь не создаётся."""
     dialog_id = str(dialog_id)
     with _lock:
         data = _read()
@@ -268,6 +275,7 @@ def prepare_dialog(dialog_id):
 
 
 def put_tree(tree, known, keep=None):
+    """Проверить присланное дерево и записать его, не теряя диалоги."""
     with _lock:
         data = _read()
         names = list(known or [])
@@ -277,6 +285,7 @@ def put_tree(tree, known, keep=None):
 
 
 def forget_file(name, known, keep=None):
+    """Убрать файл из дерева и оставить диалоги."""
     with _lock:
         data = _read()
         data["tree"] = drop_file(data["tree"], name)
@@ -291,6 +300,7 @@ def forget_file(name, known, keep=None):
 
 
 def append_turn(dialog_id, query, result, *, create=True):
+    """Дописать ход. create=False не возрождает диалог, удалённый пока шёл ответ."""
     with _lock:
         data = _read()
         index, row = _find(data, dialog_id)
@@ -323,6 +333,7 @@ def append_turn(dialog_id, query, result, *, create=True):
 
 
 def patch_ratings(dialog_id, turn_index, body):
+    """Обновить оценки хода. Пустое поле не стирает уже стоящую оценку."""
     with _lock:
         data = _read()
         _, row = _find(data, dialog_id)
