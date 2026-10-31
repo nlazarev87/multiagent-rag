@@ -580,6 +580,42 @@ def test_loaded_clause_and_negation_stay_on_search(monkeypatch):
         assert order[0] == "select", question
 
 
+def test_catalog_skips_a_negated_or_prefixed_load_and_accepts_yo(monkeypatch):
+    # «не загружены» and «перезагружен» are not the inventory phrase.
+    # «загружёны» is the same phrase with ё and still lists every file.
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["Документ.docx", "Паспорт насоса.docx"])
+    for query, dialog_id in (
+        ("Какие документы не загружены в систему?", "negated-load"),
+        ("Какой модуль перезагружен в систему?", "prefixed-load"),
+    ):
+        order = []
+        _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+        coordinator.run(query, dialog_id)
+        assert order[0] == "select"
+        assert "search" in order
+
+    order = []
+    _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+    listed = coordinator.run("Какие документы загружёны в систему?", "yo-load")
+    assert order == ["save"]
+    assert listed["status"] == agents.CONFIRMED
+    assert listed["answer"] == "Документ.docx, Паспорт насоса.docx"
+    assert listed["sources"] == []
+
+
+def test_catalog_short_skip_matches_only_the_whole_token(monkeypatch):
+    rules = dict(coordinator.routing())
+    rules["catalog_skip"] = ["api"]
+    monkeypatch.setattr(coordinator, "routing", lambda: rules)
+    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["api.txt", "apis.txt", "заметка.txt"])
+    exact = coordinator.run("Какие api загружены в систему?", "short-skip")
+    assert exact["status"] == agents.CONFIRMED
+    assert exact["answer"] == "api.txt, apis.txt, заметка.txt"
+    longer = coordinator.run("Какие apis загружены в систему?", "longer-code")
+    assert longer["answer"] == "apis.txt"
+
+
 def test_finish_drops_only_the_invalid_number_in_a_citation(monkeypatch):
     order = []
     _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])

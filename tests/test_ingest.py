@@ -226,6 +226,41 @@ def test_spanned_header_does_not_consume_the_first_values(tmp_path):
     assert "10 бар" in _row_line(block["rows"][0], False)
 
 
+def test_spanned_body_cell_keeps_the_next_value_in_its_column(tmp_path, monkeypatch):
+    from ingest import _word_tokens
+
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
+    _word_tokens.cache_clear()
+    try:
+        document = Document()
+        table = document.add_table(rows=31, cols=3)
+        for cell, text in zip(table.rows[0].cells, ("Показатель", "Минимум", "Максимум")):
+            cell.text = text
+        for number, row in enumerate(table.rows[1:], 1):
+            row.cells[0].text = "Насос"
+            row.cells[0].merge(row.cells[1])
+            row.cells[2].text = f"максимальное давление режима номер {number} в рабочем контуре"
+        document.save(tmp_path / "span.docx")
+        blocks = _docx_blocks(tmp_path / "span.docx")
+        block = blocks[0]
+        assert block["rows"][0] == [
+            ("Показатель", "Насос"),
+            ("Минимум", ""),
+            ("Максимум", "максимальное давление режима номер 1 в рабочем контуре"),
+        ]
+        assert ingest._row_line(block["rows"][0], False) == (
+            "Показатель: Насос; Максимум: максимальное давление режима номер 1 в рабочем контуре"
+        )
+        chunks = ingest.chunks_from_blocks(blocks, "span.docx")
+        overview = next(chunk["text"] for chunk in chunks if chunk["kind"] == "overview")
+        assert "Разных значений в столбце «Максимум»: 30." in overview
+        assert "столбце «Минимум»" not in overview
+        assert "максимальное давление режима номер 1 в рабочем контуре" in overview
+        assert "максимальное давление режима номер 30 в рабочем контуре" in overview
+    finally:
+        _word_tokens.cache_clear()
+
+
 def test_empty_key_uses_the_value_header_and_keeps_a_blank_cell(tmp_path):
     from ingest import _docx_blocks, _row_line
 
@@ -254,6 +289,24 @@ def test_chunks_fit_tokens_and_overlap():
     assert all(chunk["version"] == VERSION for chunk in chunks)
     first, second = chunks[0]["text"].split(), chunks[1]["text"].split()
     assert first[-1] in second[:40]
+
+
+def test_parser_version_changes_the_checksum_of_the_same_text(monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text or "").split())))
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    try:
+        blocks = [{"kind": "p", "text": "Цех имеет номер 4."}]
+        first = ingest.chunks_from_blocks(blocks, "note.txt")
+        monkeypatch.setattr(ingest, "VERSION", ingest.VERSION + 1)
+        second = ingest.chunks_from_blocks(blocks, "note.txt")
+        assert first[0]["text"] == second[0]["text"] == "Цех имеет номер 4."
+        assert first[0]["checksum"] != second[0]["checksum"]
+        assert second[0]["version"] == first[0]["version"] + 1
+        assert len(first) == len(second)
+    finally:
+        _word_tokens.cache_clear()
 
 
 def test_long_line_splits_after_a_sentence(monkeypatch):
@@ -501,6 +554,51 @@ def test_docx_keeps_a_nested_control_inside_an_insertion(tmp_path):
     _save(document, tmp_path / "nested.docx")
     text = " ".join(block["text"] for block in _docx_blocks(tmp_path / "nested.docx"))
     assert "Н-12" in text
+
+
+def test_docx_joins_a_hyphen_inside_a_control_and_a_nested_cell(tmp_path):
+    document = Document()
+    paragraph = document.add_paragraph("Требования к содержанию ")
+    broken = _word_run("мента приведены.")
+    broken.insert(0, OxmlElement("w:br"))
+    paragraph._p.append(_word_run("доку-"))
+    paragraph._p.append(_word_sdt(broken))
+    outer = document.add_table(rows=2, cols=2)
+    outer.rows[0].cells[0].text = "Показатель"
+    outer.rows[0].cells[1].text = "Значение"
+    outer.rows[1].cells[0].text = "Раздел"
+    nested = outer.rows[1].cells[1].add_table(rows=2, cols=2)
+    nested.rows[0].cells[0].text = "Поле"
+    nested.rows[0].cells[1].text = "Текст"
+    nested.rows[1].cells[0].text = "Имя"
+    nested.rows[1].cells[1].text = "доку-\nмента"
+    _save(document, tmp_path / "wrapped.docx")
+    blocks = _docx_blocks(tmp_path / "wrapped.docx")
+    text = "\n".join(block["text"] for block in blocks if block["kind"] != "table")
+    assert "документа приведены" in text
+    assert "доку-" not in text
+    table = next(block for block in blocks if block["kind"] == "table")
+    assert ("Значение", "Имя: документа") in table["rows"][0]
+    assert all("доку-" not in value for row in table["rows"] for _, value in row)
+
+
+def test_shortened_row_keeps_a_hyphenated_value_in_its_column(tmp_path):
+    document = Document()
+    table = document.add_table(rows=2, cols=3)
+    for cell, text in zip(table.rows[0].cells, ("Показатель", "Минимум", "Максимум")):
+        cell.text = text
+    table.rows[1].cells[1].text = "доку-\nмента"
+    table.rows[1].cells[2].text = "10 бар"
+    data = table.rows[1]._tr
+    data.remove(data.tc_lst[0])
+    mark = OxmlElement("w:gridBefore")
+    mark.set(qn("w:val"), "1")
+    data.get_or_add_trPr().append(mark)
+    _save(document, tmp_path / "range.docx")
+    block = _docx_blocks(tmp_path / "range.docx")[0]
+    assert block["rows"] == [[("Показатель", ""), ("Минимум", "документа"), ("Максимум", "10 бар")]]
+    assert "доку-" not in ingest._row_line(block["rows"][0], False)
+    assert "Максимум: 10 бар" in ingest._row_line(block["rows"][0], False)
 
 
 def test_docx_keeps_text_when_a_revision_only_marks_formatting(tmp_path):
@@ -940,6 +1038,36 @@ def test_docx_joins_yo_and_a_second_hyphen_break(tmp_path):
     assert "объЁм" not in text
     table_block = next(block for block in blocks if block["kind"] == "table")
     assert ("Значение", "объём") in table_block["rows"][0]
+
+
+def test_docx_keeps_a_hyperlink_revision_a_smart_tag_and_a_joined_link(tmp_path):
+    document = Document()
+    paragraph = document.add_paragraph("Давление равно ")
+    link = OxmlElement("w:hyperlink")
+    link.set(qn("r:id"), "rId1")
+    deleted = _word_mark("w:del", _word_run("6 бар"))
+    deleted.find(qn("w:r")).find(qn("w:t")).tag = qn("w:delText")
+    link.append(deleted)
+    link.append(_word_mark("w:ins", _word_run("10 бар")))
+    paragraph._p.append(link)
+    coded = document.add_paragraph("Код ")
+    smart = OxmlElement("w:smartTag")
+    smart.append(_word_run("Н-12"))
+    coded._p.append(smart)
+    split = document.add_paragraph("Требования к содержанию ")
+    broken = _word_run("мента приведены.")
+    broken.insert(0, OxmlElement("w:br"))
+    linked = OxmlElement("w:hyperlink")
+    linked.append(_word_run("доку-"))
+    linked.append(broken)
+    split._p.append(linked)
+    _save(document, tmp_path / "linked.docx")
+    text = "\n".join(block["text"] for block in _docx_blocks(tmp_path / "linked.docx"))
+    assert "Давление равно 10 бар" in text
+    assert "6 бар" not in text
+    assert "Код Н-12" in text
+    assert "документа приведены" in text
+    assert "доку-" not in text
 
 
 def test_missing_parser_aborts_instead_of_skipping_the_file(tmp_path, monkeypatch):
