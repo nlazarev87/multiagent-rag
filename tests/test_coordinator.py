@@ -138,3 +138,66 @@ def test_run_researches_when_list_is_incomplete(monkeypatch):
     assert order == ["select", "clarify", "search", "answer", "check", "search", "answer", "check", "save"]
     assert feedback == [None, agents.LIST_GAP]
     assert result["status"] == agents.CONFIRMED
+
+def test_dependent_question_searches_only_previous_documents(monkeypatch):
+    seen = []
+    previous = {
+        "query": "Какой номер у цеха?",
+        "answer": "Цех имеет номер 4.",
+        "document_names": ["charter.txt"],
+    }
+    monkeypatch.setattr(coordinator, "get_dialog", lambda _id: [])
+    monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: [previous])
+    monkeypatch.setattr(coordinator, "clarify_agent", lambda query, _work: query)
+
+    def search(_clear, names=None):
+        seen.append(names)
+        return [CHUNK]
+
+    monkeypatch.setattr(coordinator, "search_agent", search)
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Смена длится 8 часов [1].")
+    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    result = coordinator.run("Сколько она длится?", "d6")
+    assert result["status"] == agents.CONFIRMED
+    assert seen == [["charter.txt"]]
+
+def test_new_question_is_not_limited_to_previous_documents(monkeypatch):
+    seen = []
+    previous = {
+        "query": "Какой номер у цеха?",
+        "answer": "Цех имеет номер 4.",
+        "document_names": ["charter.txt"],
+    }
+    monkeypatch.setattr(coordinator, "get_dialog", lambda _id: [])
+    monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: [previous])
+    monkeypatch.setattr(coordinator, "clarify_agent", lambda query, _work: query)
+
+    def search(_clear, names=None):
+        seen.append(names)
+        return [CHUNK]
+
+    monkeypatch.setattr(coordinator, "search_agent", search)
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Давление равно 6 бар [1].")
+    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    coordinator.run("Какое давление у насоса?", "d7")
+    assert seen == [None]
+
+def test_dependent_question_without_documents_stays_unscoped(monkeypatch):
+    seen = []
+    previous = {"query": "Какой номер у цеха?", "answer": "Цех имеет номер 4.", "document_names": []}
+    monkeypatch.setattr(coordinator, "get_dialog", lambda _id: [])
+    monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: [previous])
+    monkeypatch.setattr(coordinator, "clarify_agent", lambda query, _work: query)
+
+    def search(_clear, names=None):
+        seen.append(names)
+        return [CHUNK]
+
+    monkeypatch.setattr(coordinator, "search_agent", search)
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Смена длится 8 часов [1].")
+    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    coordinator.run("Сколько она длится?", "d8")
+    assert seen == [None]
