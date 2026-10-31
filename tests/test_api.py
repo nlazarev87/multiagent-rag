@@ -609,3 +609,22 @@ def test_upload_strips_directory_from_filename(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert (inbox / "outside.txt").read_text(encoding="utf-8") == "чужой файл"
     assert not (tmp_path / "outside.txt").exists()
+
+def test_query_ignores_memory_for_an_unsaved_dialog(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: [])
+    seen = []
+
+    def run(query, dialog_id):
+        seen.append(dialog.get_dialog(dialog_id))
+        return {"answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []}
+
+    monkeypatch.setattr("api.run", run)
+    dialog.reset()
+    dialog.add_turn("ghost", {"query": "секрет", "answer": "x", "document_names": ["hidden.txt"]})
+    client = TestClient(app)
+    response = client.post("/query", json={"query": "новый", "dialog_id": "ghost"})
+    assert response.status_code == 200
+    assert seen == [[]]
+    saved = next(row for row in workspace.load()["dialogs"] if row["id"] == "ghost")
+    assert saved["turns"][0]["query"] == "новый"
+    assert saved["turns"][0]["document_names"] == []

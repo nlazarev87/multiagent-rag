@@ -701,3 +701,75 @@ def test_dialog_memory_keeps_the_last_twenty_saved_turns(tmp_path, monkeypatch):
     assert [turn["query"] for turn in dialog.get_dialog(created["id"])] == [f"вопрос {index}" for index in range(5, 25)]
     assert workspace.get_dialog_row("missing") is None
     assert all(item["id"] != "missing" for item in workspace.load()["dialogs"])
+
+def test_failed_replace_keeps_the_saved_dialog(tmp_path, monkeypatch):
+    path = tmp_path / "workspace.json"
+    monkeypatch.setattr(workspace, "PATH", path)
+    row = workspace.create_dialog()
+    workspace.append_turn(row["id"], "вопрос", _answer("ответ"))
+    original = path.read_text(encoding="utf-8")
+    real_replace = Path.replace
+
+    def fail_temp(self, target):
+        if self.name.startswith(".workspace.json.") and self.name.endswith(".tmp"):
+            raise OSError("disk full")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_temp)
+    with pytest.raises(OSError, match="disk full"):
+        workspace.append_turn(row["id"], "второй", _answer("потеря"))
+    assert path.read_text(encoding="utf-8") == original
+    assert list(tmp_path.glob(".workspace.json.*.tmp")) == []
+    saved = workspace.load()["dialogs"]
+    assert [turn["query"] for turn in saved[0]["turns"]] == ["вопрос"]
+    assert saved[0]["turns"][0]["answer"] == "ответ"
+
+def test_ratings_keep_partial_updates_and_reject_bad_scores(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    row = workspace.create_dialog()
+    workspace.append_turn(row["id"], "вопрос", _answer("ответ"))
+    workspace.patch_ratings(row["id"], 0, {
+        "links": {"1": 5},
+        "documents": {"note.txt": 3},
+    })
+    saved = workspace.patch_ratings(row["id"], 0, {
+        "answer_complete": "5",
+        "answer_correct": 0,
+        "links": {"2": "нет"},
+        "documents": {"../../note.txt": 9, "folder/other.txt": 4},
+    })
+    assert saved["ratings"]["answer_complete"] == 5
+    assert saved["ratings"]["answer_correct"] is None
+    assert saved["ratings"]["links"] == {"1": 5, "2": None}
+    assert saved["ratings"]["documents"] == {"note.txt": None, "other.txt": 4}
+    assert workspace.patch_ratings(row["id"], 3, {"answer_complete": 1}) is None
+    assert workspace.patch_ratings("missing", 0, {"answer_complete": 1}) is None
+    again = next(item for item in workspace.load()["dialogs"] if item["id"] == row["id"])
+    assert again["turns"][0]["answer"] == "ответ"
+    assert again["turns"][0]["ratings"]["links"]["1"] == 5
+    assert again["turns"][0]["ratings"]["answer_complete"] == 5
+
+def test_prepare_dialog_clears_memory_when_the_dialog_is_not_saved(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    dialog.reset()
+    dialog.add_turn("ghost", {"query": "секрет", "answer": "x", "document_names": ["hidden.txt"]})
+    assert workspace.prepare_dialog("ghost") is None
+    assert dialog.get_dialog("ghost") == []
+
+def test_append_turn_reads_document_names_from_sources(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    row = workspace.create_dialog()
+    saved = workspace.append_turn(row["id"], "вопрос", {
+        "answer": "ответ",
+        "document_names": [],
+        "sources": [
+            {"document_name": "note.txt"},
+            {"document_name": "note.txt"},
+            {"document_name": ""},
+            {"document_name": "other.txt"},
+        ],
+    })
+    assert saved["turns"][0]["document_names"] == ["note.txt", "other.txt"]
+    assert saved["title"] == "вопрос"
+    again = workspace.append_turn(row["id"], "другой вопрос", _answer("ещё"))
+    assert again["title"] == "вопрос"

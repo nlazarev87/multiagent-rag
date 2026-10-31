@@ -248,3 +248,22 @@ def test_run_stops_when_attempt_limit_is_one(monkeypatch):
     assert result["answer"] == agents.NO_ANSWER
     assert result["status"] == agents.MISSING
     assert result["sources"] == []
+
+def test_run_scopes_a_followup_to_the_previous_document(monkeypatch):
+    seen = []
+    turns = [{"query": "Какой номер у цеха?", "answer": "4", "document_names": ["charter.txt"]}]
+
+    def search(_clear, names=None):
+        seen.append(names)
+        return [CHUNK]
+
+    monkeypatch.setattr(coordinator, "get_dialog", lambda _id: [])
+    monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: turns)
+    monkeypatch.setattr(coordinator, "clarify_agent", lambda *_args: "уточнение")
+    monkeypatch.setattr(coordinator, "search_agent", search)
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Цех имеет номер 4 [1].")
+    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    coordinator.run("Сколько она длится?", "d7")
+    coordinator.run("Какое давление у насоса?", "d8")
+    assert seen == [["charter.txt"], None]
