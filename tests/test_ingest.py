@@ -226,6 +226,41 @@ def test_spanned_header_does_not_consume_the_first_values(tmp_path):
     assert "10 бар" in _row_line(block["rows"][0], False)
 
 
+def test_spanned_body_cell_keeps_the_next_value_in_its_column(tmp_path, monkeypatch):
+    from ingest import _word_tokens
+
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
+    _word_tokens.cache_clear()
+    try:
+        document = Document()
+        table = document.add_table(rows=31, cols=3)
+        for cell, text in zip(table.rows[0].cells, ("Показатель", "Минимум", "Максимум")):
+            cell.text = text
+        for number, row in enumerate(table.rows[1:], 1):
+            row.cells[0].text = "Насос"
+            row.cells[0].merge(row.cells[1])
+            row.cells[2].text = f"максимальное давление режима номер {number} в рабочем контуре"
+        document.save(tmp_path / "span.docx")
+        blocks = _docx_blocks(tmp_path / "span.docx")
+        block = blocks[0]
+        assert block["rows"][0] == [
+            ("Показатель", "Насос"),
+            ("Минимум", ""),
+            ("Максимум", "максимальное давление режима номер 1 в рабочем контуре"),
+        ]
+        assert ingest._row_line(block["rows"][0], False) == (
+            "Показатель: Насос; Максимум: максимальное давление режима номер 1 в рабочем контуре"
+        )
+        chunks = ingest.chunks_from_blocks(blocks, "span.docx")
+        overview = next(chunk["text"] for chunk in chunks if chunk["kind"] == "overview")
+        assert "Разных значений в столбце «Максимум»: 30." in overview
+        assert "столбце «Минимум»" not in overview
+        assert "максимальное давление режима номер 1 в рабочем контуре" in overview
+        assert "максимальное давление режима номер 30 в рабочем контуре" in overview
+    finally:
+        _word_tokens.cache_clear()
+
+
 def test_empty_key_uses_the_value_header_and_keeps_a_blank_cell(tmp_path):
     from ingest import _docx_blocks, _row_line
 

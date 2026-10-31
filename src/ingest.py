@@ -218,6 +218,11 @@ def _table_block(table, caption, depth=0):
                 last = None
                 continue
             if cell._tc is last:
+                # This column is the rest of a merged cell. Skipping it slides
+                # the next value left, and the column summary counts that value
+                # under this header.
+                if not pairs or pairs[-1][0] != label:
+                    pairs.append((label, ""))
                 continue
             last = cell._tc
             value = _text(cell, depth)
