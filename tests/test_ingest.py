@@ -120,7 +120,65 @@ def test_table_row_that_starts_late_keeps_its_columns(tmp_path):
     data.get_or_add_trPr().append(mark)
     document.save(tmp_path / "range.docx")
     block = _docx_blocks(tmp_path / "range.docx")[0]
-    assert block["rows"] == [[("Минимум", "6 бар"), ("Максимум", "10 бар")]]
+    assert block["rows"] == [[("Показатель", ""), ("Минимум", "6 бар"), ("Максимум", "10 бар")]]
+    assert ingest._row_line(block["rows"][0], False) == "Минимум: 6 бар; Максимум: 10 бар"
+    assert ingest._distinct_column(block) == ("Минимум", ["6 бар"])
+
+
+def test_key_value_row_that_starts_late_keeps_the_measurement(tmp_path):
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    document = Document()
+    table = document.add_table(rows=3, cols=2)
+    for cell, text in zip(table.rows[0].cells, ("Показатель", "Значение")):
+        cell.text = text
+    table.rows[1].cells[0].text = "Давление"
+    table.rows[1].cells[1].text = "6 бар"
+    data = table.rows[2]._tr
+    table.rows[2].cells[1].text = "10 бар"
+    data.remove(data.tc_lst[0])
+    mark = OxmlElement("w:gridBefore")
+    mark.set(qn("w:val"), "1")
+    data.get_or_add_trPr().append(mark)
+    document.save(tmp_path / "kv.docx")
+    block = _docx_blocks(tmp_path / "kv.docx")[0]
+    assert ingest._row_line(block["rows"][0], True) == "Давление: 6 бар"
+    assert ingest._row_line(block["rows"][1], True) == "Значение: 10 бар"
+    assert "10 бар: —" not in load_text(tmp_path / "kv.docx")
+    assert "Значение: 10 бар" in load_text(tmp_path / "kv.docx")
+
+
+def test_late_row_overview_counts_the_column_that_holds_the_value(tmp_path, monkeypatch):
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from ingest import _word_tokens
+
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
+    _word_tokens.cache_clear()
+    try:
+        document = Document()
+        table = document.add_table(rows=31, cols=3)
+        for cell, text in zip(table.rows[0].cells, ("Показатель", "Минимум", "Максимум")):
+            cell.text = text
+        for number, row in enumerate(table.rows[1:], 1):
+            row.cells[1].text = f"минимальное давление режима номер {number} в рабочем контуре"
+            row.cells[2].text = f"максимальное давление режима номер {number} в рабочем контуре"
+            data = row._tr
+            data.remove(data.tc_lst[0])
+            mark = OxmlElement("w:gridBefore")
+            mark.set(qn("w:val"), "1")
+            data.get_or_add_trPr().append(mark)
+        document.save(tmp_path / "range.docx")
+        blocks = _docx_blocks(tmp_path / "range.docx")
+        chunks = ingest.chunks_from_blocks(blocks, "range.docx")
+        overview = next(chunk["text"] for chunk in chunks if chunk["kind"] == "overview")
+        assert "Разных значений в столбце «Минимум»: 30." in overview
+        assert "столбце «Показатель»" not in overview
+        assert "минимальное давление режима номер 1 в рабочем контуре" in overview
+        assert "минимальное давление режима номер 30 в рабочем контуре" in overview
+    finally:
+        _word_tokens.cache_clear()
 
 
 def test_chunks_fit_tokens_and_overlap():
