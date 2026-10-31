@@ -142,10 +142,52 @@ def _table_block(table, caption):
     return {"kind": "table", "caption": caption, "labels": names, "width": len(labels), "rows": rows}
 
 
+_WML = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+# Revisions and content controls wrap the text Word shows. python-docx reads only
+# a direct paragraph or a direct run, so an inserted value or a form field is
+# skipped and the index keeps the old text or an empty cell.
+_WORD_PARENTS = {
+    "body", "p", "hyperlink", "sdtContent", "tc", "tbl", "tr",
+    "smartTag", "ins", "moveTo", "txbxContent", "customXml",
+}
+
+
+def _word_name(tag):
+    return tag.rsplit("}", 1)[-1]
+
+
+def _unwrap_word_wrappers(root):
+    for tag in ("del", "moveFrom"):
+        for node in list(root.iter(_WML + tag)):
+            parent = node.getparent()
+            if parent is not None:
+                parent.remove(node)
+    for _ in range(32):
+        changed = 0
+        for tag in ("ins", "moveTo", "sdt", "smartTag"):
+            for node in list(root.iter(_WML + tag)):
+                parent = node.getparent()
+                if parent is None or _word_name(parent.tag) not in _WORD_PARENTS:
+                    continue
+                if tag == "sdt":
+                    content = node.find(_WML + "sdtContent")
+                    children = list(content) if content is not None else []
+                else:
+                    children = list(node)
+                index = parent.index(node)
+                parent.remove(node)
+                for offset, child in enumerate(children):
+                    parent.insert(index + offset, child)
+                changed += 1
+        if not changed:
+            return
+
+
 def _docx_blocks(path):
     from docx import Document
     from docx.table import Table
     document = Document(str(path))
+    _unwrap_word_wrappers(document.element)
     blocks = []
     previous = ""
     for item in document.iter_inner_content():
