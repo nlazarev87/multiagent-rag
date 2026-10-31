@@ -4,7 +4,7 @@ import pytest
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
 
-from ingest import TOKENS, VERSION, count_tokens, ingest_dir, load_text, split_chunks
+from ingest import TOKENS, VERSION, _docx_blocks, count_tokens, ingest_dir, load_text, split_chunks
 
 
 def _toc_style(document):
@@ -132,6 +132,30 @@ def test_docx_joins_hyphen_line_break(tmp_path):
     text = " ".join(chunk["text"] for chunk in ingest_dir(tmp_path))
     assert "документа" in text
     assert "доку-" not in text
+
+
+def test_nested_table_keeps_the_cell_value(tmp_path):
+    document = Document()
+    document.add_paragraph("Паспорт насоса.")
+    outer = document.add_table(rows=2, cols=2)
+    outer.rows[0].cells[0].text = "Показатель"
+    outer.rows[0].cells[1].text = "Значение"
+    outer.rows[1].cells[0].text = "Давление"
+    value = outer.rows[1].cells[1]
+    value.text = "не ниже"
+    nested = value.add_table(rows=2, cols=2)
+    nested.rows[0].cells[0].text = "Режим"
+    nested.rows[0].cells[1].text = "Бар"
+    nested.rows[1].cells[0].text = "Рабочий"
+    nested.rows[1].cells[1].text = "10 бар"
+    document.save(tmp_path / "nested.docx")
+    blocks = _docx_blocks(tmp_path / "nested.docx")
+    table = next(block for block in blocks if block["kind"] == "table")
+    text = " ".join(value for row in table["rows"] for _, value in row)
+    assert "Паспорт насоса." in blocks[0]["text"]
+    assert "не ниже" in text
+    assert "Рабочий: 10 бар" in text
+    assert table["rows"][0][0] == ("Показатель", "Давление")
 
 
 def test_paragraph_with_section_number_is_kept():
