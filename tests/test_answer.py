@@ -1908,3 +1908,19 @@ def test_check_moves_wording_to_the_fragment_that_contains_it():
     assert [(source["number"], source["document_name"], source["chunk_index"]) for source in verdict["sources"]] == [
         (2, "y.txt", 4)
     ]
+
+
+def test_check_rejects_a_long_example_word_but_not_a_shorter_one(monkeypatch):
+    # A word copied from the example is rejected from 8 letters up. A shorter
+    # example word, and a long word that is not in the example, stay.
+    monkeypatch.setattr(agents, "fewshot", lambda: [{"reply": "открыта выходной"}])
+    chunk = {"text": "Насос имеет рабочий режим и спокойный контур.", "document_name": "pump.md", "section": ""}
+    query = "Какой режим у насоса?"
+    base = "Насос имеет рабочий режим и спокойный контур"
+    borrowed = agents.check_agent(f"{base} выходной [1].", [chunk], query)
+    assert borrowed["status"] == agents.UNCONFIRMED
+    assert borrowed["feedback"] == agents.RETRY
+    assert agents.check_agent(f"{base} открыта [1].", [chunk], query)["status"] == agents.CONFIRMED
+    assert agents.check_agent(f"{base} посторонний [1].", [chunk], query)["status"] == agents.CONFIRMED
+    held = {"text": chunk["text"] + " Выходной день указан отдельно.", "document_name": "pump.md", "section": ""}
+    assert agents.check_agent(f"{base} выходной [1].", [held], query)["status"] == agents.CONFIRMED

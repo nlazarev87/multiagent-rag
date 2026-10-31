@@ -256,6 +256,24 @@ def test_chunks_fit_tokens_and_overlap():
     assert first[-1] in second[:40]
 
 
+def test_parser_version_changes_the_checksum_of_the_same_text(monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text or "").split())))
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    try:
+        blocks = [{"kind": "p", "text": "Цех имеет номер 4."}]
+        first = ingest.chunks_from_blocks(blocks, "note.txt")
+        monkeypatch.setattr(ingest, "VERSION", ingest.VERSION + 1)
+        second = ingest.chunks_from_blocks(blocks, "note.txt")
+        assert first[0]["text"] == second[0]["text"] == "Цех имеет номер 4."
+        assert first[0]["checksum"] != second[0]["checksum"]
+        assert second[0]["version"] == first[0]["version"] + 1
+        assert len(first) == len(second)
+    finally:
+        _word_tokens.cache_clear()
+
+
 def test_long_line_splits_after_a_sentence(monkeypatch):
     monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
     from ingest import _cut, _word_tokens
@@ -501,6 +519,51 @@ def test_docx_keeps_a_nested_control_inside_an_insertion(tmp_path):
     _save(document, tmp_path / "nested.docx")
     text = " ".join(block["text"] for block in _docx_blocks(tmp_path / "nested.docx"))
     assert "Н-12" in text
+
+
+def test_docx_joins_a_hyphen_inside_a_control_and_a_nested_cell(tmp_path):
+    document = Document()
+    paragraph = document.add_paragraph("Требования к содержанию ")
+    broken = _word_run("мента приведены.")
+    broken.insert(0, OxmlElement("w:br"))
+    paragraph._p.append(_word_run("доку-"))
+    paragraph._p.append(_word_sdt(broken))
+    outer = document.add_table(rows=2, cols=2)
+    outer.rows[0].cells[0].text = "Показатель"
+    outer.rows[0].cells[1].text = "Значение"
+    outer.rows[1].cells[0].text = "Раздел"
+    nested = outer.rows[1].cells[1].add_table(rows=2, cols=2)
+    nested.rows[0].cells[0].text = "Поле"
+    nested.rows[0].cells[1].text = "Текст"
+    nested.rows[1].cells[0].text = "Имя"
+    nested.rows[1].cells[1].text = "доку-\nмента"
+    _save(document, tmp_path / "wrapped.docx")
+    blocks = _docx_blocks(tmp_path / "wrapped.docx")
+    text = "\n".join(block["text"] for block in blocks if block["kind"] != "table")
+    assert "документа приведены" in text
+    assert "доку-" not in text
+    table = next(block for block in blocks if block["kind"] == "table")
+    assert ("Значение", "Имя: документа") in table["rows"][0]
+    assert all("доку-" not in value for row in table["rows"] for _, value in row)
+
+
+def test_shortened_row_keeps_a_hyphenated_value_in_its_column(tmp_path):
+    document = Document()
+    table = document.add_table(rows=2, cols=3)
+    for cell, text in zip(table.rows[0].cells, ("Показатель", "Минимум", "Максимум")):
+        cell.text = text
+    table.rows[1].cells[1].text = "доку-\nмента"
+    table.rows[1].cells[2].text = "10 бар"
+    data = table.rows[1]._tr
+    data.remove(data.tc_lst[0])
+    mark = OxmlElement("w:gridBefore")
+    mark.set(qn("w:val"), "1")
+    data.get_or_add_trPr().append(mark)
+    _save(document, tmp_path / "range.docx")
+    block = _docx_blocks(tmp_path / "range.docx")[0]
+    assert block["rows"] == [[("Показатель", ""), ("Минимум", "документа"), ("Максимум", "10 бар")]]
+    assert "доку-" not in ingest._row_line(block["rows"][0], False)
+    assert "Максимум: 10 бар" in ingest._row_line(block["rows"][0], False)
 
 
 def test_docx_keeps_text_when_a_revision_only_marks_formatting(tmp_path):
