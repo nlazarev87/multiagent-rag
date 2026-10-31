@@ -134,6 +134,34 @@ def test_docx_joins_hyphen_line_break(tmp_path):
     assert "доку-" not in text
 
 
+def test_docx_keeps_hard_hyphen_before_a_number(tmp_path):
+    document = Document()
+    document.add_paragraph("Требования к содержанию доку-")
+    document.add_paragraph("мента приведены в приложении.")
+    document.add_paragraph("Обозначение приведено в ГОСТ 19.201-")
+    document.add_paragraph("78 и действует далее.")
+    document.add_paragraph("Рабочий диапазон 6-")
+    document.add_paragraph("10 бар указан в паспорте.")
+    document.add_paragraph("Норма ISO-")
+    document.add_paragraph("9001 указана в договоре.")
+    document.add_paragraph("Смысл значения -")
+    document.add_paragraph("ниже предела.")
+    document.save(tmp_path / "hyphen.docx")
+    from ingest import _docx_blocks
+
+    text = "\n".join(block["text"] for block in _docx_blocks(tmp_path / "hyphen.docx"))
+    assert "документа" in text
+    assert "доку-" not in text
+    assert "ГОСТ 19.201-\n78" in text
+    assert "19.20178" not in text
+    assert "6-\n10" in text
+    assert "610" not in text
+    assert "ISO9001" not in text
+    assert "ISO-" in text
+    assert "значения -" in text
+    assert "значения ниже" not in text
+
+
 def test_paragraph_with_section_number_is_kept():
     chunks = split_chunks("Согласно разделу 3.2 насос имеет давление 6 бар.", "pump.txt")
     assert "3.2" in chunks[0]["text"]

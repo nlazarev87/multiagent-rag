@@ -161,14 +161,21 @@ def _docx_blocks(path):
         if any(_TOC.match(name) for name in _style_names(item.style)):
             continue
         level = _heading_level(item)
+        # A line break in "доку-мента" is a soft hyphen: drop it and join.
+        # A hard hyphen before a number or after a digit must stay, otherwise
+        # "6-" + "10" and "ISO-" + "9001" are stored as 610 and ISO9001.
+        previous_block = blocks[-1] if blocks else None
+        previous_text = previous_block.get("text", "") if isinstance(previous_block, dict) else ""
         if (
             not level
-            and blocks
-            and blocks[-1].get("kind") == "p"
-            and blocks[-1]["text"].endswith("-")
-            and not text[:1].isupper()
+            and previous_block
+            and previous_block.get("kind") == "p"
+            and len(previous_text) >= 2
+            and previous_text.endswith("-")
+            and previous_text[-2].isalpha()
+            and text[:1].islower()
         ):
-            blocks[-1]["text"] = blocks[-1]["text"][:-1] + text
+            blocks[-1]["text"] = previous_text[:-1] + text
             previous = blocks[-1]["text"]
             continue
         blocks.append({"kind": "heading", "level": level, "text": text} if level else {"kind": "p", "text": text})
