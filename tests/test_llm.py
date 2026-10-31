@@ -15,11 +15,13 @@ def test_complete_uses_cpu_settings_and_roles(monkeypatch):
             captured["cache"] = cache
 
         def tokenize(self, text, add_bos=True):
+            captured["add_bos"] = add_bos
             return text.split()
 
         def create_chat_completion(self, messages, max_tokens, temperature):
             captured["messages"] = messages
             captured["max_tokens"] = max_tokens
+            captured["temperature"] = temperature
             return {"choices": [{"message": {"content": " Ответ [1]. "}}]}
 
     module = types.ModuleType("llama_cpp")
@@ -36,4 +38,6 @@ def test_complete_uses_cpu_settings_and_roles(monkeypatch):
     assert captured["cache"][0] == "cache"
     assert [message["role"] for message in captured["messages"]] == ["system", "user", "assistant", "user"]
     assert captured["max_tokens"] == 200
+    assert captured["temperature"] == 0.0
     assert llm.count_tokens("три слова здесь") == 3
+    assert captured["add_bos"] is False

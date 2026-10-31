@@ -286,3 +286,45 @@ def test_table_row_comes_with_its_table(tmp_path, monkeypatch):
     assert "Холодильная камера: 40 м²" in text
     assert "Архив: 12 м²" in text
     assert text.count("Таблица 1") == 1
+
+def _stored(text, name, index=0, checksum="same"):
+    return {
+        "text": text,
+        "document_name": name,
+        "chunk_index": index,
+        "checksum": checksum,
+        "section": "",
+    }
+
+def test_upsert_keeps_chunks_beyond_the_first_batch(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
+    chunks = [
+        _stored(f"Фрагмент номер {index} про склад.", "long.txt", index)
+        for index in range(64)
+    ]
+    chunks.append(_stored("Уникальный хвост партии лежит в последнем ящике.", "long.txt", 64))
+    store.upsert_chunks(chunks)
+    rows = store.chunks_for_document("long.txt")
+    assert [row["chunk_index"] for row in rows] == list(range(65))
+    assert rows[-1]["text"] == "Уникальный хвост партии лежит в последнем ящике."
+    found = store.search_chunks("Где лежит уникальный хвост партии?")
+    assert found
+    assert found[0]["chunk_index"] == 64
+    assert "последнем ящике" in found[0]["text"]
+
+def test_search_stays_on_requested_documents(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
+    store.upsert_chunks([
+        _stored("Смена длится 8 часов.", "charter.txt", checksum="charter"),
+        _stored("Смена длится 12 часов.", "pump.md", checksum="pump"),
+        _stored("Система АЛЬФА передаёт данные по протоколу HTTP.", "a.txt", checksum="a"),
+        _stored("Система БЕТА передаёт данные по протоколу FTP.", "b.txt", checksum="b"),
+    ])
+    shift = store.search_chunks("Сколько длится смена?", document_names=["gone.txt", "charter.txt"])
+    assert {chunk["document_name"] for chunk in shift} == {"charter.txt"}
+    assert all("8 часов" in chunk["text"] for chunk in shift)
+    named = store.search_chunks("По какому протоколу передаёт данные БЕТА?", document_names=["a.txt"])
+    assert {chunk["document_name"] for chunk in named} == {"a.txt"}
+    assert all("HTTP" in chunk["text"] for chunk in named)
