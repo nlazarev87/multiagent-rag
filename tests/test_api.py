@@ -197,3 +197,75 @@ def test_query_does_not_restore_a_dialog_deleted_while_answering(monkeypatch):
     saved = workspace.load()["dialogs"]
     assert all(row["id"] != created["id"] for row in saved)
     assert all(turn.get("query") != "номер" for row in saved for turn in row.get("turns") or [])
+
+
+def test_missing_dialog_and_turn_are_not_found(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: [])
+    client = TestClient(app)
+    assert client.get("/ui/dialogs/missing").status_code == 404
+    created = client.post("/ui/dialogs").json()
+    missing = "/ui/dialogs/" + created["id"] + "/turns/0/ratings"
+    assert client.patch(missing, json={"answer_complete": 3}).status_code == 404
+
+
+def test_rating_patch_keeps_fields_the_body_omits(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
+    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+        "answer": "ответ",
+        "status": "подтверждён",
+        "document_names": ["note.txt"],
+        "sources": [],
+    })
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    assert client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]}).status_code == 200
+    root = "/ui/dialogs/" + created["id"] + "/turns/"
+    assert client.patch(root + "-1/ratings", json={"answer_complete": 1}).status_code == 404
+    assert client.patch(root + "0/ratings", json={"answer_complete": 4}).status_code == 200
+    second = client.patch(root + "0/ratings", json={"answer_correct": 5, "documents": {"dir/note.txt": 2}})
+    assert second.status_code == 200
+    ratings = second.json()["ratings"]
+    assert ratings["answer_complete"] == 4
+    assert ratings["answer_correct"] == 5
+    assert ratings["documents"] == {"note.txt": 2}
+    cleared = client.patch(root + "0/ratings", json={"answer_complete": 9, "links": {"1": 0}})
+    assert cleared.json()["ratings"]["answer_complete"] is None
+    assert cleared.json()["ratings"]["answer_correct"] == 5
+    assert cleared.json()["ratings"]["links"] == {"1": None}
+    assert client.patch(root + "4/ratings", json={"answer_complete": 3}).status_code == 404
+    stored = client.get("/ui/dialogs/" + created["id"]).json()["turns"][0]["ratings"]
+    assert stored["answer_correct"] == 5
+    assert stored["answer_complete"] is None
+
+
+def test_upload_keeps_the_name_inside_inbox(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    monkeypatch.setattr("api.INBOX", inbox)
+    monkeypatch.setattr("api.ingest_dir", lambda folder: [])
+    monkeypatch.setattr("api.upsert_chunks", lambda chunks: None)
+    monkeypatch.setattr("api.list_documents", lambda: ["outside.txt"])
+    response = TestClient(app).post(
+        "/upload",
+        files=[("files", ("../outside.txt", b"inbox-text", "text/plain"))],
+    )
+    assert response.status_code == 200
+    assert (inbox / "outside.txt").read_bytes() == b"inbox-text"
+    assert not (tmp_path / "outside.txt").exists()
+
+
+def test_query_error_does_not_store_a_turn(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: [])
+
+    def run(query, dialog_id):
+        raise RuntimeError("model failed")
+
+    monkeypatch.setattr("api.run", run)
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    failed = client.post("/query", json={"query": "номер", "dialog_id": created["id"]})
+    assert failed.status_code == 500
+    saved = next(item for item in workspace.load()["dialogs"] if item["id"] == created["id"])
+    assert saved["turns"] == []
+    unknown = client.post("/query", json={"query": "номер", "dialog_id": "brand-new"})
+    assert unknown.status_code == 500
+    assert all(item["id"] != "brand-new" for item in workspace.load()["dialogs"])
