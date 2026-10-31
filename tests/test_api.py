@@ -35,6 +35,25 @@ def test_api_routes(tmp_path, monkeypatch):
     assert stored[0]["turns"][0]["query"] == "давление"
 
 
+def test_upload_indexes_other_files_when_one_is_unreadable(tmp_path, monkeypatch):
+    monkeypatch.setattr("api.INBOX", tmp_path)
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    (tmp_path / "bad.txt").write_bytes(b"\xff")
+    saved = []
+    monkeypatch.setattr("api.upsert_chunks", saved.extend)
+    monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
+    response = TestClient(app).post(
+        "/upload",
+        files=[("files", ("note.txt", "Цех имеет номер 4.", "text/plain"))],
+    )
+    assert response.status_code == 200
+    assert {chunk["document_name"] for chunk in saved} == {"note.txt"}
+    _word_tokens.cache_clear()
+
+
 def test_upload_lists_document(tmp_path, monkeypatch):
     monkeypatch.setattr("api.INBOX", tmp_path)
     saved = []

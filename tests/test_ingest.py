@@ -139,6 +139,26 @@ def test_paragraph_with_section_number_is_kept():
     assert "3.2" in chunks[0]["text"]
 
 
+def test_unreadable_file_does_not_block_other_documents(tmp_path, monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+
+    def converter_missing(path):
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr("ingest._doc_blocks", converter_missing)
+    (tmp_path / "good.txt").write_text("Цех имеет номер 4.", encoding="utf-8")
+    (tmp_path / "bad.txt").write_bytes(b"\xff")
+    (tmp_path / "broken.docx").write_bytes(b"not a docx")
+    (tmp_path / "legacy.doc").write_bytes(b"doc")
+    chunks = ingest_dir(tmp_path)
+    assert {chunk["document_name"] for chunk in chunks} == {"good.txt"}
+    assert any("4" in chunk["text"] for chunk in chunks)
+    _word_tokens.cache_clear()
+
+
 def test_doc_via_libreoffice(tmp_path):
     soffice = Path(r"C:\Program Files\LibreOffice\program\soffice.exe")
     if not soffice.exists():

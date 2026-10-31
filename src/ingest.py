@@ -417,8 +417,17 @@ def load_text(path):
 
 
 def ingest_dir(directory):
+    # Upload and startup both read the whole inbox. One file that cannot be
+    # parsed used to abort that pass, so nothing was indexed, and the bad file
+    # never appeared in the document list where it could be deleted.
     chunks = []
     for path in sorted(Path(directory).iterdir()):
-        if path.suffix.lower() in SUFFIXES and path.is_file():
+        if path.suffix.lower() not in SUFFIXES or not path.is_file():
+            continue
+        try:
             chunks += chunks_from_blocks(_blocks(path), path.name)
+        except ImportError:
+            raise
+        except Exception:
+            continue
     return chunks
