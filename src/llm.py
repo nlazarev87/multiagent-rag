@@ -1,3 +1,7 @@
+"""Локальная GGUF-модель на CPU. Эмбеддинги считает store, не этот модуль.
+
+n_gpu_layers равен 0. Файл 7B рядом с 1.5B не удалять: start.ps1 big его ждёт.
+"""
 import os
 import threading
 
@@ -15,6 +19,7 @@ def _n_ctx():
 
 
 def load():
+    """Открыть GGUF один раз, на CPU, с контекстом из runtime."""
     global _llm, loaded
     if _llm is None:
         with _load_lock:
@@ -33,12 +38,14 @@ def load():
 
 
 def count_tokens(text):
+    """Число токенов модели. Нужно, чтобы промпт уложился в бюджет."""
     load()
     with _run_lock:
         return len(_llm.tokenize(text.encode("utf-8"), add_bos=False))
 
 
 def complete(system, user, max_tokens=None, examples=()):
+    """Ответ модели. Примеры идут парами user/assistant перед вопросом."""
     load()
     data = runtime()
     if max_tokens is None:

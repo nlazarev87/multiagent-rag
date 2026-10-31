@@ -1,4 +1,5 @@
 import asyncio
+import threading
 
 import pytest
 from fastapi import HTTPException
@@ -8,6 +9,7 @@ import api
 import dialog
 import workspace
 from api import app
+import time
 
 SOURCE = {"number": 1, "document_name": "pump.md", "section": ""}
 
@@ -937,3 +939,173 @@ def test_delete_document_keeps_the_dialog(tmp_path, monkeypatch):
     saved = next(row for row in workspace.load()["dialogs"] if row["id"] == created["id"])
     assert saved["turns"][0]["query"] == "вопрос"
     assert not (inbox / "note.txt").exists()
+
+
+def test_delete_during_upload_is_not_indexed_again(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "keep.txt").write_text("секрет", encoding="utf-8")
+    indexed = {"keep.txt"}
+    monkeypatch.setattr(api, "INBOX", inbox)
+    monkeypatch.setattr(api, "delete_document", lambda name: indexed.discard(name))
+    monkeypatch.setattr(api, "list_documents", lambda: sorted(indexed))
+    monkeypatch.setattr(api, "upsert_chunks", lambda chunks: indexed.update(chunk["document_name"] for chunk in chunks))
+    monkeypatch.setattr(api, "_blocks", lambda path: [{"kind": "p", "text": "новый"}])
+    monkeypatch.setattr(api, "chunks_from_blocks", lambda blocks, name: [{"document_name": name}] if blocks else [])
+    started = threading.Event()
+    release = threading.Event()
+
+    def ingest(folder):
+        chunks = [
+            {"document_name": path.name}
+            for path in sorted(folder.iterdir())
+            if path.is_file() and path.suffix.lower() == ".txt"
+        ]
+        started.set()
+        assert release.wait(5)
+        return chunks
+
+    monkeypatch.setattr(api, "ingest_dir", ingest)
+    began = threading.Event()
+    finished = threading.Event()
+    errors = []
+
+    def delete_keep():
+        began.set()
+        try:
+            api.documents_delete("keep.txt")
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            finished.set()
+
+    def upload_new():
+        try:
+            api._save_uploads([("new.txt", "новый текст".encode())])
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            release.set()
+
+    uploader = threading.Thread(target=upload_new)
+    deleter = threading.Thread(target=delete_keep)
+    uploader.start()
+    try:
+        assert started.wait(5)
+        deleter.start()
+        assert began.wait(2)
+        # The upload still holds the inbox snapshot. The delete has to wait
+        # for that snapshot to be indexed, or the upload writes the file back.
+        assert not finished.wait(0.3)
+    finally:
+        release.set()
+    uploader.join(5)
+    deleter.join(5)
+    assert errors == []
+    assert not uploader.is_alive()
+    assert not deleter.is_alive()
+    assert indexed == {"new.txt"}
+    assert not (inbox / "keep.txt").exists()
+    assert (inbox / "new.txt").read_text(encoding="utf-8") == "новый текст"
+
+def test_upload_rejects_a_directory_and_restores_the_earlier_file(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "note.txt").write_text("старое значение", encoding="utf-8")
+    occupied = inbox / "slot.txt"
+    occupied.mkdir()
+    (occupied / "secret.txt").write_text("секрет", encoding="utf-8")
+    monkeypatch.setattr("api.INBOX", inbox)
+    cache = _token_count(monkeypatch)
+    called = []
+    monkeypatch.setattr("api.upsert_chunks", called.append)
+    response = TestClient(app).post(
+        "/upload",
+        files=[
+            ("files", ("note.txt", "новое значение".encode(), "text/plain")),
+            ("files", ("slot.txt", "внутрь".encode(), "text/plain")),
+        ],
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Некорректное имя файла"
+    assert called == []
+    assert (inbox / "note.txt").read_text(encoding="utf-8") == "старое значение"
+    assert occupied.is_dir()
+    assert (occupied / "secret.txt").read_text(encoding="utf-8") == "секрет"
+    cache.cache_clear()
+
+def test_ready_ignores_a_corrupt_load_time(tmp_path, monkeypatch):
+    previous = dict(api._state)
+    monkeypatch.setattr(api, "LOAD_TIME", tmp_path / "load_time.txt")
+    monkeypatch.setenv("LLM_MODEL_PATH", str(tmp_path / "missing.gguf"))
+    api._state["done"] = False
+    api._state["started"] = time.time() - 5
+    try:
+        (tmp_path / "load_time.txt").write_text("nope", encoding="utf-8")
+        assert TestClient(app).get("/ready").json()["eta_sec"] is None
+        (tmp_path / "load_time.txt").write_text("3", encoding="utf-8")
+        assert TestClient(app).get("/ready").json()["eta_sec"] == 0
+        (tmp_path / "load_time.txt").write_text("100000", encoding="utf-8")
+        assert TestClient(app).get("/ready").json()["eta_sec"] > 1000
+    finally:
+        api._state.clear()
+        api._state.update(previous)
+
+def test_rollback_continues_after_one_file_fails(tmp_path):
+    restored = tmp_path / "restored.txt"
+    restored.write_text("new", encoding="utf-8")
+
+    class Locked:
+        def unlink(self, missing_ok=True):
+            raise OSError("busy")
+
+        def write_bytes(self, _data):
+            raise AssertionError("locked file should be removed, not rewritten")
+
+    class Restored:
+        def unlink(self, missing_ok=True):
+            raise AssertionError("previous bytes should be written back")
+
+        def write_bytes(self, data):
+            restored.write_bytes(data)
+
+    api._rollback_upload([(Restored(), "старое".encode()), (Locked(), None)])
+    assert restored.read_text(encoding="utf-8") == "старое"
+
+def test_upload_keeps_the_file_when_indexing_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr("api.INBOX", tmp_path)
+    cache = _token_count(monkeypatch)
+
+    def boom(_chunks):
+        raise RuntimeError("index down")
+
+    monkeypatch.setattr("api.upsert_chunks", boom)
+    response = TestClient(app).post(
+        "/upload",
+        files=[("files", ("note.txt", "Цех имеет номер 4.".encode(), "text/plain"))],
+    )
+    assert response.status_code == 500
+    assert response.json()["detail"] == "index down"
+    assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "Цех имеет номер 4."
+    cache.cache_clear()
+
+def test_upload_restores_the_file_when_the_parser_is_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr("api.INBOX", tmp_path)
+    original = b"previous-docx"
+    (tmp_path / "note.docx").write_bytes(original)
+    (tmp_path / "keep.txt").write_text("Цех имеет номер 4.", encoding="utf-8")
+    called = []
+    monkeypatch.setattr("api.upsert_chunks", called.append)
+
+    def missing(_path):
+        raise ImportError("python-docx")
+
+    monkeypatch.setattr("ingest._docx_blocks", missing)
+    response = TestClient(app).post(
+        "/upload",
+        files=[("files", ("note.docx", b"new-docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))],
+    )
+    assert response.status_code == 500
+    assert called == []
+    assert (tmp_path / "note.docx").read_bytes() == original
+    assert (tmp_path / "keep.txt").read_text(encoding="utf-8") == "Цех имеет номер 4."

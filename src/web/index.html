@@ -964,6 +964,8 @@
     }
 
     async function loadUi(selectStored) {
+      // Сбой запроса не создаёт диалог и не затирает уже показанный список. Повтор через 2 с.
+      // Дерево с сервера не подменяет локальное, пока запись папки ещё не закончилась.
       try {
         const stamp = treeStamp;
         const response = await fetch("/ui", { signal: AbortSignal.timeout(8000) });

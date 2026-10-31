@@ -1,11 +1,18 @@
+"""Память диалога внутри процесса. На диске то же хранит workspace.
+
+Координатор видит последние 20 ходов. Имена документов хода берутся из
+document_names или, если их нет, из sources.
+"""
 _dialogs = {}
 
 
 def get_dialog(dialog_id):
+    """Копия ходов диалога. Чужой код может менять список, не трогая память."""
     return list(_dialogs.get(dialog_id, []))
 
 
 def add_turn(dialog_id, turn):
+    """Добавить ход и оставить только последние 20."""
     rows = _dialogs.setdefault(dialog_id, [])
     rows.append(turn)
     if len(rows) > 20:
@@ -13,6 +20,7 @@ def add_turn(dialog_id, turn):
 
 
 def set_dialog(dialog_id, turns):
+    """Заменить ходы последними 20. Имена документов читаются из хода или из sources."""
     rows = []
     for turn in list(turns or [])[-20:]:
         names = []
@@ -33,6 +41,7 @@ def set_dialog(dialog_id, turns):
 
 
 def drop_dialog(dialog_id):
+    """Забыть диалог в памяти процесса."""
     _dialogs.pop(dialog_id, None)
 
 
