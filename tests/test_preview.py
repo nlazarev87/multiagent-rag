@@ -404,6 +404,132 @@ def test_preview_ignores_a_stale_document_and_a_stale_tree_save():
     assert completed.stdout.strip() == "ok"
 
 
+LOAD_UI = r"""
+const fs = require("fs");
+const html = fs.readFileSync(process.env.TREE_HTML, "utf8");
+
+function extract(name) {
+  const token = "function " + name + "(";
+  let start = html.indexOf(token);
+  if (start < 0) throw new Error("missing " + name);
+  if (html.slice(start - 6, start) === "async ") start -= 6;
+  const brace = html.indexOf("{", start);
+  let depth = 0;
+  for (let i = brace; i < html.length; i++) {
+    if (html[i] === "{") depth += 1;
+    else if (html[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return html.slice(start, i + 1);
+    }
+  }
+  throw new Error("unclosed " + name);
+}
+
+if (!AbortSignal.timeout) AbortSignal.timeout = () => new AbortController().signal;
+
+let tree = { id: "root", name: "", children: [{ document_name: "kept.txt" }] };
+let treeStamp = 0;
+let treePending = false;
+let treeWriting = false;
+let dialogs = [{ id: "kept" }];
+let dialogId = "kept";
+let uiLoaded = true;
+const posts = [];
+const retries = [];
+const log = { replaced: false, replaceChildren() { this.replaced = true; } };
+const storage = new Map();
+global.sessionStorage = {
+  getItem(key) { return storage.has(key) ? storage.get(key) : null; },
+  setItem(key, value) { storage.set(key, String(value)); },
+};
+global.setTimeout = (_fn, delay) => { retries.push(delay); };
+function paintChats() {}
+function paintTree() {}
+async function selectDialog() {}
+eval(extract("loadUi"));
+
+function server(documentName, ids) {
+  return {
+    ok: true,
+    json: async () => ({
+      dialogs: ids.map((id) => ({ id })),
+      tree: { id: "root", name: "", children: [{ document_name: documentName }] },
+    }),
+  };
+}
+
+async function main() {
+  global.fetch = async (_url, options) => {
+    if (options && options.method === "POST") posts.push("create");
+    throw new Error("down");
+  };
+  await loadUi(false);
+  if (posts.length !== 0) throw new Error("a failed refresh created a dialog");
+  if (dialogs.map((row) => row.id).join(",") !== "kept") {
+    throw new Error("a failed refresh cleared the dialog list");
+  }
+  if (tree.children[0].document_name !== "kept.txt") throw new Error("a failed refresh cleared the tree");
+  if (log.replaced) throw new Error("a failed refresh replaced a list that was already shown");
+  if (retries[0] !== 2000) throw new Error("a failed refresh retried after " + retries[0]);
+
+  treeStamp = 3;
+  treePending = false;
+  treeWriting = false;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  global.fetch = () => gate;
+  const pending = loadUi(false);
+  treeStamp = 4;
+  tree = { id: "root", name: "", children: [{ document_name: "local.txt" }] };
+  release(server("server.txt", ["kept", "newer"]));
+  await pending;
+  if (tree.children[0].document_name !== "local.txt") {
+    throw new Error("a refresh that overlapped a local edit replaced the tree");
+  }
+  if (dialogs.map((row) => row.id).join(",") !== "kept,newer") {
+    throw new Error("the dialog list was not updated while the tree was kept");
+  }
+
+  treeWriting = true;
+  treePending = false;
+  treeStamp = 4;
+  tree = { id: "root", name: "", children: [{ document_name: "editing.txt" }] };
+  global.fetch = async () => server("server.txt", ["kept"]);
+  await loadUi(false);
+  if (tree.children[0].document_name !== "editing.txt") {
+    throw new Error("a refresh during a folder write replaced the tree");
+  }
+
+  treeWriting = false;
+  treePending = false;
+  treeStamp = 8;
+  tree = { id: "root", name: "", children: [{ document_name: "editing.txt" }] };
+  global.fetch = async () => server("server.txt", ["kept"]);
+  await loadUi(false);
+  if (tree.children[0].document_name !== "server.txt") {
+    throw new Error("a quiet refresh did not take the server tree");
+  }
+  console.log("ok");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+"""
+
+
+def test_load_ui_keeps_the_shown_tree_when_refresh_fails_or_overlaps_an_edit():
+    completed = subprocess.run(
+        [NODE, "-e", LOAD_UI],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "TREE_HTML": str(HTML)},
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "ok"
+
 PAGE = r"""
 const fs = require("fs");
 const html = fs.readFileSync(process.env.TREE_HTML, "utf8");
