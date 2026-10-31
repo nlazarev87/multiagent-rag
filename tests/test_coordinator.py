@@ -531,6 +531,18 @@ def test_catalog_skips_a_negated_or_prefixed_load_and_accepts_yo(monkeypatch):
     assert listed["sources"] == []
 
 
+def test_catalog_short_skip_matches_only_the_whole_token(monkeypatch):
+    rules = dict(coordinator.routing())
+    rules["catalog_skip"] = ["api"]
+    monkeypatch.setattr(coordinator, "routing", lambda: rules)
+    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["api.txt", "apis.txt", "заметка.txt"])
+    exact = coordinator.run("Какие api загружены в систему?", "short-skip")
+    assert exact["status"] == agents.CONFIRMED
+    assert exact["answer"] == "api.txt, apis.txt, заметка.txt"
+    longer = coordinator.run("Какие apis загружены в систему?", "longer-code")
+    assert longer["answer"] == "apis.txt"
+
 def test_finish_drops_only_the_invalid_number_in_a_citation(monkeypatch):
     order = []
     _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
