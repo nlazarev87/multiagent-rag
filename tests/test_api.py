@@ -12,6 +12,10 @@ from api import app
 SOURCE = {"number": 1, "document_name": "pump.md", "section": ""}
 
 
+def _answer_row():
+    return {"answer": "ответ", "sources": [], "document_names": ["note.txt"]}
+
+
 @pytest.fixture(autouse=True)
 def ui_store(tmp_path, monkeypatch):
     monkeypatch.setattr("workspace.PATH", tmp_path / "workspace.json")
@@ -791,3 +795,73 @@ def test_upload_keeps_the_name_inside_inbox(tmp_path, monkeypatch):
     assert (inbox / "outside.txt").read_text(encoding="utf-8") == "Секретный текст."
     assert (inbox / "secret.txt").read_text(encoding="utf-8") == "Второй текст."
     assert saved == ["outside.txt", "secret.txt"]
+
+def test_rating_patch_keeps_unsent_scores(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    workspace.append_turn(created["id"], "номер", {
+        "answer": "4",
+        "sources": [{"document_name": "note.txt"}],
+        "document_names": ["note.txt"],
+    })
+    first = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_complete": 4, "links": {"1": 3}, "documents": {"note.txt": 2}},
+    )
+    assert first.status_code == 200
+    second = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_correct": 5},
+    )
+    ratings = second.json()["ratings"]
+    assert ratings["answer_complete"] == 4
+    assert ratings["answer_correct"] == 5
+    assert ratings["links"]["1"] == 3
+    assert ratings["documents"]["note.txt"] == 2
+    cleared = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_complete": 9},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["ratings"]["answer_complete"] is None
+    assert cleared.json()["ratings"]["answer_correct"] == 5
+    assert client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/3/ratings",
+        json={"answer_complete": 1},
+    ).status_code == 404
+    assert client.patch(
+        "/ui/dialogs/missing/turns/0/ratings",
+        json={"answer_complete": 1},
+    ).status_code == 404
+    assert client.get("/ui/dialogs/missing").status_code == 404
+
+def test_delete_document_drops_tree_node_and_keeps_dialog(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    names = ["note.txt", "keep.txt"]
+    monkeypatch.setattr("api.INBOX", inbox)
+    monkeypatch.setattr("api.delete_document", lambda name: names.remove(name) if name in names else None)
+    monkeypatch.setattr("api.list_documents", lambda: list(names))
+    (inbox / "note.txt").write_text("текст", encoding="utf-8")
+    (inbox / "keep.txt").write_text("остаётся", encoding="utf-8")
+    client = TestClient(app)
+    client.put("/ui", json={"tree": {
+        "id": "root",
+        "name": "",
+        "children": [
+            {"id": "folder", "name": "Папка", "children": [{"document_name": "note.txt"}]},
+            {"document_name": "keep.txt"},
+        ],
+    }})
+    created = client.post("/ui/dialogs").json()
+    workspace.append_turn(created["id"], "вопрос", _answer_row())
+    response = client.delete("/documents/note.txt")
+    assert response.status_code == 200
+    assert response.json()["documents"] == ["keep.txt"]
+    assert workspace.iter_files(response.json()["tree"]) == ["keep.txt"]
+    assert response.json()["tree"]["children"][0]["name"] == "Папка"
+    saved = workspace.load()
+    assert saved["dialogs"][0]["turns"][0]["answer"] == "ответ"
+    assert not (inbox / "note.txt").exists()
+    assert (inbox / "keep.txt").read_text(encoding="utf-8") == "остаётся"

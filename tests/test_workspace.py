@@ -1344,3 +1344,113 @@ def test_get_dialog_row_keeps_the_last_twenty_turns(tmp_path, monkeypatch):
     assert [turn["query"] for turn in dialog.get_dialog(row["id"])] == [str(number) for number in range(5, 25)]
     assert len(workspace.load()["dialogs"][0]["turns"]) == 25
     assert workspace.get_dialog_row("missing") is None
+
+def test_ratings_reject_bad_scores_and_path_keys(tmp_path, monkeypatch):
+    path = tmp_path / "workspace.json"
+    monkeypatch.setattr(workspace, "PATH", path)
+    row = workspace.create_dialog()
+    workspace.append_turn(row["id"], "вопрос", _answer("ответ"))
+    turn = workspace.patch_ratings(row["id"], 0, {
+        "answer_complete": 4,
+        "answer_correct": "5",
+        "links": {"1": 3},
+        "documents": {"dir/note.txt": 2, "other.txt": 9, "../keep.txt": 1},
+    })
+    assert turn["answer"] == "ответ"
+    assert turn["ratings"] == {
+        "answer_complete": 4,
+        "answer_correct": 5,
+        "links": {"1": 3},
+        "documents": {"note.txt": 2, "other.txt": None, "keep.txt": 1},
+    }
+    again = workspace.patch_ratings(row["id"], 0, {"answer_correct": 1, "links": "нет"})
+    assert again["ratings"]["answer_complete"] == 4
+    assert again["ratings"]["answer_correct"] == 1
+    assert again["ratings"]["links"] == {"1": 3}
+    assert again["ratings"]["documents"]["note.txt"] == 2
+    cleared = workspace.patch_ratings(row["id"], 0, {"answer_complete": "нет"})
+    assert cleared["ratings"]["answer_complete"] is None
+    assert cleared["ratings"]["answer_correct"] == 1
+    before = path.read_bytes()
+    assert workspace.patch_ratings(row["id"], -1, {"answer_complete": 5}) is None
+    assert workspace.patch_ratings(row["id"], 2, {"answer_complete": 5}) is None
+    assert workspace.patch_ratings("missing", 0, {"answer_complete": 5}) is None
+    assert path.read_bytes() == before
+
+def test_tree_keeps_known_basenames_and_stops_repeated_folders(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    row = workspace.create_dialog()
+    workspace.append_turn(row["id"], "вопрос", _answer("ответ"))
+    saved = workspace.put_tree({
+        "id": "root",
+        "name": "",
+        "children": [
+            {
+                "id": "a",
+                "name": "",
+                "children": [
+                    {"id": "a", "name": "снова", "children": [{"document_name": "nested/note.txt"}]},
+                    {"document_name": "keep.txt"},
+                ],
+            },
+            "skip",
+            {"document_name": "../other.txt"},
+            {"document_name": "dir/secret.txt"},
+            {"id": "long", "name": "я" * 90, "children": []},
+        ],
+    }, ["note.txt", "keep.txt", "other.txt"])
+    children = saved["tree"]["children"]
+    assert children[0]["name"] == "Папка"
+    assert children[0]["children"] == [{"document_name": "keep.txt"}]
+    assert children[1] == {"document_name": "other.txt"}
+    assert children[2]["name"] == "я" * 80
+    assert children[2]["children"] == []
+    assert children[3] == {"document_name": "note.txt"}
+    assert workspace.iter_files(saved["tree"]) == ["keep.txt", "other.txt", "note.txt"]
+    assert saved["dialogs"][0]["turns"][0]["answer"] == "ответ"
+    assert workspace.sanitize_tree(["no"], {"note.txt"}) == {"id": "root", "name": "", "children": []}
+
+def test_failed_replace_keeps_the_previous_workspace(tmp_path, monkeypatch):
+    path = tmp_path / "workspace.json"
+    monkeypatch.setattr(workspace, "PATH", path)
+    row = workspace.create_dialog()
+    workspace.append_turn(row["id"], "вопрос", _answer("ответ"))
+    original = path.read_bytes()
+
+    def fail_replace(self, target):
+        raise OSError("нет места")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+    with pytest.raises(OSError, match="нет места"):
+        workspace.append_turn(row["id"], "ещё", _answer("потеря"))
+    assert path.read_bytes() == original
+    assert list(tmp_path.glob(".workspace.json.*.tmp")) == []
+
+def test_delete_dialog_keeps_the_other_dialog(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    dialog.reset()
+    first = workspace.create_dialog()
+    second = workspace.create_dialog()
+    workspace.append_turn(first["id"], "первый", _answer("один"))
+    workspace.append_turn(second["id"], "второй", _answer("два"))
+    dialog.reset()
+    workspace.prepare_dialog(first["id"])
+    workspace.prepare_dialog(second["id"])
+    workspace.delete_dialog(first["id"])
+    assert dialog.get_dialog(first["id"]) == []
+    assert [turn["query"] for turn in dialog.get_dialog(second["id"])] == ["второй"]
+    assert workspace.prepare_dialog(first["id"]) is None
+    saved = workspace.load()["dialogs"]
+    assert [item["id"] for item in saved] == [second["id"]]
+    assert saved[0]["turns"][0]["answer"] == "два"
+
+def test_prepare_dialog_loads_only_the_latest_twenty_turns(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    dialog.reset()
+    row = workspace.create_dialog()
+    for index in range(21):
+        workspace.append_turn(row["id"], str(index), _answer("a"))
+    dialog.reset()
+    loaded = workspace.get_dialog_row(row["id"])
+    assert [turn["query"] for turn in loaded["turns"]] == [str(index) for index in range(21)]
+    assert [turn["query"] for turn in dialog.get_dialog(row["id"])] == [str(index) for index in range(1, 21)]
