@@ -5,8 +5,8 @@ import store
 def test_search_agent_calls_store_every_time(monkeypatch):
     seen = []
 
-    def fake(query, limit, document_names=None):
-        seen.append((query, limit, document_names))
+    def fake(query, limit):
+        seen.append((query, limit))
         return [{"text": query, "document_name": "a.txt", "chunk_index": 0}]
 
     monkeypatch.setattr(agents, "search_chunks", fake)
