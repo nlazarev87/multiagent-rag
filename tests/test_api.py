@@ -338,6 +338,32 @@ def test_ui_tree_drops_unknown_files(monkeypatch):
     assert "missing.txt" not in names
 
 
+def test_tree_keeps_inbox_file_missing_from_the_index(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "note.txt").write_text("текст", encoding="utf-8")
+    monkeypatch.setattr("api.INBOX", inbox)
+    monkeypatch.setattr("api.list_documents", lambda: [])
+    client = TestClient(app)
+    tree = {
+        "id": "root",
+        "name": "",
+        "children": [
+            {"id": "folder", "name": "Папка", "children": [
+                {"document_name": "note.txt"},
+                {"document_name": "gone.txt"},
+            ]},
+        ],
+    }
+    saved = client.put("/ui", json={"tree": tree}).json()["tree"]
+    assert saved["children"][0]["name"] == "Папка"
+    assert saved["children"][0]["children"] == [{"document_name": "note.txt"}]
+    listed = client.get("/ui").json()["tree"]
+    assert listed["children"][0]["children"] == [{"document_name": "note.txt"}]
+    stored = workspace.load()["tree"]
+    assert stored["children"][0]["children"] == [{"document_name": "note.txt"}]
+
+
 def test_query_reloads_saved_history_after_memory_is_cleared(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
     seen = []

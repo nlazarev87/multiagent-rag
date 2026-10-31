@@ -188,11 +188,21 @@ def ensure_files(tree, names):
     return tree
 
 
-def snapshot(known=None):
+def _catalog(tree, known, keep):
+    # A reindex deletes a document from the search catalog before it is added
+    # back. The file is still in the inbox. Dropping it here pulls it out of
+    # its folder; the next refresh can only put it back at the root.
+    names = set(known or [])
+    if keep:
+        names.update(set(iter_files(tree)) & set(keep))
+    return names
+
+
+def snapshot(known=None, keep=None):
     with _lock:
         data = _read()
         names = list(known or [])
-        data["tree"] = ensure_files(sanitize_tree(data["tree"], set(names)), names)
+        data["tree"] = ensure_files(sanitize_tree(data["tree"], _catalog(data["tree"], names, keep)), names)
         if not data["dialogs"]:
             data["dialogs"].append(_blank())
             _write(data)
@@ -257,26 +267,27 @@ def prepare_dialog(dialog_id):
     return row
 
 
-def put_tree(tree, known):
+def put_tree(tree, known, keep=None):
     with _lock:
         data = _read()
-        names = set(known or [])
-        data["tree"] = ensure_files(sanitize_tree(tree, names), names)
+        names = list(known or [])
+        data["tree"] = ensure_files(sanitize_tree(tree, _catalog(tree, names, keep)), names)
         _write(data)
         return data
 
 
-def forget_file(name, known):
+def forget_file(name, known, keep=None):
     with _lock:
         data = _read()
         data["tree"] = drop_file(data["tree"], name)
         _write(data)
         names = list(known or [])
-        data["tree"] = ensure_files(sanitize_tree(data["tree"], set(names)), names)
+        shown = ensure_files(sanitize_tree(data["tree"], _catalog(data["tree"], names, keep)), names)
         if not data["dialogs"]:
             data["dialogs"].append(_blank())
+            data["tree"] = shown
             _write(data)
-        return data["tree"]
+        return shown
 
 
 def append_turn(dialog_id, query, result, *, create=True):
