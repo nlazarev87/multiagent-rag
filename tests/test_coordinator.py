@@ -112,10 +112,36 @@ def test_catalog_keeps_only_names_mentioned_in_the_question(monkeypatch):
     assert result["sources"] == []
 
 
+def test_catalog_keeps_every_file_when_the_question_only_says_documents(monkeypatch):
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["Документ.docx", "Паспорт насоса.docx"])
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    result = coordinator.run("Какие документы загружены в систему?", "all-docs")
+    assert result["status"] == agents.CONFIRMED
+    assert result["answer"] == "Документ.docx, Паспорт насоса.docx"
+
+
+def test_catalog_still_narrows_to_a_named_kind_of_file(monkeypatch):
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["Паспорт насоса.docx", "Документ.docx"])
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    result = coordinator.run("Какие паспорта загружены в систему?", "passports")
+    assert result["answer"] == "Паспорт насоса.docx"
+
+
 def test_plain_document_question_is_not_a_catalog(monkeypatch):
     order = []
     _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
     coordinator.run("Какие виды испытаний и какие документы должны оформляться?", "docs")
+    assert order[0] == "select"
+
+
+def test_system_fact_is_not_answered_with_the_file_list(monkeypatch):
+    order = []
+    _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+    coordinator.run("Какое давление в системе охлаждения?", "pressure")
+    assert order[0] == "select"
+    order.clear()
+    _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+    coordinator.run("Какой модуль загружен в память?", "loaded")
     assert order[0] == "select"
 
 
