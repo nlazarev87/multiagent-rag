@@ -386,3 +386,17 @@ def test_numbered_line_becomes_section(tmp_path):
     assert chunks[0]["section"] == "3 Перечень испытаний"
     assert "Опытная эксплуатация" in chunks[0]["text"]
     assert all(chunk["section"] != "2.1. В разделе Введение указывают наименование программы и объекта, в котором используют программу." for chunk in chunks)
+
+def test_docx_does_not_join_a_capitalized_line(tmp_path):
+    from ingest import _docx_blocks
+
+    document = Document()
+    document.add_paragraph("Требования к содержанию доку-")
+    document.add_paragraph("Мента приведены отдельно.")
+    path = tmp_path / "split.docx"
+    document.save(path)
+    texts = [block["text"] for block in _docx_blocks(path)]
+    assert texts == [
+        "Требования к содержанию доку-",
+        "Мента приведены отдельно.",
+    ]

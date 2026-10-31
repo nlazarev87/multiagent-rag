@@ -560,3 +560,52 @@ def test_query_failure_does_not_save_a_turn(monkeypatch):
     assert response.status_code == 500
     assert response.json()["detail"] == "model down"
     assert workspace.get_dialog_row(created["id"])["turns"] == []
+
+def test_ratings_reject_out_of_range_and_missing_turns(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
+    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+        "answer": "Цех имеет номер 4 [1].",
+        "status": "подтверждён",
+        "document_names": ["note.txt"],
+        "sources": [SOURCE],
+    })
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    assert client.post("/query", json={"query": "номер", "dialog_id": created["id"]}).status_code == 200
+    ok = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_correct": 5, "links": {"1": 4}},
+    )
+    assert ok.status_code == 200
+    bad = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_complete": 9, "links": {"2": 6}, "documents": {"../note.txt": 3}},
+    )
+    assert bad.status_code == 200
+    ratings = bad.json()["ratings"]
+    assert ratings["answer_complete"] is None
+    assert ratings["answer_correct"] == 5
+    assert ratings["links"] == {"1": 4, "2": None}
+    assert ratings["documents"] == {"note.txt": 3}
+    missing = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/2/ratings",
+        json={"answer_complete": 1},
+    )
+    assert missing.status_code == 404
+    unknown = client.patch("/ui/dialogs/missing/turns/0/ratings", json={"answer_complete": 1})
+    assert unknown.status_code == 404
+
+def test_upload_strips_directory_from_filename(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setattr("api.INBOX", inbox)
+    monkeypatch.setattr("api.ingest_dir", lambda folder: [])
+    monkeypatch.setattr("api.upsert_chunks", lambda chunks: None)
+    monkeypatch.setattr("api.list_documents", lambda: ["outside.txt"])
+    response = TestClient(app).post(
+        "/upload",
+        files=[("files", ("../outside.txt", "чужой файл", "text/plain"))],
+    )
+    assert response.status_code == 200
+    assert (inbox / "outside.txt").read_text(encoding="utf-8") == "чужой файл"
+    assert not (tmp_path / "outside.txt").exists()

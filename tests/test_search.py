@@ -23,3 +23,20 @@ def test_scope_follows_filename_stems():
 def test_scope_follows_a_sign_inside_the_file():
     index = {"vocabulary": {"note.txt": {"npp", "exs"}, "other.txt": {"поток"}}}
     assert store.scope(index, "Сколько потоков между NPP ExS") == ["note.txt"]
+
+def test_search_agent_passes_document_names(monkeypatch):
+    seen = []
+
+    def fake(*args):
+        seen.append(args)
+        return []
+
+    monkeypatch.setattr(agents, "search_chunks", fake)
+    agents.search_agent("она", ["charter.txt"])
+    agents.search_agent("номер", [])
+    agents.search_agent("номер")
+    assert seen == [
+        ("она", 4, ["charter.txt"]),
+        ("номер", 4),
+        ("номер", 4),
+    ]
