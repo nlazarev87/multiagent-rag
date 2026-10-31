@@ -103,6 +103,47 @@ def test_search_finds_exact_code(tmp_path, monkeypatch):
     assert any("X_9.2" in chunk["text"] for chunk in found)
 
 
+def test_scope_keeps_search_open_on_a_tie_or_unknown_name():
+    index = {"vocabulary": {"a.txt": {"альфа", "протокол"}, "b.txt": {"бета", "протокол"}}}
+    assert store.scope(index, "Какой протокол у АЛЬФА?") == ["a.txt"]
+    assert store.scope(index, "Какой протокол у АЛЬФА и БЕТА?") is None
+    assert store.scope(index, "Какой протокол у ГАММА?") is None
+    assert store.scope({"vocabulary": {"only.txt": {"альфа"}}}, "АЛЬФА") is None
+
+
+def test_scope_matches_a_numbered_filename_without_a_longer_prefix():
+    index = {
+        "vocabulary": {
+            "STD_1.2-99.txt": set(),
+            "STD_1.20-99.txt": set(),
+            "STD_1.3-99.txt": set(),
+        }
+    }
+    assert store.scope(index, "пункт 1.2") == ["STD_1.2-99.txt"]
+    assert store.scope(index, "Что указано в STD?") is None
+    assert store.scope(index, "Что указано в 1.2 и 1.3?") == ["STD_1.2-99.txt", "STD_1.3-99.txt"]
+    pair = {"vocabulary": {"STD_1.2-99.txt": set(), "STD_1.3-99.txt": set()}}
+    assert store.scope(pair, "Что указано в 1.2 и 1.3?") is None
+
+
+def test_explicit_document_names_override_the_query_scope(tmp_path, monkeypatch):
+    _fresh(tmp_path, monkeypatch)
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
+
+    def chunk(text, name):
+        return {"text": text, "document_name": name, "chunk_index": 0, "checksum": name, "section": ""}
+
+    store.upsert_chunks([
+        chunk("Система АЛЬФА передаёт данные по протоколу HTTP.", "a.txt"),
+        chunk("Система БЕТА передаёт данные по протоколу FTP.", "b.txt"),
+    ])
+    forced = store.search_chunks("По какому протоколу передаёт данные БЕТА?", document_names=["a.txt"])
+    assert forced
+    assert {chunk["document_name"] for chunk in forced} == {"a.txt"}
+    fallback = store.search_chunks("По какому протоколу передаёт данные БЕТА?", document_names=["gone.txt"])
+    assert {chunk["document_name"] for chunk in fallback} == {"b.txt"}
+
+
 def test_table_row_comes_with_its_table(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     folder = tmp_path / "docs"
