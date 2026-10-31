@@ -67,10 +67,37 @@ def _word_tokens(word):
     return max(1, count_tokens(word))
 
 
-def _text(cell):
-    if cell is None:
-        return ""
-    return " ".join(cell.text.split())
+def _text(cell, depth=0):
+    # cell.text is the paragraphs only. A table nested in the cell is the value
+    # Word shows there; leaving it out stores the row with an empty cell.
+    if cell is None or depth >= 4 or not getattr(cell, "tables", None):
+        return "" if cell is None else " ".join(cell.text.split())
+    from docx.table import Table
+
+    parts = []
+    for block in cell.iter_inner_content():
+        if isinstance(block, Table):
+            parts.extend(_nested_lines(block, depth + 1))
+            continue
+        text = " ".join(block.text.split())
+        if text:
+            parts.append(text)
+    return " ".join(parts)
+
+
+def _nested_lines(table, depth):
+    nested = _table_block(table, "", depth)
+    if not nested:
+        return []
+    if nested["kind"] == "p":
+        return [nested["text"]] if nested.get("text") else []
+    keyvalue = nested.get("width") == 2 and len(nested["labels"]) == 2
+    lines = []
+    for pairs in nested["rows"]:
+        line = _row_line(pairs, keyvalue)
+        if line:
+            lines.append(line)
+    return lines
 
 
 def _same_cell(left, right):
@@ -132,19 +159,19 @@ def _subheader(top, low):
     return spans and tied
 
 
-def _table_block(table, caption):
+def _table_block(table, caption, depth=0):
     grid = [_aligned_row(row) for row in table.rows]
     width = max((len(row) for row in grid), default=0)
     grid = [row + [None] * (width - len(row)) for row in grid]
-    grid = [row for row in grid if any(_text(cell) for cell in row)]
+    grid = [row for row in grid if any(_text(cell, depth) for cell in row)]
     if len(grid) < 2:
-        text = " ".join(_text(cell) for row in grid for cell in row)
+        text = " ".join(_text(cell, depth) for row in grid for cell in row)
         return {"kind": "p", "text": text} if text else None
-    labels = [_text(cell) for cell in grid[0]]
+    labels = [_text(cell, depth) for cell in grid[0]]
     start = 1
     if len(grid) > 2 and _subheader(grid[0], grid[1]):
         labels = [
-            top if _same_cell(upper, lower) or not _text(lower) else f"{top} / {_text(lower)}"
+            top if _same_cell(upper, lower) or not _text(lower, depth) else f"{top} / {_text(lower, depth)}"
             for top, upper, lower in zip(labels, grid[0], grid[1])
         ]
         start = 2
@@ -156,7 +183,7 @@ def _table_block(table, caption):
             if cell is None or cell._tc is last:
                 continue
             last = cell._tc
-            value = _text(cell)
+            value = _text(cell, depth)
             if pairs and pairs[-1][0] == label:
                 if value:
                     pairs[-1] = (label, f"{pairs[-1][1]}; {value}" if pairs[-1][1] else value)
