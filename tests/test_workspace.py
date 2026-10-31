@@ -85,6 +85,32 @@ def test_forget_file_keeps_the_dialog(tmp_path, monkeypatch):
     assert saved["tree"]["children"][0]["name"] == "Папка"
 
 
+def test_dialog_memory_keeps_the_last_twenty_saved_turns(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    dialog.reset()
+    created = workspace.create_dialog()
+    for index in range(25):
+        workspace.append_turn(created["id"], f"вопрос {index}", {
+            "answer": f"ответ {index}",
+            "sources": [{"document_name": "note.txt"}],
+            "document_names": ["note.txt"],
+        })
+    dialog.reset()
+    prepared = workspace.prepare_dialog(created["id"])
+    assert [turn["query"] for turn in prepared["turns"]] == [f"вопрос {index}" for index in range(25)]
+    assert [turn["query"] for turn in dialog.get_dialog(created["id"])] == [f"вопрос {index}" for index in range(5, 25)]
+    assert dialog.get_dialog(created["id"])[0]["document_names"] == ["note.txt"]
+    dialog.set_dialog("missing", [{"query": "секрет", "answer": "a", "document_names": ["note.txt"]}])
+    assert workspace.prepare_dialog("missing") is None
+    assert dialog.get_dialog("missing") == []
+    dialog.reset()
+    loaded = workspace.get_dialog_row(created["id"])
+    assert len(loaded["turns"]) == 25
+    assert [turn["query"] for turn in dialog.get_dialog(created["id"])] == [f"вопрос {index}" for index in range(5, 25)]
+    assert workspace.get_dialog_row("missing") is None
+    assert all(item["id"] != "missing" for item in workspace.load()["dialogs"])
+
+
 def test_append_does_not_recreate_a_deleted_dialog(tmp_path, monkeypatch):
     monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
     row = workspace.create_dialog()
