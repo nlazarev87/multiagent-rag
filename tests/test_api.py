@@ -676,3 +676,56 @@ def test_query_after_delete_does_not_reuse_the_answer_memory(monkeypatch):
     assert seen == [["первый"], []]
     saved = workspace.load()["dialogs"]
     assert [turn.get("query") for row in saved for turn in row.get("turns") or []] == ["второй"]
+
+def test_ratings_drop_out_of_range_scores_and_path_keys(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
+    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+        "answer": "Цех имеет номер 4 [1].",
+        "status": "подтверждён",
+        "document_names": ["note.txt"],
+        "sources": [SOURCE],
+    })
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    assert client.post("/query", json={"query": "номер", "dialog_id": created["id"]}).status_code == 200
+    saved = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_complete": 4, "answer_correct": 5, "links": {"1": 3}},
+    )
+    assert saved.status_code == 200
+    updated = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_complete": 9, "documents": {"../../note.txt": 2, "other.txt": 0}},
+    )
+    assert updated.status_code == 200
+    ratings = updated.json()["ratings"]
+    assert ratings["answer_complete"] is None
+    assert ratings["answer_correct"] == 5
+    assert ratings["links"]["1"] == 3
+    assert ratings["documents"] == {"note.txt": 2, "other.txt": None}
+
+def test_upload_keeps_the_file_inside_the_inbox(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    monkeypatch.setattr("api.INBOX", inbox)
+    monkeypatch.setattr("api.ingest_dir", lambda folder: [])
+    monkeypatch.setattr("api.upsert_chunks", lambda chunks: None)
+    monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
+    outside = tmp_path / "note.txt"
+    outside.write_text("чужой файл", encoding="utf-8")
+    response = TestClient(app).post(
+        "/upload",
+        files=[("files", ("../note.txt", "Цех имеет номер 4.", "text/plain"))],
+    )
+    assert response.status_code == 200
+    assert (inbox / "note.txt").read_text(encoding="utf-8") == "Цех имеет номер 4."
+    assert outside.read_text(encoding="utf-8") == "чужой файл"
+    assert {path.resolve() for path in tmp_path.rglob("note.txt")} == {
+        outside.resolve(),
+        (inbox / "note.txt").resolve(),
+    }
+
+def test_ready_waits_until_the_model_file_is_present(tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_MODEL_PATH", str(tmp_path / "missing.gguf"))
+    response = TestClient(app).get("/ready")
+    assert response.status_code == 503
+    assert isinstance(response.json()["elapsed_sec"], int)

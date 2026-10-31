@@ -290,3 +290,39 @@ def test_run_limits_follow_up_search_to_previous_documents(monkeypatch):
     history[0] = {**history[0], "document_names": ["charter.txt"]}
     coordinator.run("Какое давление у насоса?", "d6")
     assert seen == [None]
+
+def _watch_search(monkeypatch, work):
+    seen = []
+    monkeypatch.setattr(coordinator, "get_dialog", lambda _id: work)
+    monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: work)
+    monkeypatch.setattr(coordinator, "clarify_agent", lambda *_args: "ясный")
+
+    def search(clear, names=None):
+        seen.append((clear, names))
+        return [CHUNK]
+
+    monkeypatch.setattr(coordinator, "search_agent", search)
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Цех имеет номер 4 [1].")
+    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    return seen
+
+def test_run_limits_a_follow_up_to_the_previous_document(monkeypatch):
+    turn = {"query": "Какой номер у цеха?", "answer": "4", "document_names": ["charter.txt"]}
+    seen = _watch_search(monkeypatch, [turn])
+    coordinator.run("Сколько она длится?", "d-follow")
+    assert seen == [("ясный", ["charter.txt"])]
+    turn["document_names"] = []
+    coordinator.run("Сколько она длится?", "d-follow")
+    assert seen[-1] == ("ясный", None)
+
+def test_run_searches_every_document_for_a_new_question(monkeypatch):
+    turn = {"query": "Какой номер у цеха?", "answer": "4", "document_names": ["charter.txt"]}
+    seen = _watch_search(monkeypatch, [turn])
+    coordinator.run("Какое давление у насоса?", "d-new")
+    assert seen == [("ясный", None)]
+
+def test_run_does_not_scope_a_follow_up_without_history(monkeypatch):
+    seen = _watch_search(monkeypatch, [])
+    coordinator.run("Сколько она длится?", "d-empty")
+    assert seen == [("ясный", None)]
