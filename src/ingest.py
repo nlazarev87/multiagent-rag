@@ -10,7 +10,7 @@ from pathlib import Path
 from settings import runtime
 
 SUFFIXES = {".txt", ".md", ".doc", ".docx"}
-VERSION = 2
+VERSION = 3
 TOKENS = 250
 OVERLAP = 40
 INTRO = 120
@@ -40,6 +40,7 @@ _bind_runtime()
 
 MODEL = Path(os.environ.get("EMBED_PATH", Path(__file__).resolve().parents[1] / "data" / "models" / "multilingual-e5-small"))
 _HEADING = re.compile(r"^(heading|заголовок)\s*(\d)", re.IGNORECASE)
+_NUMBERED_HEAD = re.compile(r"^(\d+(?:\.\d+)*)\s+(\S.*)$")
 _TOC = re.compile(r"^(toc|оглавление)\s*\d", re.IGNORECASE)
 _tokenizer = None
 
@@ -66,8 +67,49 @@ def _word_tokens(word):
     return max(1, count_tokens(word))
 
 
-def _text(cell):
-    return " ".join(cell.text.split())
+def _text(cell, depth=0):
+    # cell.text is the paragraphs only. A table nested in the cell is the value
+    # Word shows there; leaving it out stores the row with an empty cell.
+    if cell is None or depth >= 4 or not getattr(cell, "tables", None):
+        return "" if cell is None else " ".join(cell.text.split())
+    from docx.table import Table
+
+    parts = []
+    for block in cell.iter_inner_content():
+        if isinstance(block, Table):
+            parts.extend(_nested_lines(block, depth + 1))
+            continue
+        text = " ".join(block.text.split())
+        if text:
+            parts.append(text)
+    return " ".join(parts)
+
+
+def _nested_lines(table, depth):
+    nested = _table_block(table, "", depth)
+    if not nested:
+        return []
+    if nested["kind"] == "p":
+        return [nested["text"]] if nested.get("text") else []
+    keyvalue = nested.get("width") == 2 and len(nested["labels"]) == 2
+    lines = []
+    for pairs in nested["rows"]:
+        line = _row_line(pairs, keyvalue)
+        if line:
+            lines.append(line)
+    return lines
+
+
+def _same_cell(left, right):
+    return left is not None and right is not None and left._tc is right._tc
+
+
+def _aligned_row(row):
+    # A row that starts or ends in a later column simply omits those cells.
+    # Reading only the cells that are present slides each value under the
+    # previous header, so the minimum is stored as the name of the row.
+    cells = list(row.cells)
+    return [None] * row.grid_cols_before + cells + [None] * row.grid_cols_after
 
 
 def _style_names(style):
@@ -76,6 +118,18 @@ def _style_names(style):
         names.append(style.name or "")
         style = style.base_style
     return names
+
+
+def _numbered_heading(text):
+    match = _NUMBERED_HEAD.match(text or "")
+    if not match:
+        return 0
+    title = match.group(2).strip()
+    if len(title) > 80 or title.count(" ") > 7 or title.endswith(".") or ". " in title:
+        return 0
+    if not title[:1].isupper():
+        return 0
+    return min(6, match.group(1).count(".") + 1)
 
 
 def _outline(element):
@@ -100,22 +154,24 @@ def _heading_level(paragraph):
 
 
 def _subheader(top, low):
-    spans = any(left._tc is right._tc for left, right in zip(top, top[1:]))
-    tied = any(upper._tc is lower._tc for upper, lower in zip(top, low))
+    spans = any(_same_cell(left, right) for left, right in zip(top, top[1:]))
+    tied = any(_same_cell(upper, lower) for upper, lower in zip(top, low))
     return spans and tied
 
 
-def _table_block(table, caption):
-    grid = [list(row.cells) for row in table.rows]
-    grid = [row for row in grid if any(_text(cell) for cell in row)]
+def _table_block(table, caption, depth=0):
+    grid = [_aligned_row(row) for row in table.rows]
+    width = max((len(row) for row in grid), default=0)
+    grid = [row + [None] * (width - len(row)) for row in grid]
+    grid = [row for row in grid if any(_text(cell, depth) for cell in row)]
     if len(grid) < 2:
-        text = " ".join(_text(cell) for row in grid for cell in row)
+        text = " ".join(_text(cell, depth) for row in grid for cell in row)
         return {"kind": "p", "text": text} if text else None
-    labels = [_text(cell) for cell in grid[0]]
+    labels = [_text(cell, depth) for cell in grid[0]]
     start = 1
     if len(grid) > 2 and _subheader(grid[0], grid[1]):
         labels = [
-            top if upper._tc is lower._tc or not _text(lower) else f"{top} / {_text(lower)}"
+            top if _same_cell(upper, lower) or not _text(lower, depth) else f"{top} / {_text(lower, depth)}"
             for top, upper, lower in zip(labels, grid[0], grid[1])
         ]
         start = 2
@@ -124,10 +180,10 @@ def _table_block(table, caption):
         pairs = []
         last = None
         for label, cell in zip(labels, row):
-            if cell._tc is last:
+            if cell is None or cell._tc is last:
                 continue
             last = cell._tc
-            value = _text(cell)
+            value = _text(cell, depth)
             if pairs and pairs[-1][0] == label:
                 if value:
                     pairs[-1] = (label, f"{pairs[-1][1]}; {value}" if pairs[-1][1] else value)
@@ -142,10 +198,52 @@ def _table_block(table, caption):
     return {"kind": "table", "caption": caption, "labels": names, "width": len(labels), "rows": rows}
 
 
+_WML = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+# Revisions and content controls wrap the text Word shows. python-docx reads only
+# a direct paragraph or a direct run, so an inserted value or a form field is
+# skipped and the index keeps the old text or an empty cell.
+_WORD_PARENTS = {
+    "body", "p", "hyperlink", "sdtContent", "tc", "tbl", "tr",
+    "smartTag", "ins", "moveTo", "txbxContent", "customXml",
+}
+
+
+def _word_name(tag):
+    return tag.rsplit("}", 1)[-1]
+
+
+def _unwrap_word_wrappers(root):
+    for tag in ("del", "moveFrom"):
+        for node in list(root.iter(_WML + tag)):
+            parent = node.getparent()
+            if parent is not None:
+                parent.remove(node)
+    for _ in range(32):
+        changed = 0
+        for tag in ("ins", "moveTo", "sdt", "smartTag"):
+            for node in list(root.iter(_WML + tag)):
+                parent = node.getparent()
+                if parent is None or _word_name(parent.tag) not in _WORD_PARENTS:
+                    continue
+                if tag == "sdt":
+                    content = node.find(_WML + "sdtContent")
+                    children = list(content) if content is not None else []
+                else:
+                    children = list(node)
+                index = parent.index(node)
+                parent.remove(node)
+                for offset, child in enumerate(children):
+                    parent.insert(index + offset, child)
+                changed += 1
+        if not changed:
+            return
+
+
 def _docx_blocks(path):
     from docx import Document
     from docx.table import Table
     document = Document(str(path))
+    _unwrap_word_wrappers(document.element)
     blocks = []
     previous = ""
     for item in document.iter_inner_content():
@@ -160,15 +258,22 @@ def _docx_blocks(path):
             continue
         if any(_TOC.match(name) for name in _style_names(item.style)):
             continue
-        level = _heading_level(item)
+        level = _heading_level(item) or _numbered_heading(text)
+        # A line break in "доку-мента" is a soft hyphen: drop it and join.
+        # A hard hyphen before a number or after a digit must stay, otherwise
+        # "6-" + "10" and "ISO-" + "9001" are stored as 610 and ISO9001.
+        previous_block = blocks[-1] if blocks else None
+        previous_text = previous_block.get("text", "") if isinstance(previous_block, dict) else ""
         if (
             not level
-            and blocks
-            and blocks[-1].get("kind") == "p"
-            and blocks[-1]["text"].endswith("-")
-            and not text[:1].isupper()
+            and previous_block
+            and previous_block.get("kind") == "p"
+            and len(previous_text) >= 2
+            and previous_text.endswith("-")
+            and previous_text[-2].isalpha()
+            and text[:1].islower()
         ):
-            blocks[-1]["text"] = blocks[-1]["text"][:-1] + text
+            blocks[-1]["text"] = previous_text[:-1] + text
             previous = blocks[-1]["text"]
             continue
         blocks.append({"kind": "heading", "level": level, "text": text} if level else {"kind": "p", "text": text})
@@ -417,8 +522,17 @@ def load_text(path):
 
 
 def ingest_dir(directory):
+    # Upload and startup both read the whole inbox. One file that cannot be
+    # parsed used to abort that pass, so nothing was indexed, and the bad file
+    # never appeared in the document list where it could be deleted.
     chunks = []
     for path in sorted(Path(directory).iterdir()):
-        if path.suffix.lower() in SUFFIXES and path.is_file():
+        if path.suffix.lower() not in SUFFIXES or not path.is_file():
+            continue
+        try:
             chunks += chunks_from_blocks(_blocks(path), path.name)
+        except ImportError:
+            raise
+        except Exception:
+            continue
     return chunks

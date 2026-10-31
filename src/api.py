@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 import workspace
 from coordinator import run
-from ingest import ingest_dir
+from ingest import SUFFIXES, _blocks, chunks_from_blocks, ingest_dir
 from store import chunks_for_document, delete_document, list_documents, upsert_chunks
 
 app = FastAPI()
@@ -18,6 +18,9 @@ PAGE = Path(__file__).parent / "web" / "index.html"
 ROOT = Path(__file__).resolve().parents[1]
 LOAD_TIME = ROOT / "data" / "load_time.txt"
 _state = {"started": None, "done": False}
+# Upload reads and replaces inbox files, then may roll them back. Two requests
+# must not interleave that replace with a rollback.
+_upload_lock = threading.Lock()
 
 
 def _files_ok():
@@ -85,6 +88,16 @@ def _fields(body):
     return body.dict(exclude_unset=True)
 
 
+def _on_disk():
+    if not INBOX.is_dir():
+        return set()
+    return {
+        path.name
+        for path in INBOX.iterdir()
+        if path.is_file() and path.suffix.lower() in SUFFIXES
+    }
+
+
 @app.get("/")
 def page():
     return FileResponse(PAGE, headers={"Cache-Control": "no-store"})
@@ -123,7 +136,7 @@ def documents_delete(document_name: str):
     if path.is_file():
         path.unlink()
     known = list_documents()
-    return {"documents": known, "tree": workspace.forget_file(name, known)}
+    return {"documents": known, "tree": workspace.forget_file(name, known, _on_disk())}
 
 
 @app.post("/documents")
@@ -135,27 +148,84 @@ def documents(body: Docs):
     return {"ok": True}
 
 
-@app.post("/upload")
-async def upload(files: list[UploadFile] = File(...)):
+def _upload_name(filename):
+    name = Path(str(filename or "")).name
+    if name in ("", ".", ".."):
+        raise HTTPException(400, detail="Некорректное имя файла")
+    return name
+
+
+def _upload_detail(name, previous, *, empty):
+    reason = f"В файле {name} нет текста" if empty else f"Не удалось прочитать {name}"
+    if previous is not None:
+        return reason + ". Прежний файл сохранён"
+    return reason
+
+
+def _rollback_upload(saved):
+    for path, previous in reversed(saved):
+        try:
+            if previous is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(previous)
+        except OSError:
+            continue
+
+
+def _save_uploads(payloads):
+    saved = []
     try:
         INBOX.mkdir(parents=True, exist_ok=True)
-        for item in files:
-            (INBOX / Path(item.filename).name).write_bytes(await item.read())
-        upsert_chunks(ingest_dir(INBOX))
+        inbox = INBOX.resolve()
+        for name, payload in payloads:
+            path = INBOX / name
+            if path.is_symlink() or (path.exists() and not path.is_file()):
+                raise HTTPException(400, detail="Некорректное имя файла")
+            if path.resolve().parent != inbox:
+                raise HTTPException(400, detail="Некорректное имя файла")
+            previous = path.read_bytes() if path.is_file() else None
+            saved.append((path, previous))
+            path.write_bytes(payload)
+            try:
+                extracted = chunks_from_blocks(_blocks(path), name)
+            except ImportError:
+                raise
+            except Exception as exc:
+                raise HTTPException(400, detail=_upload_detail(name, previous, empty=False)) from exc
+            if not extracted:
+                raise HTTPException(400, detail=_upload_detail(name, previous, empty=True))
+        chunks = ingest_dir(INBOX)
+    except Exception as exc:
+        _rollback_upload(saved)
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(500, detail=str(exc)) from exc
+    try:
+        upsert_chunks(chunks)
         names = list_documents()
-        return {"documents": names, "tree": workspace.snapshot(names)["tree"]}
+        return {"documents": names, "tree": workspace.snapshot(names, _on_disk())["tree"]}
     except Exception as exc:
         raise HTTPException(500, detail=str(exc)) from exc
 
 
+@app.post("/upload")
+async def upload(files: list[UploadFile] = File(...)):
+    payloads = [(_upload_name(item.filename), await item.read()) for item in files]
+    with _upload_lock:
+        return _save_uploads(payloads)
+
+
 @app.get("/ui")
 def ui_get():
-    return workspace.snapshot(list_documents())
+    if not _state["done"]:
+        return workspace.load()
+    return workspace.snapshot(list_documents(), _on_disk())
 
 
 @app.put("/ui")
 def ui_put(body: UiTree):
-    return workspace.put_tree(body.tree, list_documents())
+    return workspace.put_tree(body.tree, list_documents(), _on_disk())
 
 
 @app.post("/ui/dialogs")

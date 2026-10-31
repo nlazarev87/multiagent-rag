@@ -2478,5 +2478,8 @@
       "kind": "text",
       "chunk_index": 5
     }
-  ]
+  ],
+  "catalog-loaded": [],
+  "catalog-names": [],
+  "catalog-which": []
 }

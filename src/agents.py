@@ -2,13 +2,13 @@ import re
 
 from llm import complete, count_tokens
 from settings import fewshot, lexicon, prompts, runtime
-from store import search_chunks
+from store import chunks_for_document, search_chunks
 
 NO_ANSWER = "В документах нет ответа."
 CONFIRMED = "подтверждён"
 UNCONFIRMED = "не подтверждён"
 MISSING = "нет ответа"
-SYSTEM = TASK = YES_NO = RETRY = COPIED = INVERT = LIST_GAP = ""
+SYSTEM = TASK = YES_NO = RETRY = COPIED = INVERT = LIST_GAP = DEFINE = ""
 PROMPT_TOKENS = 1500
 SPAN = 30
 EXAMPLES = []
@@ -16,7 +16,7 @@ EXAMPLES = []
 
 def _bind_prompts():
     data = prompts()
-    global SYSTEM, TASK, YES_NO, RETRY, COPIED, INVERT, LIST_GAP, PROMPT_TOKENS, SPAN
+    global SYSTEM, TASK, YES_NO, RETRY, COPIED, INVERT, LIST_GAP, DEFINE, PROMPT_TOKENS, SPAN
     SYSTEM = data.get("system") or SYSTEM
     TASK = data.get("task") or TASK
     YES_NO = data.get("yes_no") or YES_NO
@@ -24,6 +24,7 @@ def _bind_prompts():
     COPIED = data.get("copied") or COPIED
     INVERT = data.get("invert") or INVERT
     LIST_GAP = data.get("list_gap") or LIST_GAP
+    DEFINE = data.get("define") or DEFINE
     PROMPT_TOKENS = runtime().get("prompt_tokens", PROMPT_TOKENS)
     SPAN = runtime().get("span", SPAN)
 
@@ -236,7 +237,8 @@ def _from_overview(query, chunks):
     ranked = []
     for number, chunk in enumerate(chunks, 1):
         text = chunk.get("text") or ""
-        section = text.splitlines()[0] if text else ""
+        lines = text.splitlines()
+        section = lines[0] if lines else ""
         for match in _OVERVIEW_LINE.finditer(text):
             section_hits = sum(_stem_hit(word, section) for word in focus)
             column_hits = sum(_stem_hit(word, match.group(1)) for word in focus)
@@ -244,15 +246,40 @@ def _from_overview(query, chunks):
             column_score = column_hits or label_hits
             if not section_hits and not column_score:
                 continue
-            ranked.append((section_hits + column_score, section_hits, number, match.group(2), match.group(3).rstrip(" .")))
+            ranked.append((
+                section_hits,
+                column_score,
+                number,
+                match.group(2),
+                match.group(3).rstrip(" ."),
+                match.group(1).strip(),
+            ))
     if not ranked:
         return None
     ranked.sort(key=lambda item: (-item[0], -item[1], item[2]))
-    _, _, number, count, items = ranked[0]
+    chosen = None
+    for section_hits, column_score, number, count, items, label in ranked:
+        others = 0
+        for index, chunk in enumerate(chunks, 1):
+            if index == number:
+                continue
+            other_lines = (chunk.get("text") or "").splitlines()
+            heading = other_lines[0] if other_lines else ""
+            others = max(others, sum(_stem_hit(word, heading) for word in focus))
+        if not _count_ask(query) and section_hits < others and column_score <= others:
+            continue
+        chosen = (number, count, items, label)
+        break
+    if chosen is None and _count_ask(query) and ranked:
+        _, _, number, count, items, label = ranked[0]
+        chosen = (number, count, items, label)
+    if chosen is None:
+        return None
+    number, count, items, label = chosen
     if _count_ask(query):
         if any(ch.isdigit() for ch in query):
             return None
-        listed = f"{count} значений [{number}]."
+        listed = f"{count} {label} [{number}]."
     else:
         listed = f"{items} [{number}]."
     if len(_flat(re.sub(r"\[[\d,\s]+\]", " ", listed)).split()) >= SPAN:
@@ -292,25 +319,113 @@ def build_prompt(query, chunks, previous=None, feedback=None, count=None, budget
 _LATIN_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9]{2,}")
 
 
+def _latin_tokens(query):
+    return [token.lower() for token in _LATIN_TOKEN.findall(query or "")]
+
+
 def _latin_missing_from_chunks(query, chunks):
     blob = _flat(" ".join(chunk.get("text") or "" for chunk in chunks))
-    for token in _LATIN_TOKEN.findall(query or ""):
-        if token.lower() not in blob:
-            return True
-    return False
+    return any(token not in blob for token in _latin_tokens(query))
+
+
+def _document_names(chunks):
+    names = []
+    for chunk in chunks or []:
+        name = chunk.get("document_name")
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _as_chunk(name, row):
+    return {
+        "text": row.get("text") or "",
+        "document_name": name,
+        "section": row.get("section", ""),
+        "chunk_index": row.get("chunk_index", 0),
+    }
+
+
+def _cover_latin(query, chunks):
+    if not _latin_missing_from_chunks(query, chunks):
+        return chunks
+    missing = [token for token in _latin_tokens(query) if token not in _flat(" ".join(chunk.get("text") or "" for chunk in chunks))]
+    found = []
+    for name in _document_names(chunks):
+        for row in chunks_for_document(name):
+            text = (row.get("text") or "").lower()
+            if all(token in text for token in missing):
+                found.append(_as_chunk(name, row))
+                break
+    if not found:
+        return None
+    return found + list(chunks)
+
+
+def _role_only(chunk):
+    section = _flat(chunk.get("section") or "")
+    text = _flat(chunk.get("text") or "")
+    return "протокол" in section and bool(re.search(r"получател|отправител", text))
+
+
+def _prefer_name(query, chunks):
+    if not re.search(r"что\s+так", _flat(query)):
+        return chunks
+    tokens = _latin_tokens(query) or [word for word in _words(query) if len(word) >= 4]
+    found = []
+    for name in _document_names(chunks):
+        for row in chunks_for_document(name):
+            section = _flat(row.get("section") or "")
+            text = (row.get("text") or "").lower()
+            if "наименован" not in section and "характеристик" not in section:
+                continue
+            if tokens and not any(token in text for token in tokens):
+                continue
+            found.append(_as_chunk(name, row))
+            break
+    if not found:
+        return chunks
+    return found + [chunk for chunk in chunks if not _role_only(chunk)]
+
+
+def _dangling_list(answer):
+    body = re.sub(r"\s*\[[\d\s,]+\]", "", answer or "").strip().rstrip(".").lower().replace("ё", "е")
+    return body.endswith(":") or body.endswith("следующие") or body.endswith("следующее")
+
+
+def _split_cites(answer):
+    return re.sub(
+        r"\[(\d+(?:\s*,\s*\d+)+)\]",
+        lambda match: " ".join(f"[{number}]" for number in re.findall(r"\d+", match.group(1))),
+        answer or "",
+    )
+
+
+def _drop_repeat_cite(answer):
+    text = _split_cites(answer)
+    groups = list(re.finditer(r"\s*\[(\d+)\]", text))
+    if len(groups) < 2:
+        return text
+    last = int(groups[-1].group(1))
+    prior = {int(group.group(1)) for group in groups[:-1]}
+    if last in prior:
+        return text[:groups[-1].start()].rstrip()
+    return text
 
 
 def answer_agent(query, clear_query, chunks, work_turns, feedback=None):
     if not chunks:
         return NO_ANSWER
-    if _latin_missing_from_chunks(query, chunks):
+    chunks = _cover_latin(query, chunks)
+    if not chunks:
         return NO_ANSWER
+    chunks = _prefer_name(query, chunks)
     if not feedback:
         listed = _from_overview(query, chunks)
         if listed:
             return listed
     previous = work_turns[-1] if work_turns and clear_query != query else None
-    return _with_cite(complete(SYSTEM, build_prompt(query, chunks, previous, feedback), examples=EXAMPLES), chunks)
+    return _drop_repeat_cite(_with_cite(complete(SYSTEM, build_prompt(query, chunks, previous, feedback), examples=EXAMPLES), chunks))
 
 
 def _pure_number(token):
@@ -1840,6 +1955,59 @@ def _list_gap(query, answer, flats, cited=None):
     return saw
 
 
+def _shifted_definition(query, answer, bodies):
+    if not re.search(r"что\s+так", _flat(query)):
+        return False
+    words = _words(query)
+    if not words:
+        return False
+    term = words[0]
+    purpose = re.compile(r"устанавлива|предназначен|регламентир|определя", re.IGNORECASE)
+    claimed = False
+    for sentence in re.split(r"[.!?]\s+|\n+", answer or ""):
+        if not purpose.search(sentence):
+            continue
+        claimed = True
+        if term not in _flat(sentence):
+            return True
+    if not claimed:
+        return False
+    for body in bodies:
+        for sentence in re.split(r"[.!?]\s+|\n+", body or ""):
+            if term in _flat(sentence) and purpose.search(sentence):
+                return False
+    return True
+
+
+def _section_code_conflict(chunk, wanted):
+    section_codes = set(_codes(chunk.get("section") or ""))
+    return bool(section_codes) and not (section_codes & wanted)
+
+
+def _keep_cited(used, scores, facts, bodies):
+    if len(used) < 2:
+        return used
+    best = max(scores[number - 1] for number in used)
+    ranked = sorted(used, key=lambda number: (-scores[number - 1], number))
+    covered = set()
+    kept = []
+    for number in ranked:
+        if best and scores[number - 1] * 2 < best:
+            continue
+        owned = []
+        for fact in facts:
+            if fact[1] in covered or not _grounded(fact, bodies[number - 1]):
+                continue
+            owned.append(fact[1])
+        if facts and not owned and scores[number - 1] != best:
+            continue
+        if not facts and kept and scores[number - 1] != best:
+            continue
+        kept.append(number)
+        covered.update(owned)
+    return kept or [ranked[0]]
+
+
 def check_agent(answer, chunks, query="", known=None):
     text = answer.strip()
     known = known or (lambda _term: True)
@@ -1863,6 +2031,10 @@ def check_agent(answer, chunks, query="", known=None):
                 cited.append(number)
     if _list_gap(query, text, flats, cited):
         return _verdict(UNCONFIRMED, feedback=LIST_GAP)
+    if _dangling_list(text):
+        return _verdict(UNCONFIRMED, feedback=LIST_GAP)
+    if _shifted_definition(query, text, bodies):
+        return _verdict(UNCONFIRMED, feedback=DEFINE)
     used = list(cited)
     missing = []
     facts = _facts(text)
@@ -1880,6 +2052,18 @@ def check_agent(answer, chunks, query="", known=None):
     words = [("stem", word) for word in _words(re.sub(r"\[[\d,\s]+\]", " ", text)) if len(word) >= 5]
     asked_stems = {word[:5] for word in _words(asked) if len(word) >= 5}
     extra = [word for word in words if word[1][:5] not in asked_stems]
+    example_stems = {
+        word[:5]
+        for item in fewshot()
+        for word in _words(item.get("reply", ""))
+        if len(word) >= 5
+    }
+    borrowed = [
+        word for word in extra
+        if len(word[1]) >= 8 and word[1][:5] in example_stems and not any(_grounded(word, body) for body in bodies)
+    ]
+    if borrowed:
+        return _verdict(UNCONFIRMED, feedback=RETRY)
     if extra and not facts:
         grounded_extra = sum(1 for word in extra if any(_grounded(word, body) for body in bodies))
         if grounded_extra * 3 < len(extra):
@@ -1894,4 +2078,10 @@ def check_agent(answer, chunks, query="", known=None):
     if not used:
         best = max(scores)
         used = [number for number, score in enumerate(scores, 1) if score == best][:2]
+    wanted = set(_codes(re.sub(r"\[[\d,\s]+\]", " ", text)))
+    if wanted:
+        coded = [number for number in used if not _section_code_conflict(chunks[number - 1], wanted)]
+        if coded:
+            used = coded
+    used = _keep_cited(used, scores, facts, bodies)
     return _verdict(CONFIRMED, sources=[_source(number, chunks[number - 1]) for number in sorted(used)])

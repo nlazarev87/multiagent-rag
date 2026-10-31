@@ -261,6 +261,7 @@
     }
     #send:hover { background: var(--btn-hover); }
     #tree { list-style: none; margin: 4px 0 0; padding: 0 8px; flex: 1; min-height: 0; overflow: auto; }
+    #tree-tail { flex: 0 0 28px; min-height: 28px; }
     #tree ul { list-style: none; margin: 0; padding: 0 0 0 14px; }
     .node {
       display: flex;
@@ -384,6 +385,7 @@
         </div>
         <div id="docs-pane" class="hidden">
           <ul id="tree"></ul>
+          <div id="tree-tail"></div>
           <div id="steps"></div>
           <div id="menu" class="menu hidden" role="menu"></div>
         </div>
@@ -420,6 +422,8 @@
     const modeDocs = document.getElementById("mode-docs");
 
     let systemReady = false;
+    let uiLoaded = false;
+    let treeFresh = false;
     let dialogs = [];
     let dialogId = "";
     let tree = { id: "root", name: "", children: [] };
@@ -429,6 +433,9 @@
     let tabChunks = {};
     let menuTarget = null;
     let closedFolders = new Set();
+    let treeStamp = 0;
+    let treePending = false;
+    let treeWriting = false;
 
     function element(tag, className, text) {
       const node = document.createElement(tag);
@@ -771,22 +778,44 @@
       return null;
     }
 
-    function subtreeIds(node, acc) {
-      acc = acc || new Set();
-      if (node.id) acc.add(node.id);
-      (node.children || []).forEach((child) => subtreeIds(child, acc));
-      return acc;
+    function containsNode(node, target) {
+      if (!node || node === target) return node === target;
+      return (node.children || []).some((child) => containsNode(child, target));
     }
 
-    async function persistTree() {
-      const response = await fetch("/ui", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tree: tree }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (data.tree) tree = data.tree;
-      paintTree();
+    function persistTree() {
+      treePending = true;
+      treeStamp += 1;
+      if (treeWriting) return;
+      treeWriting = true;
+      const run = async () => {
+        try {
+          while (treePending) {
+            treePending = false;
+            const payload = JSON.stringify({ tree: tree });
+            let data = {};
+            let ok = false;
+            try {
+              const response = await fetch("/ui", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: payload,
+              });
+              ok = response.ok;
+              data = await response.json().catch(() => ({}));
+            } catch (error) {
+              return;
+            }
+            if (!ok || treePending) continue;
+            if (data.tree) tree = data.tree;
+            paintTree();
+          }
+        } finally {
+          treeWriting = false;
+          if (treePending) persistTree();
+        }
+      };
+      run();
     }
 
     function paintTree() {
@@ -857,13 +886,18 @@
     function dropOn(folder, raw) {
       let payload = {};
       try { payload = JSON.parse(raw); } catch (error) { return; }
-      if (payload.folder && payload.id && subtreeIds(folder).has(payload.id)) return;
       const pred = payload.folder
         ? (node) => node.id === payload.id
         : (node) => node.document_name === payload.name;
       const found = findParent(tree.children || [], pred, tree);
       if (!found) return;
-      found.list.splice(found.list.indexOf(found.node), 1);
+      // Dropping a folder onto itself or onto something already inside it cycles
+      // the tree. The next paint walks that cycle and the tab never recovers.
+      // An ancestor, including the root, is a real target and must stay allowed.
+      if (payload.folder && containsNode(found.node, folder)) return;
+      const index = found.list.indexOf(found.node);
+      if (index < 0) return;
+      found.list.splice(index, 1);
       folder.children = folder.children || [];
       folder.children.push(found.node);
       if (folder.id) closedFolders.delete(folder.id);
@@ -885,8 +919,8 @@
       }
       menu.classList.remove("hidden");
       const box = docsPane.getBoundingClientRect();
-      menu.style.left = Math.min(event.clientX - box.left, box.width - 180) + "px";
-      menu.style.top = Math.min(event.clientY - box.top, box.height - 90) + "px";
+      menu.style.left = Math.max(0, Math.min(event.clientX - box.left, box.width - 180)) + "px";
+      menu.style.top = Math.max(0, Math.min(event.clientY - box.top, box.height - 90)) + "px";
     }
 
     function addMenu(label, action) {
@@ -930,23 +964,35 @@
     }
 
     async function loadUi(selectStored) {
-      const data = await (await fetch("/ui", { signal: AbortSignal.timeout(8000) })).json();
-      dialogs = data.dialogs || [];
-      tree = data.tree || { id: "root", name: "", children: [] };
-      if (!dialogs.length) {
-        const created = await (await fetch("/ui/dialogs", { method: "POST" })).json();
-        dialogs = [created];
+      try {
+        const stamp = treeStamp;
+        const response = await fetch("/ui", { signal: AbortSignal.timeout(8000) });
+        if (!response.ok) throw new Error("ui");
+        const data = await response.json();
+        dialogs = data.dialogs || [];
+        if (stamp === treeStamp && !treePending && !treeWriting) {
+          tree = data.tree || { id: "root", name: "", children: [] };
+        }
+        if (!dialogs.length) {
+          const created = await (await fetch("/ui/dialogs", { method: "POST" })).json();
+          if (created && created.id) dialogs = [created];
+        }
+        if (!dialogs.length) throw new Error("ui");
+        if (selectStored) {
+          const stored = sessionStorage.getItem("dialogId");
+          dialogId = dialogs.some((row) => row.id === stored) ? stored : dialogs[0].id;
+        } else if (!dialogs.some((row) => row.id === dialogId)) {
+          dialogId = dialogs[0].id;
+        }
+        sessionStorage.setItem("dialogId", dialogId);
+        paintChats();
+        paintTree();
+        uiLoaded = true;
+        await selectDialog(dialogId, true);
+      } catch (error) {
+        if (!uiLoaded) log.replaceChildren(element("p", "muted", "Сервер не ответил"));
+        setTimeout(() => loadUi(selectStored), 2000);
       }
-      if (selectStored) {
-        const stored = sessionStorage.getItem("dialogId");
-        dialogId = dialogs.some((row) => row.id === stored) ? stored : dialogs[0].id;
-      } else if (!dialogs.some((row) => row.id === dialogId)) {
-        dialogId = dialogs[0].id;
-      }
-      sessionStorage.setItem("dialogId", dialogId);
-      paintChats();
-      paintTree();
-      await selectDialog(dialogId, true);
     }
 
     async function selectDialog(id, silent) {
@@ -984,6 +1030,10 @@
           systemReady = true;
           readiness.textContent = "Система готова";
           readyDot.classList.add("on");
+          if (!treeFresh) {
+            treeFresh = true;
+            loadUi(false);
+          }
           return;
         }
         systemReady = false;
@@ -1025,10 +1075,16 @@
       filter = find.value.trim().toLowerCase();
       paintTree();
     });
-    treeEl.addEventListener("contextmenu", (event) => {
-      if (event.target.closest(".node")) return;
+    function rootMenu(event) {
+      if (event.target.closest(".node") || event.target.closest("#menu")) return;
       event.preventDefault();
       openMenu(event, tree, null);
+    }
+    treeEl.addEventListener("contextmenu", rootMenu);
+    document.getElementById("tree-tail").addEventListener("contextmenu", rootMenu);
+    document.querySelector(".mid-head").addEventListener("contextmenu", (event) => {
+      if (docsPane.classList.contains("hidden")) return;
+      rootMenu(event);
     });
     treeEl.addEventListener("dragover", (event) => {
       if (!event.target.closest(".node")) event.preventDefault();
@@ -1084,6 +1140,7 @@
 
     files.onchange = async () => {
       const chosen = [...files.files];
+      const stamp = treeStamp;
       files.value = "";
       if (!chosen.length) return;
       setMode("docs");
@@ -1104,7 +1161,8 @@
           return;
         }
         for (const file of chosen) paintStep(file.name, 2, "разобран");
-        if (data.tree) tree = data.tree;
+        if (data.tree && stamp === treeStamp && !treePending && !treeWriting) tree = data.tree;
+        else ensureTreeFiles(data.documents || []);
         paintTree();
         const known = new Set(data.documents || []);
         for (const file of chosen) {
@@ -1172,9 +1230,7 @@
 
     idlePreview();
     showReady();
-    loadUi(true).catch(() => {
-      log.replaceChildren(element("p", "muted", "Сервер не ответил"));
-    });
+    loadUi(true);
   </script>
 </body>
 </html>
