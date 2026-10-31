@@ -404,3 +404,39 @@ def test_run_searches_again_when_feedback_names_a_document(monkeypatch):
     result = coordinator.run("Какой номер у цеха?", "d-doc")
     assert order == ["select", "clarify", "search", "answer", "check", "search", "answer", "check", "save"]
     assert result == {"answer": agents.NO_ANSWER, "status": agents.MISSING, "document_names": [], "sources": []}
+
+
+def test_catalog_says_nothing_is_loaded_without_searching(monkeypatch):
+    dialog.reset()
+    monkeypatch.setattr(coordinator, "list_documents", lambda: [])
+    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    result = coordinator.run("Какие документы загружены в систему?", "empty-catalog")
+    assert result == {
+        "answer": agents.NO_ANSWER,
+        "status": agents.MISSING,
+        "document_names": [],
+        "sources": [],
+    }
+    assert dialog.get_dialog("empty-catalog")[0]["answer"] == agents.NO_ANSWER
+
+
+def test_catalog_lists_every_file_when_the_names_do_not_overlap(monkeypatch):
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["ГОСТ_1.docx", "насос.md"])
+    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    result = coordinator.run("Какие ГОСТ и насосы загружены в систему?", "both-names")
+    assert result["status"] == agents.CONFIRMED
+    assert result["answer"] == "ГОСТ_1.docx, насос.md"
+    assert result["sources"] == []
+
+
+def test_finish_drops_only_the_invalid_number_in_a_citation(monkeypatch):
+    order = []
+    _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+    monkeypatch.setattr(
+        coordinator,
+        "answer_agent",
+        lambda *_args: order.append("answer") or "А [9] Б [1, 2].",
+    )
+    result = coordinator.run("Какой номер у цеха?", "cite-mix")
+    assert result["answer"] == "А Б [1]."
+    assert [source["number"] for source in result["sources"]] == [1]
