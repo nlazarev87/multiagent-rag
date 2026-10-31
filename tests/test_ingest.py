@@ -181,6 +181,70 @@ def test_late_row_overview_counts_the_column_that_holds_the_value(tmp_path, monk
         _word_tokens.cache_clear()
 
 
+def test_two_level_header_keeps_each_column_name(tmp_path):
+    from ingest import _docx_blocks, _row_line
+
+    document = Document()
+    table = document.add_table(rows=3, cols=3)
+    table.rows[0].cells[0].text = "Показатель"
+    table.rows[0].cells[1].text = "Диапазон"
+    table.rows[0].cells[1].merge(table.rows[0].cells[2])
+    table.rows[0].cells[0].merge(table.rows[1].cells[0])
+    table.rows[1].cells[1].text = "Минимум"
+    table.rows[1].cells[2].text = "Максимум"
+    table.rows[2].cells[0].text = "Давление"
+    table.rows[2].cells[1].text = "6 бар"
+    table.rows[2].cells[2].text = "10 бар"
+    document.save(tmp_path / "header.docx")
+    block = _docx_blocks(tmp_path / "header.docx")[0]
+    assert block["labels"] == ["Показатель", "Диапазон / Минимум", "Диапазон / Максимум"]
+    assert block["rows"] == [[
+        ("Показатель", "Давление"),
+        ("Диапазон / Минимум", "6 бар"),
+        ("Диапазон / Максимум", "10 бар"),
+    ]]
+    assert _row_line(block["rows"][0], False) == (
+        "Показатель: Давление; Диапазон / Минимум: 6 бар; Диапазон / Максимум: 10 бар"
+    )
+
+
+def test_spanned_header_does_not_consume_the_first_values(tmp_path):
+    from ingest import _docx_blocks, _row_line
+
+    document = Document()
+    table = document.add_table(rows=2, cols=3)
+    table.rows[0].cells[0].text = "Показатель"
+    table.rows[0].cells[1].text = "Диапазон"
+    table.rows[0].cells[1].merge(table.rows[0].cells[2])
+    table.rows[1].cells[0].text = "Давление"
+    table.rows[1].cells[1].text = "6 бар"
+    table.rows[1].cells[2].text = "10 бар"
+    document.save(tmp_path / "span.docx")
+    block = _docx_blocks(tmp_path / "span.docx")[0]
+    assert block["rows"] == [[("Показатель", "Давление"), ("Диапазон", "6 бар; 10 бар")]]
+    assert "6 бар" in _row_line(block["rows"][0], False)
+    assert "10 бар" in _row_line(block["rows"][0], False)
+
+
+def test_empty_key_uses_the_value_header_and_keeps_a_blank_cell(tmp_path):
+    from ingest import _docx_blocks, _row_line
+
+    document = Document()
+    table = document.add_table(rows=3, cols=2)
+    table.rows[0].cells[0].text = "Показатель"
+    table.rows[0].cells[1].text = "Значение"
+    table.rows[1].cells[0].text = ""
+    table.rows[1].cells[1].text = "6 бар"
+    table.rows[2].cells[0].text = "Этаж"
+    table.rows[2].cells[1].text = ""
+    document.save(tmp_path / "blank.docx")
+    block = _docx_blocks(tmp_path / "blank.docx")[0]
+    keyvalue = block["width"] == 2 and len(block["labels"]) == 2
+    assert keyvalue
+    assert _row_line(block["rows"][0], keyvalue) == "Значение: 6 бар"
+    assert _row_line(block["rows"][1], keyvalue) == "Этаж: —"
+
+
 def test_chunks_fit_tokens_and_overlap():
     text = " ".join(f"слово{i}" for i in range(900))
     chunks = split_chunks(text, "long.txt")
@@ -382,6 +446,17 @@ def test_docx_keeps_an_inserted_value_and_drops_the_deleted_one(tmp_path):
     _save(document, tmp_path / "revised.docx")
     text = " ".join(block["text"] for block in _docx_blocks(tmp_path / "revised.docx"))
     assert "10 бар" in text
+    assert "6 бар" not in text
+
+
+def test_docx_keeps_moved_text_and_drops_the_source(tmp_path):
+    document = Document()
+    paragraph = document.add_paragraph("Давление равно ")
+    paragraph._p.append(_word_mark("w:moveFrom", _word_run("6 бар")))
+    paragraph._p.append(_word_mark("w:moveTo", _word_run("10 бар")))
+    _save(document, tmp_path / "moved.docx")
+    text = " ".join(block["text"] for block in _docx_blocks(tmp_path / "moved.docx"))
+    assert text == "Давление равно 10 бар"
     assert "6 бар" not in text
 
 

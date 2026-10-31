@@ -1006,3 +1006,29 @@ def test_delete_during_upload_is_not_indexed_again(tmp_path, monkeypatch):
     assert indexed == {"new.txt"}
     assert not (inbox / "keep.txt").exists()
     assert (inbox / "new.txt").read_text(encoding="utf-8") == "новый текст"
+
+def test_upload_rejects_a_directory_and_restores_the_earlier_file(tmp_path, monkeypatch):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "note.txt").write_text("старое значение", encoding="utf-8")
+    occupied = inbox / "slot.txt"
+    occupied.mkdir()
+    (occupied / "secret.txt").write_text("секрет", encoding="utf-8")
+    monkeypatch.setattr("api.INBOX", inbox)
+    cache = _token_count(monkeypatch)
+    called = []
+    monkeypatch.setattr("api.upsert_chunks", called.append)
+    response = TestClient(app).post(
+        "/upload",
+        files=[
+            ("files", ("note.txt", "новое значение".encode(), "text/plain")),
+            ("files", ("slot.txt", "внутрь".encode(), "text/plain")),
+        ],
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Некорректное имя файла"
+    assert called == []
+    assert (inbox / "note.txt").read_text(encoding="utf-8") == "старое значение"
+    assert occupied.is_dir()
+    assert (occupied / "secret.txt").read_text(encoding="utf-8") == "секрет"
+    cache.cache_clear()
