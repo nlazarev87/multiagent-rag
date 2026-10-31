@@ -552,6 +552,74 @@ def test_numbered_line_becomes_section(tmp_path):
     assert "Опытная эксплуатация" in chunks[0]["text"]
     assert all(chunk["section"] != "2.1. В разделе Введение указывают наименование программы и объекта, в котором используют программу." for chunk in chunks)
 
+
+def test_outline_and_inherited_heading_keep_the_section_path(tmp_path, monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", _token_count)
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    try:
+        document = Document()
+        titled = document.add_paragraph("Назначение")
+        level = OxmlElement("w:outlineLvl")
+        level.set(qn("w:val"), "0")
+        titled._p.get_or_add_pPr().append(level)
+        document.add_paragraph("Текст раздела.")
+        ignored = document.add_paragraph("Не заголовок")
+        off = OxmlElement("w:outlineLvl")
+        off.set(qn("w:val"), "9")
+        ignored._p.get_or_add_pPr().append(off)
+        document.add_paragraph("Обычный абзац.")
+        custom = document.styles.add_style("CustomHead", WD_STYLE_TYPE.PARAGRAPH)
+        custom.base_style = document.styles["Heading 2"]
+        document.add_paragraph("Вложенный", style=custom)
+        document.add_paragraph("Текст внутри.")
+        russian = document.styles.add_style("Заголовок 3", WD_STYLE_TYPE.PARAGRAPH)
+        document.add_paragraph("Русский", style=russian)
+        document.add_paragraph("После русского.")
+        document.save(tmp_path / "heads.docx")
+        blocks = _docx_blocks(tmp_path / "heads.docx")
+        assert blocks[0] == {"kind": "heading", "level": 1, "text": "Назначение"}
+        assert {"kind": "heading", "level": 2, "text": "Вложенный"} in blocks
+        assert {"kind": "heading", "level": 3, "text": "Русский"} in blocks
+        assert {"kind": "p", "text": "Не заголовок"} in blocks
+        chunks = ingest.chunks_from_blocks(blocks, "heads.docx")
+        opening = next(chunk for chunk in chunks if "Обычный абзац." in chunk["text"])
+        assert opening["section"] == "Назначение"
+        assert "Не заголовок" in opening["text"]
+        nested = next(chunk for chunk in chunks if "После русского." in chunk["text"])
+        assert nested["section"] == "Назначение > Вложенный > Русский"
+    finally:
+        _word_tokens.cache_clear()
+
+
+def test_deep_numbered_heading_stays_with_its_paragraphs(tmp_path, monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", _token_count)
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    try:
+        document = Document()
+        document.add_paragraph("1.2.3.4.5.6 Первый")
+        document.add_paragraph("Текст первого.")
+        document.add_paragraph("1.2.3.4.5.6.7 Второй")
+        document.add_paragraph("Текст второго.")
+        document.add_paragraph("4 Конец.")
+        document.add_paragraph("2.1 строчная тема про насос и режим работы")
+        document.save(tmp_path / "deep.docx")
+        blocks = _docx_blocks(tmp_path / "deep.docx")
+        assert [block["level"] for block in blocks if block["kind"] == "heading"] == [6, 6]
+        chunks = ingest.chunks_from_blocks(blocks, "deep.docx")
+        assert chunks[0]["section"] == "1.2.3.4.5.6 Первый"
+        assert "Текст первого." in chunks[0]["text"]
+        second = next(chunk for chunk in chunks if "Текст второго." in chunk["text"])
+        assert second["section"] == "1.2.3.4.5.6.7 Второй"
+        assert "4 Конец." in second["text"]
+        assert "строчная тема" in second["text"]
+    finally:
+        _word_tokens.cache_clear()
+
+
 def test_docx_does_not_join_a_capitalized_line(tmp_path):
     from ingest import _docx_blocks
 
