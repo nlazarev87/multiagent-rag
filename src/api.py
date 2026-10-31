@@ -150,6 +150,8 @@ async def upload(files: list[UploadFile] = File(...)):
 
 @app.get("/ui")
 def ui_get():
+    if not _state["done"]:
+        return workspace.load()
     return workspace.snapshot(list_documents())
 
 

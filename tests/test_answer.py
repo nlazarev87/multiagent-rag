@@ -17,6 +17,75 @@ def test_answer_refuses_latin_token_missing_from_chunks(monkeypatch):
     assert agents.answer_agent("Какая версия Python у насоса?", "Какая версия Python у насоса?", [PUMP], []) == agents.NO_ANSWER
 
 
+def test_count_uses_overview_when_another_heading_matches(monkeypatch):
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("complete")))
+    flows = {
+        "text": "Протоколы\nРазных значений в столбце «ИД потока»: 4. Список: A, B, C, D.",
+        "document_name": "note.txt",
+    }
+    closer = {"text": "Интеграционные потоки между системами\nОписание без числа.", "document_name": "note.txt"}
+    query = "Сколько интеграционных потоков между системами?"
+    answer = agents.answer_agent(query, query, [flows, closer], [])
+    assert answer == "4 ИД потока [1]."
+
+
+def test_check_rejects_an_answer_that_stops_before_the_list():
+    chunk = {"text": "Допущения: оба приложения имеют свою конфигурацию.", "document_name": "note.txt"}
+    verdict = agents.check_agent("Допущения следующие: [1].", [chunk], "Какие допущения сформулированы?")
+    assert verdict["status"] == agents.UNCONFIRMED
+
+
+def test_answer_uses_a_document_chunk_that_contains_the_latin_token(monkeypatch):
+    weak = {"text": "Потоков четыре.", "document_name": "note.txt", "chunk_index": 0, "section": ""}
+    strong = {
+        "text": "NPP ExS\nРазных значений в столбце «Поток»: 4. Список: A, B.",
+        "document_name": "note.txt",
+        "chunk_index": 3,
+        "section": "Потоки",
+    }
+    monkeypatch.setattr(agents, "chunks_for_document", lambda name: [strong] if name == "note.txt" else [])
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("complete")))
+    answer = agents.answer_agent("Сколько потоков у NPP ExS?", "Сколько потоков у NPP ExS?", [weak], [])
+    assert answer == "4 Поток [1]."
+
+
+def test_definition_prefers_a_name_over_a_protocol_role(monkeypatch):
+    protocol = {
+        "text": "NPP ExS — система-получатель.",
+        "document_name": "note.txt",
+        "section": "Протоколы интеграционного взаимодействия",
+        "chunk_index": 1,
+    }
+    named = {
+        "text": "Наименование: NPP ExS, подсистема учёта.",
+        "document_name": "note.txt",
+        "section": "Характеристики",
+        "chunk_index": 2,
+    }
+    monkeypatch.setattr(agents, "chunks_for_document", lambda name: [named] if name == "note.txt" else [])
+    calls = []
+
+    def complete(_system, user, examples=()):
+        calls.append(user)
+        return "NPP ExS — подсистема учёта [1]."
+
+    monkeypatch.setattr(agents, "count_tokens", _words)
+    monkeypatch.setattr(agents, "complete", complete)
+    agents.answer_agent("что такое NPP ExS?", "что такое NPP ExS?", [protocol], [])
+    assert calls and "Наименование" in calls[0]
+    assert "система-получатель" not in calls[0]
+
+
+def test_check_rejects_a_word_from_outside_the_fragments():
+    chunk = {"text": "Потоков четыре: A, B, C, D.", "document_name": "note.txt"}
+    verdict = agents.check_agent(
+        "В библиотеке три интеграционных потока [1].",
+        [chunk],
+        "Сколько интеграционных потоков?",
+    )
+    assert verdict["status"] == agents.UNCONFIRMED
+
+
 def test_answer_copies_overview_list_without_model(monkeypatch):
     monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("complete")))
     halls = {
@@ -25,7 +94,7 @@ def test_answer_copies_overview_list_without_model(monkeypatch):
     }
     extra = {"text": "В залах соблюдается тишина.", "document_name": "rules.txt"}
     assert agents.answer_agent("Какие залы есть в библиотеке?", "Какие залы есть в библиотеке?", [halls, extra], []) == "Читальный, Детский, Архивный [1]."
-    assert agents.answer_agent("Сколько залов в библиотеке?", "Сколько залов в библиотеке?", [halls], []) == "3 значений [1]."
+    assert agents.answer_agent("Сколько залов в библиотеке?", "Сколько залов в библиотеке?", [halls], []) == "3 Зал [1]."
     size_calls = []
     monkeypatch.setattr(agents, "count_tokens", _words)
     monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: size_calls.append(1) or "Около 1 Мб [1].")
@@ -165,7 +234,7 @@ def test_inflected_skolko_copies_overview_count(monkeypatch):
         "text": "Библиотека > Залы\nРазных значений в столбце «Зал»: 3. Список: Читальный, Детский, Архивный.",
         "document_name": "library.txt",
     }
-    counted = "3 значений [1]."
+    counted = "3 Зал [1]."
     for query in (
         "Из скольких залов состоит библиотека?",
         "Сколькими залами располагает библиотека?",
@@ -231,6 +300,47 @@ def test_check_rejects_definition_that_only_shares_a_question_word():
     )
     verdict = agents.check_agent(answer, [chunk], "что такое безопасная разработка?")
     assert verdict["status"] == agents.UNCONFIRMED
+
+
+def test_answer_drops_a_repeated_citation_tail(monkeypatch):
+    monkeypatch.setattr(agents, "count_tokens", _words)
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: "Оценка приходит в потоке COUNT_1.2 [1, 2]. [1]")
+    answer = agents.answer_agent("Откуда приходит оценка?", "Откуда приходит оценка?", [PUMP], [])
+    assert answer == "Оценка приходит в потоке COUNT_1.2 [1] [2]."
+
+
+def test_check_rejects_definition_copied_from_another_subject():
+    chunk = {"text": "Настоящий стандарт устанавливает структуру обозначения программ.", "document_name": "note.txt", "section": ""}
+    answer = "ГОСТ — это стандарт. Он устанавливает структуру обозначения программ [1]."
+    verdict = agents.check_agent(answer, [chunk], "что такое ГОСТ")
+    assert verdict["status"] == agents.UNCONFIRMED
+    assert verdict["feedback"] == agents.DEFINE
+
+
+def test_check_keeps_definition_about_the_asked_term():
+    chunk = {"text": "ИМПУС — это подсистема управления сбытом.", "document_name": "note.txt", "section": ""}
+    verdict = agents.check_agent("ИМПУС — это подсистема управления сбытом [1].", [chunk], "что такое ИМПУС")
+    assert verdict["status"] == agents.CONFIRMED
+
+
+def test_check_drops_a_section_about_another_code():
+    right = {
+        "text": "Получение оценки экономических последствий в потоке COUNT_1.2.",
+        "document_name": "note.docx",
+        "section": "Поток COUNT_1.2",
+    }
+    other = {
+        "text": "Передача параметров для оценки в потоке COUNT_1.1.",
+        "document_name": "note.docx",
+        "section": "Поток COUNT_1.1",
+    }
+    verdict = agents.check_agent(
+        "Оценка приходит в потоке COUNT_1.2 [1, 2].",
+        [right, other],
+        "в каком потоке приходит оценка",
+    )
+    assert verdict["status"] == agents.CONFIRMED
+    assert [source["number"] for source in verdict["sources"]] == [1]
 
 
 def test_check_confirms_grounded_answer_and_cites_sources():

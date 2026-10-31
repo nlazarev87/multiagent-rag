@@ -108,6 +108,23 @@ def test_delete_document_stays_inside_inbox(tmp_path, monkeypatch):
     assert outside.exists()
 
 
+def test_ui_returns_saved_dialogs_before_index_is_ready(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: (_ for _ in ()).throw(AssertionError("chroma")))
+    saved = workspace.create_dialog()
+    saved["title"] = "сохранённый"
+    data = workspace.load()
+    data["dialogs"][0] = saved
+    workspace.save(data)
+    done = api._state["done"]
+    api._state["done"] = False
+    try:
+        listed = api.ui_get()
+    finally:
+        api._state["done"] = done
+    assert listed["dialogs"][0]["id"] == saved["id"]
+    assert listed["dialogs"][0]["title"] == "сохранённый"
+
+
 def test_ui_dialogs_and_ratings(tmp_path, monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
     monkeypatch.setattr("api.run", lambda query, dialog_id: {
@@ -120,6 +137,7 @@ def test_ui_dialogs_and_ratings(tmp_path, monkeypatch):
     created = client.post("/ui/dialogs").json()
     assert created["title"] == "Новый диалог"
     assert created["turns"] == []
+    api._state["done"] = True
     listed = client.get("/ui").json()
     assert listed["dialogs"][0]["id"] == created["id"]
     assert {"document_name": "note.txt"} in listed["tree"]["children"]

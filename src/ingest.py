@@ -10,7 +10,7 @@ from pathlib import Path
 from settings import runtime
 
 SUFFIXES = {".txt", ".md", ".doc", ".docx"}
-VERSION = 2
+VERSION = 3
 TOKENS = 250
 OVERLAP = 40
 INTRO = 120
@@ -40,6 +40,7 @@ _bind_runtime()
 
 MODEL = Path(os.environ.get("EMBED_PATH", Path(__file__).resolve().parents[1] / "data" / "models" / "multilingual-e5-small"))
 _HEADING = re.compile(r"^(heading|заголовок)\s*(\d)", re.IGNORECASE)
+_NUMBERED_HEAD = re.compile(r"^(\d+(?:\.\d+)*)\s+(\S.*)$")
 _TOC = re.compile(r"^(toc|оглавление)\s*\d", re.IGNORECASE)
 _tokenizer = None
 
@@ -76,6 +77,18 @@ def _style_names(style):
         names.append(style.name or "")
         style = style.base_style
     return names
+
+
+def _numbered_heading(text):
+    match = _NUMBERED_HEAD.match(text or "")
+    if not match:
+        return 0
+    title = match.group(2).strip()
+    if len(title) > 80 or title.count(" ") > 7 or title.endswith(".") or ". " in title:
+        return 0
+    if not title[:1].isupper():
+        return 0
+    return min(6, match.group(1).count(".") + 1)
 
 
 def _outline(element):
@@ -160,7 +173,7 @@ def _docx_blocks(path):
             continue
         if any(_TOC.match(name) for name in _style_names(item.style)):
             continue
-        level = _heading_level(item)
+        level = _heading_level(item) or _numbered_heading(text)
         if (
             not level
             and blocks

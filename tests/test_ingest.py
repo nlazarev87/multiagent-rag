@@ -152,3 +152,16 @@ def test_doc_via_libreoffice(tmp_path):
     source.unlink()
     assert "2019" in load_text(tmp_path / "d.doc")
     assert sorted(path.name for path in tmp_path.iterdir()) == ["d.doc"]
+
+
+def test_numbered_line_becomes_section(tmp_path):
+    path = tmp_path / "n.docx"
+    document = Document()
+    document.add_paragraph("3 Перечень испытаний")
+    document.add_paragraph("Опытная эксплуатация проверяет работу.")
+    document.add_paragraph("2.1. В разделе Введение указывают наименование программы и объекта, в котором используют программу.")
+    document.save(path)
+    chunks = ingest_dir(tmp_path)
+    assert chunks[0]["section"] == "3 Перечень испытаний"
+    assert "Опытная эксплуатация" in chunks[0]["text"]
+    assert all(chunk["section"] != "2.1. В разделе Введение указывают наименование программы и объекта, в котором используют программу." for chunk in chunks)

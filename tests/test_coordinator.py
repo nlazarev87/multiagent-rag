@@ -61,6 +61,72 @@ def test_run_gives_up_after_second_failure(monkeypatch):
     assert result == {"answer": agents.NO_ANSWER, "status": agents.MISSING, "document_names": [], "sources": []}
 
 
+def test_catalog_lists_loaded_documents_without_search(monkeypatch):
+    order = []
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["a.txt", "b.txt"])
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: order.append("select") or [])
+    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: order.append("search") or [])
+    result = coordinator.run("Какие документы загружены в систему?", "catalog")
+    assert order == []
+    assert result == {
+        "answer": "a.txt, b.txt",
+        "status": agents.CONFIRMED,
+        "document_names": [],
+        "sources": [],
+    }
+    again = coordinator.run("По каким документам я могу задавать вопросы?", "catalog-2")
+    assert again["answer"] == "a.txt, b.txt"
+    assert order == []
+
+
+def test_catalog_ignores_a_syllable_inside_a_filename_word(monkeypatch):
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["Идеи ИИ ассистентов.docx", "заметка.txt"])
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    result = coordinator.run("Перечисли название всех документов, которые загружены в систему", "all")
+    assert result["answer"] == "Идеи ИИ ассистентов.docx, заметка.txt"
+
+
+def test_count_keeps_overview_after_a_rejected_example(monkeypatch):
+    order = []
+    chunk = {
+        "text": "Потоки\nРазных значений в столбце «ИД потока»: 4. Список: A, B, C, D.",
+        "document_name": "note.txt",
+        "chunk_index": 0,
+        "section": "Потоки",
+    }
+    _wire(monkeypatch, order, [_verdict(agents.UNCONFIRMED, feedback="a"), _verdict(agents.UNCONFIRMED, feedback="b")])
+    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: order.append("search") or [chunk])
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: order.append("answer") or "В библиотеке три потока [1].")
+    result = coordinator.run("Сколько интеграционных потоков между системами?", "count")
+    assert result["status"] == agents.CONFIRMED
+    assert result["answer"] == "4 ИД потока [1]."
+    assert result["sources"][0]["document_name"] == "note.txt"
+
+
+def test_catalog_keeps_only_names_mentioned_in_the_question(monkeypatch):
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["ГОСТ_1.docx", "заметка.txt"])
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    result = coordinator.run("Какие ГОСТы загружены в систему?", "g")
+    assert result["answer"] == "ГОСТ_1.docx"
+    assert result["sources"] == []
+
+
+def test_plain_document_question_is_not_a_catalog(monkeypatch):
+    order = []
+    _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+    coordinator.run("Какие виды испытаний и какие документы должны оформляться?", "docs")
+    assert order[0] == "select"
+
+
+def test_finish_drops_citations_without_a_source(monkeypatch):
+    order = []
+    _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: order.append("answer") or "Факт в тексте [1] [2].")
+    result = coordinator.run("Какой номер у цеха?", "cite")
+    assert result["answer"] == "Факт в тексте [1]."
+    assert [source["number"] for source in result["sources"]] == [1]
+
+
 def test_run_researches_when_list_is_incomplete(monkeypatch):
     order = []
     feedback = _wire(

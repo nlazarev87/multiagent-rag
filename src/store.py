@@ -282,22 +282,46 @@ def _marker_hit(name, markers, words):
 
 def scope(index, query):
     documents = sorted(index["vocabulary"])
-    names = _names(query)
-    if not names or len(documents) < 2:
+    if len(documents) < 2:
         return None
+    names = _names(query)
     marks = {doc: _doc_markers(doc) for doc in documents}
+    file_stems = {
+        doc: {_stem(word) for word in _words(Path(doc).stem) if len(word) >= 4 and word not in _STOP}
+        for doc in documents
+    }
+    query_stems = []
+    for word in _words(query):
+        if len(word) < 5 or word in _STOP:
+            continue
+        stem = _stem(word)
+        hits = [doc for doc in documents if stem in file_stems[doc]]
+        if hits and len(hits) < len(documents):
+            query_stems.append(set(hits))
     known = [
         name
         for name in names
         if any(_marker_hit(name, marks[doc], index["vocabulary"][doc]) for doc in documents)
     ]
-    if not known:
+    hits = {doc: 0 for doc in documents}
+    if known:
+        hits = {
+            doc: sum(_marker_hit(name, marks[doc], index["vocabulary"][doc]) for name in known)
+            for doc in documents
+        }
+    if len(query_stems) >= 2:
+        stemmed = set.intersection(*query_stems)
+        if stemmed:
+            for doc in documents:
+                if doc in stemmed:
+                    hits[doc] += 1
+                elif not known:
+                    hits[doc] = 0
+    if not known and not query_stems:
         return None
-    hits = {
-        doc: sum(_marker_hit(name, marks[doc], index["vocabulary"][doc]) for name in known)
-        for doc in documents
-    }
     best = max(hits.values())
+    if best <= 0:
+        return None
     chosen = [doc for doc in documents if hits[doc] == best]
     return chosen if len(chosen) < len(documents) else None
 
