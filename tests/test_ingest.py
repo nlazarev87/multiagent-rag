@@ -269,6 +269,41 @@ def test_spanned_body_cell_keeps_the_next_value_in_its_column(tmp_path, monkeypa
         _word_tokens.cache_clear()
 
 
+def test_merged_body_under_a_repeated_header_keeps_the_next_column(tmp_path, monkeypatch):
+    # The span sits under one repeated header, so it must not add a second pair.
+    # An extra blank pair shifts the next column, and the summary counts it under
+    # the repeated name.
+    from ingest import _word_tokens
+
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
+    _word_tokens.cache_clear()
+    try:
+        document = Document()
+        table = document.add_table(rows=31, cols=3)
+        for cell, text in zip(table.rows[0].cells, ("Показатель", "Показатель", "Максимум")):
+            cell.text = text
+        for number, row in enumerate(table.rows[1:], 1):
+            row.cells[0].text = "Насос"
+            row.cells[0].merge(row.cells[1])
+            row.cells[2].text = f"максимальное давление режима номер {number} в рабочем контуре"
+        document.save(tmp_path / "repeat.docx")
+        block = _docx_blocks(tmp_path / "repeat.docx")[0]
+        assert block["labels"] == ["Показатель", "Максимум"]
+        assert block["width"] == 3
+        assert block["rows"][0] == [
+            ("Показатель", "Насос"),
+            ("Максимум", "максимальное давление режима номер 1 в рабочем контуре"),
+        ]
+        chunks = ingest.chunks_from_blocks([block], "repeat.docx")
+        overview = next(chunk["text"] for chunk in chunks if chunk["kind"] == "overview")
+        assert "Разных значений в столбце «Максимум»: 30." in overview
+        assert "столбце «Показатель»" not in overview
+        assert "максимальное давление режима номер 1 в рабочем контуре" in overview
+        assert "максимальное давление режима номер 30 в рабочем контуре" in overview
+    finally:
+        _word_tokens.cache_clear()
+
+
 def test_empty_key_uses_the_value_header_and_keeps_a_blank_cell(tmp_path):
     from ingest import _docx_blocks, _row_line
 
@@ -657,6 +692,45 @@ def test_numbered_line_becomes_section(tmp_path):
     assert chunks[0]["section"] == "3 Перечень испытаний"
     assert "Опытная эксплуатация" in chunks[0]["text"]
     assert all(chunk["section"] != "2.1. В разделе Введение указывают наименование программы и объекта, в котором используют программу." for chunk in chunks)
+
+
+def test_numbered_sentence_stays_in_the_section(tmp_path, monkeypatch):
+    # A title of seven spaces and 80 letters is a section. One more word, one
+    # more letter, or an abbreviation dot is a sentence and stays in that section.
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    try:
+        title = "Насос держит давление контура штатно сегодня утром здесь" + "а" * 24
+        wordy = "Насос держит давление контура штатно сегодня утром здесь ещё"
+        long = "А" * 81
+        cited = "См. схему насоса"
+        assert len(title) == 80 and title.count(" ") == 7
+        assert wordy.count(" ") == 8 and len(wordy) <= 80 and not wordy.endswith(".")
+        document = Document()
+        document.add_paragraph("1 " + title)
+        document.add_paragraph("Текст раздела.")
+        document.add_paragraph("1 " + wordy)
+        document.add_paragraph("Продолжение абзаца.")
+        document.add_paragraph("1 " + long)
+        document.add_paragraph("Ещё текст.")
+        document.add_paragraph("1 " + cited)
+        document.add_paragraph("После ссылки.")
+        document.save(tmp_path / "numbered.docx")
+        chunks = ingest.chunks_from_blocks(_docx_blocks(tmp_path / "numbered.docx"), "numbered.docx")
+        assert {chunk["section"] for chunk in chunks} == {"1 " + title}
+        body = "\n".join(chunk["text"] for chunk in chunks)
+        assert "Текст раздела." in body
+        assert wordy in body
+        assert "Продолжение абзаца." in body
+        assert long in body
+        assert "Ещё текст." in body
+        assert cited in body
+        assert "После ссылки." in body
+    finally:
+        _word_tokens.cache_clear()
+
 
 def test_docx_does_not_join_a_capitalized_line(tmp_path):
     from ingest import _docx_blocks
