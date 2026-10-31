@@ -187,6 +187,49 @@ def test_relative_inventory_question_still_lists_files(monkeypatch):
     assert scheme["answer"] == "Схема.docx"
 
 
+def test_singular_question_word_does_not_narrow_the_file_list(monkeypatch):
+    # A file whose name is itself a question word stays in the full inventory.
+    # A real kind such as «паспорт» still narrows that list.
+    names = [
+        "Какой-либо.docx",
+        "Какая-либо.docx",
+        "Какое-либо.docx",
+        "Какую-нибудь.docx",
+        "Каков.docx",
+        "Паспорт насоса.docx",
+        "Схема.docx",
+        "заметка.txt",
+    ]
+    monkeypatch.setattr(coordinator, "list_documents", lambda: list(names))
+    monkeypatch.setattr(
+        coordinator,
+        "search_agent",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("search")),
+    )
+    expected = ", ".join(names)
+    for query in (
+        "Какой документ загружен в систему?",
+        "Какая документация загружена в систему?",
+        "Какое из документов загружено в систему?",
+        "Какую документацию загружена в систему?",
+        "Каков документ загружен в систему?",
+        "Какова документация загружена в систему?",
+        "Каково положение загружено в систему?",
+        "Какой документ, который загружен в систему?",
+    ):
+        listed = coordinator.run(query, "question-word-file")
+        assert listed["status"] == agents.CONFIRMED
+        assert listed["answer"] == expected
+        assert listed["sources"] == []
+    passport = coordinator.run("Какой паспорт загружен в систему?", "question-word-passport")
+    assert passport["status"] == agents.CONFIRMED
+    assert passport["answer"] == "Паспорт насоса.docx"
+    scheme = coordinator.run("Какая схема загружена в систему?", "question-word-scheme")
+    assert scheme["answer"] == "Схема.docx"
+    note = coordinator.run("Какую заметка загружена в систему?", "question-word-note")
+    assert note["answer"] == "заметка.txt"
+
+
 def test_finish_drops_citations_without_a_source(monkeypatch):
     order = []
     _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
