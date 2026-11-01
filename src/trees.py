@@ -23,6 +23,18 @@ def path_for(row):
     return Path(row["inbox"]).parent / "tree.json"
 
 
+def _base_names(row):
+    folder = Path(row["inbox"])
+    if not folder.is_dir():
+        return []
+    from ingest import SUFFIXES
+    return [
+        path.name
+        for path in folder.iterdir()
+        if path.is_file() and not path.is_symlink() and path.suffix.lower() in SUFFIXES
+    ]
+
+
 def empty():
     return {"id": "root", "name": "", "children": []}
 
@@ -70,6 +82,7 @@ def migrate():
             stored = data.get("tree") if isinstance(data, dict) else None
             if isinstance(stored, dict):
                 tree = stored
+        tree = workspace.sanitize_tree(tree, _base_names(row))
         write(target, tree)
     auth.meta_set("tree_moved", "1")
 

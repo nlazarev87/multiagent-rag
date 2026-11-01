@@ -129,6 +129,11 @@ def reset():
                     system.stop()
                 except Exception:
                     pass
+        try:
+            from chromadb.api.shared_system_client import SharedSystemClient
+            SharedSystemClient.clear_system_cache()
+        except Exception:
+            pass
         import gc
         gc.collect()
 

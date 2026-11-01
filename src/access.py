@@ -170,6 +170,13 @@ def build_scope(user):
     skipped = []
     closed = []
 
+    def _named(permit, names):
+        try:
+            listed = set(store.list_permit(permit))
+        except PermissionError:
+            return None
+        return [name for name in names if name in listed]
+
     def _one(kb_id, clear, limit, places):
         permit = issue(user, kb_id, "ask")
         if permit is None or not permit.confirm():
@@ -177,7 +184,20 @@ def build_scope(user):
             return []
         doc_names = None
         if places is not None:
-            doc_names = [item["document_name"] for item in places if item.get("kb_id") in ("", kb_id)]
+            doc_names = [
+                item.get("document_name") or ""
+                for item in places
+                if (item.get("kb_id") or "") in ("", kb_id) and item.get("document_name")
+            ]
+            if not doc_names:
+                skipped.append(kb_id)
+                return []
+            # Имени в этой базе нет — весь её индекс не открывать: пустой фильтр
+            # в поиске означает «искать везде».
+            doc_names = _named(permit, doc_names)
+            if doc_names is None:
+                closed.append(kb_id)
+                return []
             if not doc_names:
                 skipped.append(kb_id)
                 return []
@@ -277,7 +297,8 @@ def source_rows(result, found):
             for chunk in found or []:
                 same_name = chunk.get("document_name") == item.get("document_name")
                 same_index = chunk.get("chunk_index") == item.get("chunk_index")
-                if same_name and same_index:
+                same_base = not item.get("kb_id") or not chunk.get("kb_id") or chunk.get("kb_id") == item.get("kb_id")
+                if same_name and same_index and same_base:
                     item["text"] = chunk.get("text") or ""
                     item.setdefault("kb_id", chunk.get("kb_id") or "")
                     item.setdefault("section", chunk.get("section") or "")

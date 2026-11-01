@@ -825,6 +825,15 @@ def _vectors(monkeypatch):
     monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
 
 
+def test_reset_lets_the_next_open_start_again(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, "CHROMA", tmp_path / "one")
+    store.reset()
+    assert store.list_documents() == []
+    store.reset()
+    assert store.list_documents() == []
+    store.reset()
+
+
 def test_foreign_catalog_is_not_read(tmp_path):
     foreign = tmp_path / "foreign"
     foreign.mkdir()

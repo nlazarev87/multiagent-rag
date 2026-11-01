@@ -156,6 +156,26 @@ def _client(tmp_path, monkeypatch):
     return client
 
 
+def test_move_keeps_only_names_from_this_base(tmp_path, monkeypatch):
+    _client(tmp_path, monkeypatch)
+    (api.INBOX / "note.txt").write_text("текст", encoding="utf-8")
+    source = {
+        "dialogs": [],
+        "tree": {
+            "id": "root",
+            "name": "",
+            "children": [
+                {"document_name": "note.txt"},
+                {"document_name": "foreign.txt"},
+            ],
+        },
+    }
+    workspace.PATH.write_text(json.dumps(source), encoding="utf-8")
+    trees.migrate()
+    names = workspace.iter_files(trees.read(trees.path_for(kb.get(kb.LEGACY_ID))))
+    assert names == ["note.txt"]
+
+
 def test_second_move_does_not_erase_the_saved_tree(tmp_path, monkeypatch):
     _client(tmp_path, monkeypatch)
     source = {

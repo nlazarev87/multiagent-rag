@@ -364,13 +364,26 @@ def append_turn(dialog_id, query, result, *, create=True):
         turns = list(row.get("turns") or [])
         sources = result.get("sources") or []
         names = result.get("document_names") or _names({"sources": sources})
-        turns.append({
+        places = []
+        seen = set()
+        for item in list(sources) + list(result.get("places") or []):
+            if not isinstance(item, dict):
+                continue
+            base = item.get("kb_id") or ""
+            name = item.get("document_name") or ""
+            if base and name and (base, name) not in seen:
+                places.append({"kb_id": base, "document_name": name})
+                seen.add((base, name))
+        turn = {
             "query": query,
             "answer": result.get("answer", ""),
             "sources": sources,
             "document_names": names,
             "ratings": blank_ratings(),
-        })
+        }
+        if places:
+            turn["places"] = places
+        turns.append(turn)
         row = dict(row)
         row["turns"] = turns
         if row.get("title") in (None, "", TITLE):

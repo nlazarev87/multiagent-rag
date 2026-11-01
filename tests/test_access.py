@@ -367,6 +367,75 @@ def test_creator_sees_a_new_base_and_the_same_role_does_not(tmp_path, monkeypatc
     assert refused.status_code == 403
 
 
+def test_follow_up_without_a_base_id_does_not_open_the_other_catalog(tmp_path, monkeypatch):
+    import store
+    monkeypatch.setattr(store, "CHROMA", tmp_path / "chroma")
+    _stub_index(monkeypatch)
+    store.reset()
+    _client(tmp_path, monkeypatch)
+    other = kb.create("Вторая")
+    admin = auth.user_by_login("admin")
+    auth.acl_add(other["id"], "user", admin["id"], "allow")
+    auth.set_user_content(admin["id"], other["id"], ["ask"])
+    store.upsert_chunks([{
+        "text": "насос альфа стоит в цехе",
+        "document_name": "a.txt",
+        "chunk_index": 0,
+        "checksum": "a",
+        "section": "",
+    }])
+    store.upsert_at(other["chroma"], [{
+        "text": "секрет второй базы",
+        "document_name": "b.txt",
+        "chunk_index": 0,
+        "checksum": "b",
+        "section": "",
+    }])
+    opened = []
+    real = store.search_permit
+
+    def spy(permit, *args, **kwargs):
+        opened.append(permit.kb_id)
+        return real(permit, *args, **kwargs)
+
+    monkeypatch.setattr(store, "search_permit", spy)
+    scope = access.build_scope(admin)
+    found = scope.search("насос", 4, [{"kb_id": "", "document_name": "a.txt"}])
+    assert {row["document_name"] for row in found} == {"a.txt"}
+    assert other["id"] not in opened
+    assert "секрет" not in " ".join(row["text"] for row in found)
+    assert other["id"] in scope.skipped
+    store.reset()
+
+
+def test_same_file_name_keeps_each_base_text():
+    found = [
+        {"document_name": "note.txt", "chunk_index": 0, "kb_id": "a", "text": "альфа"},
+        {"document_name": "note.txt", "chunk_index": 0, "kb_id": "b", "text": "бета"},
+    ]
+    result = {"sources": [
+        {"document_name": "note.txt", "chunk_index": 0, "kb_id": "a"},
+        {"document_name": "note.txt", "chunk_index": 0, "kb_id": "b"},
+    ]}
+    rows = access.source_rows(result, found)
+    assert [row["text"] for row in rows] == ["альфа", "бета"]
+
+
+def test_new_base_records_the_personal_grant(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    created = client.post("/kb", json={"name": "Цех"}).json()
+    import audit
+    kinds = [
+        item["kind"]
+        for item in audit.list_events()
+        if (item.get("payload") or {}).get("kb_id") == created["id"]
+    ]
+    assert "kb_create" in kinds
+    assert "access_allow" in kinds
+    assert "personal_actions" in kinds
+    assert "role_actions" not in kinds
+
+
 def test_one_base_search_matches_direct_order(tmp_path, monkeypatch):
     import store
     monkeypatch.setattr(store, "CHROMA", tmp_path / "chroma")

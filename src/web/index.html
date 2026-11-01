@@ -945,7 +945,7 @@
             } catch (error) {
               return;
             }
-            if (!ok || treePending) continue;
+            if (!ok || treePending || treeDragging) continue;
             if (data.tree) tree = data.tree;
             paintTree();
           }
@@ -980,7 +980,8 @@
         if (isFile && node.document_name === activeTab) btn.classList.add("on");
         btn.addEventListener("click", () => {
           if (isFile) {
-            showPreview(node.document_name);
+            const fromFolder = parent && String(parent.id || "").startsWith("kb-") ? String(parent.id).slice(3) : "";
+            showPreview(node.document_name, null, fromFolder);
             paintTree();
             return;
           }
