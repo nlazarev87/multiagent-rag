@@ -51,7 +51,7 @@ def test_api_routes(tmp_path, monkeypatch):
     saved = []
     monkeypatch.setattr("api.INBOX", tmp_path)
     monkeypatch.setattr("api.upsert_chunks", saved.extend)
-    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
         "answer": "Давление равно 6 бар [1].", "status": "подтверждён", "document_names": ["pump.md"], "sources": [SOURCE]
     })
     client = TestClient(app)
@@ -315,7 +315,7 @@ def test_ui_returns_saved_dialogs_before_index_is_ready(monkeypatch):
 
 def test_ui_dialogs_and_ratings(tmp_path, monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
-    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
         "answer": "Цех имеет номер 4 [1].",
         "status": "подтверждён",
         "document_names": ["note.txt"],
@@ -399,7 +399,7 @@ def test_query_reloads_saved_history_after_memory_is_cleared(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
     seen = []
 
-    def run(query, dialog_id):
+    def run(query, dialog_id, scope=None):
         seen.append([
             (turn["query"], turn["document_names"])
             for turn in dialog.get_dialog(dialog_id)
@@ -449,7 +449,7 @@ def test_missing_dialog_and_turn_return_404(monkeypatch):
 def test_query_error_does_not_store_a_turn(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: [])
 
-    def run(query, dialog_id):
+    def run(query, dialog_id, scope=None):
         raise RuntimeError("model down")
 
     monkeypatch.setattr("api.run", run)
@@ -463,7 +463,7 @@ def test_query_error_does_not_store_a_turn(monkeypatch):
 
 def test_rating_outside_one_to_five_is_stored_empty(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
-    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
         "answer": "Цех имеет номер 4 [1].",
         "status": "подтверждён",
         "document_names": ["note.txt"],
@@ -485,7 +485,7 @@ def test_rating_outside_one_to_five_is_stored_empty(monkeypatch):
 def test_query_drops_stale_memory_when_the_dialog_is_not_on_disk(monkeypatch):
     seen = []
 
-    def run(query, dialog_id):
+    def run(query, dialog_id, scope=None):
         seen.append([turn["query"] for turn in dialog.get_dialog(dialog_id)])
         return {"answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []}
 
@@ -502,7 +502,7 @@ def test_query_drops_stale_memory_when_the_dialog_is_not_on_disk(monkeypatch):
 def test_query_does_not_restore_a_dialog_deleted_while_answering(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: [])
 
-    def run(query, dialog_id):
+    def run(query, dialog_id, scope=None):
         workspace.delete_dialog(dialog_id)
         return {"answer": "Цех имеет номер 4 [1].", "status": "подтверждён", "document_names": [], "sources": []}
 
@@ -556,7 +556,7 @@ def test_delete_document_keeps_the_saved_answer(tmp_path, monkeypatch):
             known.remove(name)
 
     monkeypatch.setattr("api.delete_document", forget)
-    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
         "answer": "ответ",
         "status": "подтверждён",
         "document_names": ["gone.txt"],
@@ -599,7 +599,7 @@ def test_missing_dialog_and_turn_are_not_found():
     ).status_code == 404
 
 def test_query_failure_does_not_save_a_turn(monkeypatch):
-    def run(query, dialog_id):
+    def run(query, dialog_id, scope=None):
         raise RuntimeError("model down")
 
     monkeypatch.setattr("api.run", run)
@@ -612,7 +612,7 @@ def test_query_failure_does_not_save_a_turn(monkeypatch):
 
 def test_ratings_reject_out_of_range_and_missing_turns(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
-    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
         "answer": "Цех имеет номер 4 [1].",
         "status": "подтверждён",
         "document_names": ["note.txt"],
@@ -663,7 +663,7 @@ def test_query_ignores_memory_for_an_unsaved_dialog(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: [])
     seen = []
 
-    def run(query, dialog_id):
+    def run(query, dialog_id, scope=None):
         seen.append(dialog.get_dialog(dialog_id))
         return {"answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []}
 
@@ -680,7 +680,7 @@ def test_query_ignores_memory_for_an_unsaved_dialog(monkeypatch):
 
 def test_rating_rejects_out_of_range_and_missing_turn(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
-    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
         "answer": "ответ",
         "status": "подтверждён",
         "document_names": ["note.txt"],
@@ -709,7 +709,7 @@ def test_query_after_delete_does_not_reuse_the_answer_memory(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: [])
     seen = []
 
-    def run(query, dialog_id):
+    def run(query, dialog_id, scope=None):
         if query == "первый":
             workspace.delete_dialog(dialog_id)
             dialog.add_turn(dialog_id, {"query": query, "answer": "хвост", "document_names": ["note.txt"]})
@@ -728,7 +728,7 @@ def test_query_after_delete_does_not_reuse_the_answer_memory(monkeypatch):
 
 def test_ratings_drop_out_of_range_scores_and_path_keys(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
-    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
         "answer": "Цех имеет номер 4 [1].",
         "status": "подтверждён",
         "document_names": ["note.txt"],
@@ -781,7 +781,7 @@ def test_ready_waits_until_the_model_file_is_present(tmp_path, monkeypatch):
 
 def test_rating_patch_keeps_fields_the_body_omits(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
-    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
         "answer": "Цех имеет номер 4 [1].",
         "status": "подтверждён",
         "document_names": ["note.txt"],
@@ -909,7 +909,7 @@ def test_delete_document_drops_tree_node_and_keeps_dialog(tmp_path, monkeypatch)
     assert (inbox / "keep.txt").read_text(encoding="utf-8") == "остаётся"
 
 def test_ratings_out_of_range_are_cleared_and_missing_turns_are_404(monkeypatch):
-    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
         "answer": "ответ", "status": "подтверждён", "document_names": [], "sources": [],
     })
     client = TestClient(app)
@@ -937,7 +937,7 @@ def test_delete_document_keeps_the_dialog(tmp_path, monkeypatch):
     monkeypatch.setattr("api.INBOX", inbox)
     monkeypatch.setattr("api.list_documents", lambda: list(listed["names"]))
     monkeypatch.setattr("api.delete_document", lambda name: listed.update(names=["kept.txt"]))
-    monkeypatch.setattr("api.run", lambda query, dialog_id: {
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
         "answer": "ответ", "status": "подтверждён", "document_names": ["note.txt"], "sources": [],
     })
     (inbox / "note.txt").write_text("текст", encoding="utf-8")

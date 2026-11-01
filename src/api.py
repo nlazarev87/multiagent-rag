@@ -294,6 +294,7 @@ def me_password(request: Request, body: PasswordChange):
                 raise HTTPException(403, detail="Нет права")
             auth.set_password(body.user_id, body.new)
             audit.write("password_set", user, {"user_id": body.user_id})
+            audit.write("session_drop", user, {"user_id": body.user_id})
             return {"ok": True}
         auth.change_password(user["id"], body.old, body.new, request.cookies.get("session"))
     except PermissionError:
@@ -301,6 +302,7 @@ def me_password(request: Request, body: PasswordChange):
     except ValueError:
         raise HTTPException(400, detail="Пароль короче 8 знаков") from None
     audit.write("password_set", user, {"user_id": user["id"]})
+    audit.write("session_drop", user, {"user_id": user["id"]})
     return {"ok": True}
 
 
@@ -661,6 +663,7 @@ def _store_page_tree(user, incoming):
         pending.append((row, workspace.ensure_files(clean, names)))
     for row, clean in pending:
         trees.write(trees.path_for(row), clean)
+    return [row["id"] for row, _clean in pending]
 
 
 @app.get("/ui")
@@ -700,7 +703,14 @@ def ui_put(body: UiTree, request: Request):
     """Сохранить дерево. Чужие имена не стираются и без права не двигаются."""
     user = _user(request)
     if trees.separate():
-        _store_page_tree(user, body.tree)
+        try:
+            changed = _store_page_tree(user, body.tree)
+        except HTTPException as exc:
+            if exc.status_code == 403:
+                audit.write("tree", user, {}, ok=False)
+            raise
+        if changed:
+            audit.write("tree", user, {"kb_ids": changed})
         data = workspace.load()
         data["tree"] = _page_tree(user)
         return data
@@ -708,10 +718,16 @@ def ui_put(body: UiTree, request: Request):
     current = workspace.load()
     stored = current.get("tree") or {"id": "root", "name": "", "children": []}
     if not access.can(user, kb.LEGACY_ID, "arrange"):
+        audit.write("tree", user, {"kb_id": kb.LEGACY_ID}, ok=False)
         raise HTTPException(403, detail="Нет права раскладывать папки")
     merged = _merge_hidden(stored, body.tree, visible)
     known = list(visible)
-    return workspace.put_tree(merged, known, _on_disk())
+    before = json.dumps(stored, sort_keys=True, ensure_ascii=False)
+    saved = workspace.put_tree(merged, known, _on_disk())
+    after = json.dumps(saved.get("tree") or {}, sort_keys=True, ensure_ascii=False)
+    if before != after:
+        audit.write("tree", user, {"kb_id": kb.LEGACY_ID})
+    return saved
 
 
 def _merge_hidden(stored, incoming, visible):
@@ -781,9 +797,7 @@ def query(body: Query, request: Request):
     scope = access.build_scope(user)
     try:
         existed = workspace.prepare_dialog(body.dialog_id, memory_key=memory_key) is not None
-        if os.environ.get("RAG_TEST_USER"):
-            result = run(body.query, memory_key)
-        elif not scope.kbs:
+        if not scope.kbs:
             result = {"answer": "В документах нет ответа.", "status": "нет ответа", "document_names": [], "sources": []}
         else:
             result = run(body.query, memory_key, scope)
@@ -873,6 +887,7 @@ def admin_user_patch(user_id: str, body: UserBody, request: Request):
     if body.password:
         auth.set_password(user_id, body.password)
         audit.write("password_set", user, {"user_id": user_id})
+        audit.write("session_drop", user, {"user_id": user_id})
     try:
         updated = auth.update_user(user_id, role_id=body.role_id or None, blocked=body.blocked)
     except PermissionError:
@@ -881,6 +896,7 @@ def admin_user_patch(user_id: str, body: UserBody, request: Request):
         raise HTTPException(404, detail="Не найдено") from None
     if body.blocked is True:
         audit.write("user_block", user, {"user_id": user_id})
+        audit.write("session_drop", user, {"user_id": user_id})
     elif body.blocked is False:
         audit.write("user_unblock", user, {"user_id": user_id})
     if body.role_id:

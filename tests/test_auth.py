@@ -1,9 +1,11 @@
+import json
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+import audit
 import auth
 import kb
 import workspace
@@ -71,6 +73,11 @@ def test_session_expires_and_password_change_drops_the_other(tmp_path, monkeypat
     second = TestClient(app)
     second.post("/login", json={"login": "admin", "password": "password12"})
     assert again.post("/me/password", json={"old": "password12", "new": "password13"}).status_code == 200
+    dropped = audit.list_events(kind="session_drop")
+    assert dropped
+    packed = json.dumps(dropped, ensure_ascii=False)
+    assert "password12" not in packed
+    assert "password13" not in packed
     assert second.get("/documents").status_code == 401
     assert again.get("/me").status_code == 200
     logout = again.post("/logout")

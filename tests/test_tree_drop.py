@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 import api
+import audit
 import kb
 import trees
 import workspace
@@ -195,6 +196,9 @@ def test_folder_is_not_stored_inside_itself(tmp_path, monkeypatch):
     }
     response = client.put("/ui", json={"tree": sent})
     assert response.status_code == 200
+    recorded = audit.list_events(kind="tree")
+    assert recorded
+    assert recorded[0]["ok"] is True
     stored = trees.read(trees.path_for(kb.get(kb.LEGACY_ID)))
     folder = next(child for child in stored["children"] if child.get("id") == "f")
     assert folder["children"] == []
