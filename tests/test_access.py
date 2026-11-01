@@ -193,3 +193,16 @@ def test_rejected_base_keeps_one_reason(tmp_path, monkeypatch):
     assert reasons[closed["id"]] == "нет входа"
     assert reasons[opened["id"]] == "нет спрашивать"
     assert kb.LEGACY_ID not in reasons
+
+
+def test_second_check_refusal_stays_inside_the_search(tmp_path, monkeypatch):
+    _client(tmp_path, monkeypatch)
+    admin = auth.user_by_login("admin")
+    scope = access.build_scope(admin)
+    monkeypatch.setattr(
+        "store.search_permit",
+        lambda *args, **kwargs: (_ for _ in ()).throw(PermissionError("closed")),
+    )
+    assert scope.search("вопрос", 4, None) == []
+    reasons = {row["kb_id"]: row["reason"] for row in access.rejections(admin, scope)}
+    assert reasons[kb.LEGACY_ID] == "нет входа"

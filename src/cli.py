@@ -6,9 +6,10 @@ import os
 import sys
 from pathlib import Path
 
+import audit
 import auth
 import kb
-from access import build_scope, can
+from access import build_scope, can, rejections
 from coordinator import run
 from ingest import ingest_dir
 from store import upsert_chunks
@@ -27,6 +28,7 @@ def _person(argv):
     password = os.environ.get("CLI_PASSWORD", "")
     user, error = auth.authenticate(login, password)
     if user is None or error:
+        audit.write("login_fail", None if error != "blocked" else user, {"login": login}, ok=False)
         print("Неверный логин или пароль" if error != "blocked" else "Учётная запись заблокирована", file=sys.stderr)
         return None, rest
     return user, rest
@@ -73,30 +75,62 @@ def main(argv=None):
             print("Нужен --kb", file=sys.stderr)
             return None
         kb_at = argv.index("--kb")
+        if kb_at + 1 >= len(argv):
+            print("Нужен --kb", file=sys.stderr)
+            return None
         kb_id = argv[kb_at + 1]
-        folder = argv[1] if argv[1] != "--kb" else argv[3]
+        rest = [item for index, item in enumerate(argv) if index not in (0, kb_at, kb_at + 1)]
+        if not rest:
+            print("Нужна папка", file=sys.stderr)
+            return None
+        folder = rest[0]
         if not can(user, kb_id, "upload"):
+            audit.write("upload", user, {"kb_id": kb_id}, ok=False)
             print("Нет права загружать", file=sys.stderr)
             return None
         row = kb.get(kb_id)
         if row is None:
             print("База не найдена", file=sys.stderr)
             return None
-        _copy_into(folder, row["inbox"])
-        chunks = ingest_dir(row["inbox"])
-        if row["legacy"]:
-            upsert_chunks(chunks)
-        else:
-            from store import upsert_at
-            upsert_at(row["chroma"], chunks)
+        try:
+            _copy_into(folder, row["inbox"])
+            chunks = ingest_dir(row["inbox"])
+            if row["legacy"]:
+                upsert_chunks(chunks)
+            else:
+                from store import upsert_at
+                upsert_at(row["chroma"], chunks)
+        except Exception:
+            audit.write("upload", user, {"kb_id": kb_id}, ok=False)
+            print("Не удалось записать файл", file=sys.stderr)
+            return None
+        audit.write("upload", user, {"kb_id": kb_id, "names": [item.get("document_name") for item in chunks]})
         return None
     words = argv[1:] if argv[0] == "ask" else argv
     if not words:
         return None
     scope = build_scope(user)
-    result = run(" ".join(words), "cli", scope if scope.kbs else None)
-    if not scope.kbs:
-        result = {"answer": "В документах нет ответа.", "status": "нет ответа", "document_names": [], "sources": []}
+    try:
+        if not scope.kbs:
+            result = {"answer": "В документах нет ответа.", "status": "нет ответа", "document_names": [], "sources": []}
+        else:
+            result = run(" ".join(words), "cli", scope)
+    except Exception as exc:
+        audit.write("query", user, {"query": " ".join(words), "error": type(exc).__name__}, ok=False)
+        print("Ошибка сервера", file=sys.stderr)
+        return None
+    audit.write("query", user, {
+        "query": " ".join(words),
+        "answer": result.get("answer", ""),
+        "status": result.get("status", ""),
+        "dialog_id": "cli",
+        "opened": list(scope.kbs),
+        "rejected": rejections(user, scope),
+        "sources": result.get("sources") or [],
+        "trace": list(getattr(scope, "trace", []) or []),
+        "attempts": getattr(scope, "attempts", 0) or 0,
+        "feedback": getattr(scope, "feedback", "") or "",
+    })
     print(result["answer"], result["status"], " ".join(result["document_names"]))
     return result
 

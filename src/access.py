@@ -167,7 +167,12 @@ def build_scope(user):
                 skipped.append(kb_id)
                 return []
         used.append(kb_id)
-        found = store.search_permit(permit, clear, limit, doc_names)
+        try:
+            found = store.search_permit(permit, clear, limit, doc_names)
+        except PermissionError:
+            used.pop()
+            closed.append(kb_id)
+            return []
         return _tag(found, kb_id)
 
     def search(clear, limit, places):

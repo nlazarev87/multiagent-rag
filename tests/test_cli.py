@@ -82,3 +82,27 @@ def test_cli_asks_the_words_after_the_command(tmp_path, capsys, monkeypatch):
     assert seen == [("Какой номер?", "cli")]
     assert result["document_names"] == ["charter.txt"]
     assert capsys.readouterr().out == "4 подтверждён charter.txt\n"
+
+
+def test_cli_without_a_base_does_not_open_the_index(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("APP_ROOT", str(tmp_path / "root"))
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("CONFIG_DIR", str(repo / "config"))
+    monkeypatch.setenv("PROMPTS_DIR", str(repo / "data" / "prompts"))
+    import settings
+    settings.reload()
+    monkeypatch.setenv("CLI_PASSWORD", "password12")
+    monkeypatch.delenv("RAG_TEST_USER", raising=False)
+    import auth
+    import kb
+    auth.setup("admin", "password12")
+    kb.ensure_legacy()
+    role_id = auth.create_role("Пустая")
+    auth.create_user("none", "password12", role_id)
+    called = []
+    monkeypatch.setattr("cli.run", lambda *args, **kwargs: called.append(args))
+    result = main(["--user", "none", "ask", "вопрос"])
+    assert called == []
+    assert result["status"] == "нет ответа"
+    assert main(["--user", "admin", "ingest", "--kb", kb.LEGACY_ID]) is None
+    assert "Нужна папка" in capsys.readouterr().err

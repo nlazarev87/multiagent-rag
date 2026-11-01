@@ -30,9 +30,8 @@ _PUBLIC = {("GET", "/"), ("GET", "/ready"), ("GET", "/auth/state"), ("POST", "/s
 
 @app.middleware("http")
 async def _guard(request: Request, call_next):
-    if request.method != "GET":
-        if not auth.origin_ok(request.headers.get("origin")):
-            return JSONResponse({"detail": "Чужой источник"}, status_code=403)
+    if not auth.origin_ok(request.headers.get("origin")):
+        return JSONResponse({"detail": "Чужой источник"}, status_code=403)
     public = (request.method, request.url.path) in _PUBLIC
     token = None
     if not public:
@@ -81,13 +80,17 @@ def _warm():
         kb.ensure_legacy()
         for row in kb.list_kbs():
             folder = row["inbox"]
-            if folder.is_dir():
+            if not folder.is_dir():
+                continue
+            try:
                 with _upload_lock:
                     if row["legacy"]:
                         upsert_chunks(ingest_dir(folder))
                     else:
                         from store import upsert_at
                         upsert_at(row["chroma"], ingest_dir(folder))
+            except Exception:
+                continue
     finally:
         import store
         store.CHROMA = saved
@@ -544,17 +547,11 @@ def _kb_file_names(row):
     return set(list_at(row["chroma"]))
 
 
-def _page_tree(user):
-    """Дерево страницы: одна база как раньше, несколько — папка на каждую."""
-    trees.migrate()
-    parts = []
-    for row in kb.list_kbs():
-        if not access.can_see(user, row["id"]):
-            continue
-        names = _kb_file_names(row)
-        stored = trees.read(trees.path_for(row))
-        clean = workspace.ensure_files(workspace.sanitize_tree(stored, names), names)
-        parts.append((row, clean))
+def _visible_rows(user):
+    return [row for row in kb.list_kbs() if access.can_see(user, row["id"])]
+
+
+def _compose(parts):
     if not parts:
         return trees.empty()
     if len(parts) == 1:
@@ -569,27 +566,101 @@ def _page_tree(user):
     return root
 
 
+def _page_tree(user):
+    """Дерево страницы: одна база как раньше, несколько — папка на каждую."""
+    trees.migrate()
+    parts = []
+    for row in _visible_rows(user):
+        names = _kb_file_names(row)
+        stored = trees.read(trees.path_for(row))
+        clean = workspace.ensure_files(workspace.sanitize_tree(stored, names), names)
+        parts.append((row, clean))
+    return _compose(parts)
+
+
+def _stored_page_tree(user):
+    """Сохранённые папки без чтения списка файлов."""
+    trees.migrate()
+    return _compose([(row, trees.read(trees.path_for(row))) for row in _visible_rows(user)])
+
+
+def _same_tree(left, right):
+    return json.dumps(left, sort_keys=True, ensure_ascii=False) == json.dumps(right, sort_keys=True, ensure_ascii=False)
+
+
+def _split_flat(visible, node):
+    owners = {}
+    for row in visible:
+        for name in _kb_file_names(row):
+            owners.setdefault(name, row["id"])
+    named = [name for name in workspace.iter_files(node) if name in owners]
+    owner_ids = {owners[name] for name in named}
+    rows = {row["id"]: row for row in visible}
+    if len(owner_ids) == 1:
+        return [(rows[next(iter(owner_ids))], node)]
+    if not owner_ids:
+        return []
+    buckets = {row["id"]: [] for row in visible}
+    for child in node.get("children") or []:
+        if not isinstance(child, dict):
+            continue
+        if child.get("document_name"):
+            kb_id = owners.get(child["document_name"])
+            if kb_id:
+                buckets[kb_id].append({"document_name": child["document_name"]})
+            continue
+        files = [item for item in child.get("children") or [] if isinstance(item, dict) and item.get("document_name")]
+        used = {owners.get(item["document_name"]) for item in files if owners.get(item["document_name"])}
+        if len(used) == 1:
+            kb_id = next(iter(used))
+            buckets[kb_id].append({
+                "id": child.get("id") or "folder",
+                "name": child.get("name") or "Папка",
+                "children": [{"document_name": item["document_name"]} for item in files if owners.get(item["document_name"]) == kb_id],
+            })
+        else:
+            for item in files:
+                kb_id = owners.get(item["document_name"])
+                if kb_id:
+                    buckets[kb_id].append({"document_name": item["document_name"]})
+    return [
+        (rows[kb_id], {"id": "root", "name": "", "children": children})
+        for kb_id, children in buckets.items()
+        if children
+    ]
+
+
 def _store_page_tree(user, incoming):
     trees.migrate()
     node = incoming if isinstance(incoming, dict) else trees.empty()
     children = [child for child in (node.get("children") or []) if isinstance(child, dict)]
     wrapped = [child for child in children if str(child.get("id") or "").startswith("kb-")]
+    visible = _visible_rows(user)
     targets = []
     if wrapped:
         for child in wrapped:
             row = kb.get(str(child.get("id"))[3:])
-            if row is None:
+            if row is None or not access.can_see(user, row["id"]):
                 continue
             targets.append((row, {"id": "root", "name": "", "children": child.get("children") or []}))
-    else:
-        visible = [row for row in kb.list_kbs() if access.can_see(user, row["id"])]
-        if len(visible) == 1:
+    elif len(visible) <= 1:
+        if visible:
             targets.append((visible[0], node))
-    if not targets or any(not access.can(user, row["id"], "arrange") for row, _tree in targets):
-        raise HTTPException(403, detail="Нет права раскладывать папки")
+    else:
+        targets.extend(_split_flat(visible, node))
+    pending = []
     for row, tree in targets:
         names = _kb_file_names(row)
-        trees.write(trees.path_for(row), workspace.ensure_files(workspace.sanitize_tree(tree, names), names))
+        known = set(names) | set(workspace.iter_files(trees.read(trees.path_for(row))))
+        clean = workspace.sanitize_tree(tree, known)
+        current = workspace.sanitize_tree(trees.read(trees.path_for(row)), known)
+        if _same_tree(clean, current):
+            continue
+        if not access.can(user, row["id"], "arrange"):
+            raise HTTPException(403, detail="Нет права раскладывать папки")
+        pending.append((row, workspace.ensure_files(clean, names)))
+    for row, clean in pending:
+        trees.write(trees.path_for(row), clean)
 
 
 @app.get("/ui")
@@ -598,7 +669,7 @@ def ui_get(request: Request = None):
     user = _user(request)
     if trees.separate():
         data = workspace.load()
-        data["tree"] = trees.empty() if not _state["done"] else _page_tree(user)
+        data["tree"] = _stored_page_tree(user) if not _state["done"] else _page_tree(user)
         return data
     if not _state["done"]:
         return workspace.load()
@@ -786,8 +857,9 @@ def admin_user_create(body: UserBody, request: Request):
         raise HTTPException(400, detail="Нужна роль")
     try:
         created = auth.create_user(body.login, body.password, body.role_id)
-    except ValueError:
-        raise HTTPException(400, detail="Логин или пароль не подходят") from None
+    except ValueError as exc:
+        detail = "Такой логин уже есть" if exc.args == ("taken",) else "Логин или пароль не подходят"
+        raise HTTPException(400, detail=detail) from None
     except LookupError:
         raise HTTPException(404, detail="Роль не найдена") from None
     audit.write("user_create", user, {"user_id": created["id"], "login": created["login"]})
@@ -840,8 +912,9 @@ def admin_role_create(body: RoleBody, request: Request):
     _need(user, "manage_roles")
     try:
         role_id = auth.create_role(body.name)
-    except ValueError:
-        raise HTTPException(400, detail="Нужно имя роли") from None
+    except ValueError as exc:
+        detail = "Такое имя уже есть" if exc.args == ("taken",) else "Нужно имя роли"
+        raise HTTPException(400, detail=detail) from None
     audit.write("role_create", user, {"role_id": role_id, "name": body.name})
     return {"id": role_id}
 
@@ -854,8 +927,9 @@ def admin_role_patch(role_id: str, body: RoleBody, request: Request):
         auth.update_role(role_id, name=body.name or None, actions=body.actions, kb_actions=body.kb_actions)
     except PermissionError:
         raise HTTPException(400, detail="Нельзя оставить систему без управляющего") from None
-    except ValueError:
-        raise HTTPException(400, detail="Нужно имя роли") from None
+    except ValueError as exc:
+        detail = "Такое имя уже есть" if exc.args == ("taken",) else "Нужно имя роли"
+        raise HTTPException(400, detail=detail) from None
     audit.write("role_actions", user, {"role_id": role_id})
     return {"ok": True}
 
@@ -884,8 +958,9 @@ def admin_group_create(body: GroupBody, request: Request):
     _need(user, "manage_groups")
     try:
         group_id = auth.create_group(body.name)
-    except ValueError:
-        raise HTTPException(400, detail="Нужно имя группы") from None
+    except ValueError as exc:
+        detail = "Такое имя уже есть" if exc.args == ("taken",) else "Нужно имя группы"
+        raise HTTPException(400, detail=detail) from None
     audit.write("group_create", user, {"group_id": group_id})
     return {"id": group_id}
 

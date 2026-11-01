@@ -414,6 +414,9 @@ def create_user(login, password, role_id):
             (user_id, login, salt, digest, role_id),
         )
         conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        raise ValueError("taken") from None
     finally:
         conn.close()
     return user_by_id(user_id)
@@ -493,6 +496,9 @@ def create_role(name):
     try:
         role_id = _insert_role(conn, name, ())
         conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        raise ValueError("taken") from None
     finally:
         conn.close()
     return role_id
@@ -510,7 +516,11 @@ def update_role(role_id, *, name=None, actions=None, kb_actions=None):
                 cleaned = str(name).strip()
                 if not cleaned:
                     raise ValueError("name")
-                conn.execute("UPDATE roles SET name = ? WHERE id = ?", (cleaned, role_id))
+                try:
+                    conn.execute("UPDATE roles SET name = ? WHERE id = ?", (cleaned, role_id))
+                except sqlite3.IntegrityError:
+                    conn.rollback()
+                    raise ValueError("taken") from None
             if actions is not None:
                 current = set(_role_actions(conn, role_id))
                 proposed = set(actions)
@@ -581,6 +591,9 @@ def create_group(name):
     try:
         conn.execute("INSERT INTO groups (id, name) VALUES (?, ?)", (group_id, name))
         conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        raise ValueError("taken") from None
     finally:
         conn.close()
     return group_id

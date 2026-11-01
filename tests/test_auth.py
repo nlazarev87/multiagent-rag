@@ -49,6 +49,7 @@ def test_login_failure_block_and_origin(tmp_path, monkeypatch):
         headers={"origin": "http://evil.example"},
     )
     assert foreign.status_code == 403
+    assert fresh.get("/documents", headers={"origin": "http://evil.example"}).status_code == 403
 
 
 def test_session_expires_and_password_change_drops_the_other(tmp_path, monkeypatch):
@@ -94,3 +95,17 @@ def test_two_people_do_not_share_a_dialog(tmp_path, monkeypatch):
     assert auth.db_path().is_file()
     assert kb.LEGACY_ID
     assert workspace.PATH
+
+
+def test_duplicate_role_group_and_login_are_refused(tmp_path, monkeypatch):
+    client = _root(tmp_path, monkeypatch)
+    client.post("/setup", json={"login": "admin", "password": "password12"})
+    assert client.post("/admin/roles", json={"name": "Администратор"}).json()["detail"] == "Такое имя уже есть"
+    assert client.post("/admin/roles", json={"name": "Архив"}).status_code == 200
+    assert client.post("/admin/roles", json={"name": "Архив"}).status_code == 400
+    assert client.post("/admin/groups", json={"name": "Смена"}).status_code == 200
+    assert client.post("/admin/groups", json={"name": "Смена"}).json()["detail"] == "Такое имя уже есть"
+    role_id = auth.user_by_login("admin")["role_id"]
+    again = client.post("/admin/users", json={"login": "admin", "password": "password12", "role_id": role_id})
+    assert again.status_code == 400
+    assert again.json()["detail"] == "Такой логин уже есть"
