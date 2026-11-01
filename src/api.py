@@ -17,6 +17,7 @@ import access
 import audit
 import auth
 import kb
+import trees
 import workspace
 from coordinator import run
 from ingest import SUFFIXES, _blocks, chunks_from_blocks, ingest_dir
@@ -382,7 +383,12 @@ def documents_delete(kb_id: str, document_name: str = None, request: Request = N
             path.unlink()
         audit.write("delete", user, {"kb_id": kb_id, "name": name})
         rows = _rows(user)
-        return {"documents": rows, "tree": workspace.forget_file(name, _names(rows), _on_disk())}
+        if trees.separate():
+            trees.drop_name(row, name)
+            shown = _page_tree(user)
+        else:
+            shown = workspace.forget_file(name, _names(rows), _on_disk())
+        return {"documents": rows, "tree": shown}
 
 
 @app.post("/documents")
@@ -517,6 +523,8 @@ async def upload(request: Request = None, files: list[UploadFile] = File(None), 
     saved = _save_uploads(payloads, row["inbox"], row["chroma"], row["legacy"])
     if not created:
         audit.write("upload", user, {"kb_id": target, "names": [name for name, _payload in payloads]})
+    if trees.separate():
+        saved["tree"] = _page_tree(user)
     return saved
 
 
@@ -527,10 +535,71 @@ def _visible_names(user):
     return names
 
 
+def _kb_file_names(row):
+    if row["legacy"]:
+        names = set(list_documents())
+        names.update(_on_disk())
+        return names
+    from store import list_at
+    return set(list_at(row["chroma"]))
+
+
+def _page_tree(user):
+    """Дерево страницы: одна база как раньше, несколько — папка на каждую."""
+    trees.migrate()
+    parts = []
+    for row in kb.list_kbs():
+        if not access.can_see(user, row["id"]):
+            continue
+        names = _kb_file_names(row)
+        stored = trees.read(trees.path_for(row))
+        clean = workspace.ensure_files(workspace.sanitize_tree(stored, names), names)
+        parts.append((row, clean))
+    if not parts:
+        return trees.empty()
+    if len(parts) == 1:
+        return parts[0][1]
+    root = trees.empty()
+    for row, clean in parts:
+        root["children"].append({
+            "id": "kb-" + row["id"],
+            "name": row["name"],
+            "children": clean.get("children") or [],
+        })
+    return root
+
+
+def _store_page_tree(user, incoming):
+    trees.migrate()
+    node = incoming if isinstance(incoming, dict) else trees.empty()
+    children = [child for child in (node.get("children") or []) if isinstance(child, dict)]
+    wrapped = [child for child in children if str(child.get("id") or "").startswith("kb-")]
+    targets = []
+    if wrapped:
+        for child in wrapped:
+            row = kb.get(str(child.get("id"))[3:])
+            if row is None:
+                continue
+            targets.append((row, {"id": "root", "name": "", "children": child.get("children") or []}))
+    else:
+        visible = [row for row in kb.list_kbs() if access.can_see(user, row["id"])]
+        if len(visible) == 1:
+            targets.append((visible[0], node))
+    if not targets or any(not access.can(user, row["id"], "arrange") for row, _tree in targets):
+        raise HTTPException(403, detail="Нет права раскладывать папки")
+    for row, tree in targets:
+        names = _kb_file_names(row)
+        trees.write(trees.path_for(row), workspace.ensure_files(workspace.sanitize_tree(tree, names), names))
+
+
 @app.get("/ui")
 def ui_get(request: Request = None):
     """Снимок диалогов этого человека. До готовности индекса список файлов не читается."""
     user = _user(request)
+    if trees.separate():
+        data = workspace.load()
+        data["tree"] = trees.empty() if not _state["done"] else _page_tree(user)
+        return data
     if not _state["done"]:
         return workspace.load()
     data = workspace.snapshot(_visible_names(user), _on_disk())
@@ -559,18 +628,19 @@ def _filter_tree(node, allowed):
 def ui_put(body: UiTree, request: Request):
     """Сохранить дерево. Чужие имена не стираются и без права не двигаются."""
     user = _user(request)
+    if trees.separate():
+        _store_page_tree(user, body.tree)
+        data = workspace.load()
+        data["tree"] = _page_tree(user)
+        return data
     visible = set(_visible_names(user))
     current = workspace.load()
     stored = current.get("tree") or {"id": "root", "name": "", "children": []}
-    if not _can_arrange_all(user, body.tree, stored):
+    if not access.can(user, kb.LEGACY_ID, "arrange"):
         raise HTTPException(403, detail="Нет права раскладывать папки")
     merged = _merge_hidden(stored, body.tree, visible)
     known = list(visible)
     return workspace.put_tree(merged, known, _on_disk())
-
-
-def _can_arrange_all(user, tree, stored):
-    return access.can(user, kb.LEGACY_ID, "arrange") or access.has_global(user, "manage_access")
 
 
 def _merge_hidden(stored, incoming, visible):
@@ -615,6 +685,23 @@ def ui_ratings(dialog_id: str, turn_index: int, body: Ratings):
     return turn
 
 
+def _audit_sources(result, found):
+    sources = []
+    for source in result.get("sources") or []:
+        item = dict(source)
+        if not item.get("text"):
+            for chunk in found:
+                same_name = chunk.get("document_name") == item.get("document_name")
+                same_index = chunk.get("chunk_index") == item.get("chunk_index")
+                if same_name and same_index:
+                    item["text"] = chunk.get("text") or ""
+                    item.setdefault("kb_id", chunk.get("kb_id") or "")
+                    item.setdefault("section", chunk.get("section") or "")
+                    break
+        sources.append(item)
+    return sources
+
+
 @app.post("/query")
 def query(body: Query, request: Request):
     """Ответить на вопрос. Базу выбирает проверка прав, не поле запроса."""
@@ -635,9 +722,12 @@ def query(body: Query, request: Request):
             "answer": result.get("answer", ""),
             "status": result.get("status", ""),
             "dialog_id": body.dialog_id,
-            "opened": scope.kbs,
-            "sources": result.get("sources") or [],
+            "opened": list(scope.kbs),
+            "rejected": access.rejections(user, scope),
+            "sources": _audit_sources(result, getattr(scope, "found", None) or []),
             "trace": list(scope.trace),
+            "attempts": getattr(scope, "attempts", 0) or 0,
+            "feedback": getattr(scope, "feedback", "") or "",
         })
         return result
     except Exception as exc:
@@ -836,6 +926,10 @@ def admin_kb(request: Request):
                     role["id"]: sorted(auth.role_content(role["id"], row["id"]))
                     for role in auth.list_roles()
                 },
+                "personal": {
+                    person["id"]: sorted(auth.user_content(person["id"], row["id"]))
+                    for person in auth.list_users()
+                },
             })
         return {"bases": bases}
     if access.has_global(user, "manage_roles"):
@@ -921,10 +1015,10 @@ def kb_create(body: KbBody, request: Request):
 
 
 @app.get("/admin/audit")
-def admin_audit(request: Request, user: str = "", role: str = "", group: str = "", kind: str = "", before: str = ""):
+def admin_audit(request: Request, user: str = "", role: str = "", group: str = "", kind: str = "", before: str = "", after: str = ""):
     actor = _user(request)
     _need(actor, "view_audit")
-    rows = audit.list_events(user_id=user, role_id=role, group_id=group, kind=kind, before=before, limit=50)
+    rows = audit.list_events(user_id=user, role_id=role, group_id=group, kind=kind, before=before, after=after, limit=50)
     audit.write("audit_view", actor, {"user": user, "role": role, "group": group, "kind": kind})
     return {"events": rows}
 

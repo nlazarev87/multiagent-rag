@@ -194,6 +194,7 @@ def _run(query, dialog_id, scope):
         if scope is not None:
             limit = runtime().get("search_limit", 4)
             state["chunks"] = scope.search(state["clear"], limit, _places(state["work"], state["query"]))
+            scope.found = list(state["chunks"])
             return state
         names = None
         if state["work"] and _dependent(state["query"]):
@@ -212,6 +213,9 @@ def _run(query, dialog_id, scope):
         state["status"] = verdict["status"]
         state["feedback"] = verdict["feedback"]
         state["sources"] = verdict["sources"]
+        if scope is not None:
+            scope.attempts = state.get("attempts") or 0
+            scope.feedback = state.get("feedback") or ""
         return state
 
     def route(state):

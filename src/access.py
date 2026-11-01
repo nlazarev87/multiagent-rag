@@ -151,19 +151,29 @@ def build_scope(user):
             tagged.append(item)
         return tagged
 
+    used = []
+    skipped = []
+    closed = []
+
     def _one(kb_id, clear, limit, places):
         permit = issue(user, kb_id, "ask")
         if permit is None or not permit.confirm():
+            closed.append(kb_id)
             return []
         doc_names = None
         if places is not None:
             doc_names = [item["document_name"] for item in places if item.get("kb_id") in ("", kb_id)]
             if not doc_names:
+                skipped.append(kb_id)
                 return []
+        used.append(kb_id)
         found = store.search_permit(permit, clear, limit, doc_names)
         return _tag(found, kb_id)
 
     def search(clear, limit, places):
+        used.clear()
+        skipped.clear()
+        closed.clear()
         if not kbs:
             return []
         if len(kbs) == 1:
@@ -212,7 +222,38 @@ def build_scope(user):
     scope.known = word
     scope.chunks = chunks
     scope.trace = trace
+    scope.used = used
+    scope.skipped = skipped
+    scope.closed = closed
+    scope.attempts = 0
+    scope.feedback = ""
     return scope
+
+
+def rejections(user, scope):
+    """Базы, которые в этот вопрос не открывались, и одна причина на каждую."""
+    skipped = set(getattr(scope, "skipped", None) or [])
+    closed = set(getattr(scope, "closed", None) or [])
+    used = set(getattr(scope, "used", None) or [])
+    if not used and not skipped and not closed:
+        used = set(getattr(scope, "kbs", None) or [])
+    rows = []
+    for row in kb.list_kbs():
+        kb_id = row["id"]
+        if kb_id in used and kb_id not in skipped and kb_id not in closed:
+            continue
+        if kb_id in closed:
+            reason = "нет входа"
+        elif kb_id in skipped:
+            reason = "прошлый ход её не касается"
+        elif not opened(user, kb_id):
+            reason = "нет входа"
+        elif not can(user, kb_id, "ask"):
+            reason = "нет спрашивать"
+        else:
+            reason = "прошлый ход её не касается"
+        rows.append({"kb_id": kb_id, "name": row["name"], "reason": reason})
+    return rows
 
 
 def self_grant(user, kb_id):

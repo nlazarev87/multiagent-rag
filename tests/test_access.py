@@ -180,3 +180,16 @@ def test_second_base_is_not_searched_from_the_global_index(tmp_path, monkeypatch
     assert response.status_code == 200
     assert "secret" not in response.json()["answer"]
     assert client.get("/documents").status_code == 200
+
+
+def test_rejected_base_keeps_one_reason(tmp_path, monkeypatch):
+    _client(tmp_path, monkeypatch)
+    admin = auth.user_by_login("admin")
+    closed = kb.create("Закрытая")
+    opened = kb.create("Без вопроса")
+    auth.acl_add(opened["id"], "user", admin["id"], "allow")
+    scope = access.build_scope(admin)
+    reasons = {row["kb_id"]: row["reason"] for row in access.rejections(admin, scope)}
+    assert reasons[closed["id"]] == "нет входа"
+    assert reasons[opened["id"]] == "нет спрашивать"
+    assert kb.LEGACY_ID not in reasons
