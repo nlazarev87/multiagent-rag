@@ -113,3 +113,19 @@ def test_old_role_filter_uses_the_snapshot(tmp_path, monkeypatch):
     bare = TestClient(app)
     bare.post("/login", json={"login": "guest", "password": "password12"})
     assert bare.get("/admin/audit").status_code == 403
+
+
+def test_same_second_continues_and_the_period_includes_its_edges(tmp_path, monkeypatch):
+    _root(tmp_path, monkeypatch)
+    user = {"id": "u", "login": "ann", "role_id": "r", "role": "Роль"}
+    monkeypatch.setattr(audit, "_stamp", lambda: "2026-11-02T00:00:01Z")
+    for number in range(3):
+        audit.write("upload", user, {"n": number})
+    page = audit.list_events(limit=2)
+    assert [row["id"] for row in page] == [3, 2]
+    rest = audit.list_events(before=page[-1]["time"], before_id=page[-1]["id"], limit=2)
+    assert [row["id"] for row in rest] == [1]
+    assert len(audit.list_events(after="2026-11-02T00:00:01Z")) == 3
+    assert len(audit.list_events(before="2026-11-02T00:00:01Z")) == 3
+    assert audit.list_events(after="2026-11-02T00:00:02Z") == []
+    assert audit.list_events(before="2026-11-02T00:00:00Z") == []

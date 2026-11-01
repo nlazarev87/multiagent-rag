@@ -345,6 +345,8 @@ def test_creator_sees_a_new_base_and_the_same_role_does_not(tmp_path, monkeypatc
         files=[("files", ("note.txt", b"text", "text/plain"))],
     )
     assert sent.status_code == 200
+    uploaded = [item for item in __import__("audit").list_events(kind="upload") if item["ok"]]
+    assert uploaded and "note.txt" in (uploaded[0]["payload"].get("names") or [])
     targets = client.get("/upload-targets").json()
     created = next(row for row in targets["bases"] if row["name"] == "Цех")
     again = client.post(
@@ -365,6 +367,7 @@ def test_creator_sees_a_new_base_and_the_same_role_does_not(tmp_path, monkeypatc
         files=[("files", ("no.txt", b"text", "text/plain"))],
     )
     assert refused.status_code == 403
+    assert any(item["kind"] == "upload" and item["ok"] is False for item in __import__("audit").list_events())
 
 
 def test_follow_up_without_a_base_id_does_not_open_the_other_catalog(tmp_path, monkeypatch):

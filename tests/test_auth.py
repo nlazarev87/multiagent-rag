@@ -167,6 +167,8 @@ def test_blocked_person_and_new_password_lose_the_session(tmp_path, monkeypatch)
     assert guest.get("/me").status_code == 200
     assert client.patch(f"/admin/users/{guest_id}", json={"password": "password99"}).status_code == 200
     assert guest.get("/documents").status_code == 401
+    missing = client.patch("/admin/users/missing-person", json={"password": "password99"})
+    assert missing.status_code == 404
 
 
 def test_last_manager_refusal_is_the_server_text(tmp_path, monkeypatch):

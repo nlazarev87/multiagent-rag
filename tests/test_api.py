@@ -108,7 +108,9 @@ def test_upload_lists_document(tmp_path, monkeypatch):
     assert "data-kb" in page.text
     assert "treeDragging" in page.text
     assert "Дальше" in page.text
-    assert 'id="status"' in page.text and "z-index: 6" in page.text
+    assert "before_id" in page.text
+    assert 'id="status" class="hidden"' in page.text and "z-index: 6" in page.text
+    assert "response.status === 401" in page.text
 
 
 def _token_count(monkeypatch):
