@@ -350,7 +350,12 @@ def set_password(user_id, new):
     salt, digest = hash_password(new)
     conn = _connect()
     try:
-        conn.execute("UPDATE users SET salt = ?, password = ? WHERE id = ?", (salt, digest, user_id))
+        changed = conn.execute(
+            "UPDATE users SET salt = ?, password = ? WHERE id = ?",
+            (salt, digest, user_id),
+        ).rowcount
+        if not changed:
+            raise LookupError("user")
         conn.commit()
     finally:
         conn.close()

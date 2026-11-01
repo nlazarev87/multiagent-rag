@@ -127,19 +127,27 @@ def _load(row):
     return body
 
 
-def list_events(*, user_id="", role_id="", group_id="", kind="", after="", before="", limit=50):
+def list_events(*, user_id="", role_id="", group_id="", kind="", after="", before="", before_id=0, limit=50):
     ensure()
     conn = _connect()
     try:
         rows = conn.execute("SELECT id, prev_hash, row_hash, body FROM events ORDER BY id DESC").fetchall()
     finally:
         conn.close()
+    try:
+        cursor = int(before_id or 0)
+    except (TypeError, ValueError):
+        cursor = 0
     found = []
     for row in rows:
         body = _load(row)
-        if before and body["time"] >= before:
+        # Границы периода входят в выборку. Продолжение страницы передаёт ещё id
+        # последней строки: иначе строки той же секунды пропадают.
+        if before and body["time"] > before:
             continue
-        if after and body["time"] <= after:
+        if before and cursor and body["time"] == before and body["id"] >= cursor:
+            continue
+        if after and body["time"] < after:
             continue
         if user_id and body.get("user_id") != user_id:
             continue

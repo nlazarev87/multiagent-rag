@@ -307,6 +307,8 @@ def me_password(request: Request, body: PasswordChange):
         raise HTTPException(400, detail="Прежний пароль не подошёл") from None
     except ValueError:
         raise HTTPException(400, detail="Пароль короче 8 знаков") from None
+    except LookupError:
+        raise HTTPException(404, detail="Не найдено") from None
     audit.write("password_set", user, {"user_id": user["id"]})
     audit.write("session_drop", user, {"user_id": user["id"]})
     return {"ok": True}
@@ -512,7 +514,6 @@ async def upload(request: Request = None, files: list[UploadFile] = File(None), 
     user = _actor(request)
     _user_upload = user
     target = kb_id
-    created = False
     if new_name:
         if not access.has_global(user, "create_kb"):
             raise HTTPException(403, detail="Нет права создать базу")
@@ -528,18 +529,21 @@ async def upload(request: Request = None, files: list[UploadFile] = File(None), 
         audit.write("access_allow", user, {"kb_id": row["id"], "subject": user["id"]})
         audit.write("personal_actions", user, {"kb_id": row["id"]})
         target = row["id"]
-        created = True
     if not target:
         raise HTTPException(400, detail="Нужно выбрать базу")
     if not kb.is_uuid(target):
         raise HTTPException(404, detail="База не найдена")
     row = kb.get(target)
     if row is None or not access.can(user, target, "upload"):
+        audit.write("upload", user, {"kb_id": target}, ok=False)
         raise HTTPException(403, detail="Нет права загружать")
-    payloads = [(_upload_name(item.filename), await item.read()) for item in files]
-    saved = _save_uploads(payloads, row["inbox"], row["chroma"], row["legacy"])
-    if not created:
-        audit.write("upload", user, {"kb_id": target, "names": [name for name, _payload in payloads]})
+    try:
+        payloads = [(_upload_name(item.filename), await item.read()) for item in files]
+        saved = _save_uploads(payloads, row["inbox"], row["chroma"], row["legacy"])
+    except HTTPException:
+        audit.write("upload", user, {"kb_id": target}, ok=False)
+        raise
+    audit.write("upload", user, {"kb_id": target, "names": [name for name, _payload in payloads]})
     if trees.separate():
         saved["tree"] = _page_tree(user)
     return saved
@@ -1119,10 +1123,10 @@ def kb_create(body: KbBody, request: Request):
 
 
 @app.get("/admin/audit")
-def admin_audit(request: Request, user: str = "", role: str = "", group: str = "", kind: str = "", before: str = "", after: str = ""):
+def admin_audit(request: Request, user: str = "", role: str = "", group: str = "", kind: str = "", before: str = "", after: str = "", before_id: int = 0):
     actor = _user(request)
     _need(actor, "view_audit")
-    rows = audit.list_events(user_id=user, role_id=role, group_id=group, kind=kind, before=before, after=after, limit=50)
+    rows = audit.list_events(user_id=user, role_id=role, group_id=group, kind=kind, before=before, after=after, before_id=before_id, limit=50)
     audit.write("audit_view", actor, {"user": user, "role": role, "group": group, "kind": kind})
     return {"events": rows}
 

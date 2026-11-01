@@ -475,7 +475,7 @@
       </div>
     </section>
   </main>
-  <footer id="status"><span id="status-login"></span><span id="status-role"></span><button type="button" id="status-password">Сменить пароль</button><button type="button" id="status-out">Выйти</button></footer>
+  <footer id="status" class="hidden"><span id="status-login"></span><span id="status-role"></span><button type="button" id="status-password">Сменить пароль</button><button type="button" id="status-out">Выйти</button></footer>
   <script>
     const shell = document.getElementById("shell");
     const chatsEl = document.getElementById("chats");
@@ -1119,6 +1119,10 @@
       try {
         const stamp = treeStamp;
         const response = await fetch("/ui", { signal: AbortSignal.timeout(8000) });
+        if (response.status === 401) {
+          showGate();
+          return;
+        }
         if (!response.ok) throw new Error("ui");
         const data = await response.json();
         dialogs = data.dialogs || [];
@@ -1444,6 +1448,7 @@
 
     function paintMe(data) {
       me = data;
+      document.getElementById("status").classList.remove("hidden");
       document.getElementById("status-login").textContent = data.login || "";
       document.getElementById("status-role").textContent = data.role || "";
       const actions = data.actions || [];
@@ -1457,13 +1462,23 @@
     }
 
     async function showGate() {
+      admin.classList.add("hidden");
+      document.getElementById("status").classList.add("hidden");
+      gate.classList.remove("hidden");
+      document.getElementById("shell").classList.add("hidden");
       const state = await (await fetch("/auth/state")).json();
       document.getElementById("gate-title").textContent = state.has_users ? "Вход" : "Создать администратора";
       document.getElementById("gate-submit").textContent = state.has_users ? "Войти" : "Создать администратора";
       gate.dataset.mode = state.has_users ? "login" : "setup";
-      gate.classList.remove("hidden");
-      document.getElementById("shell").classList.add("hidden");
     }
+
+    const pageFetch = window.fetch.bind(window);
+    window.fetch = async function (input, init) {
+      const response = await pageFetch(input, init);
+      const url = typeof input === "string" ? input : (input && input.url) || "";
+      if (response.status === 401 && !url.endsWith("/login") && !url.endsWith("/setup")) showGate();
+      return response;
+    };
 
     gate.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -1620,7 +1635,7 @@
       const after = adminInput("с времени UTC");
       const before = adminInput("до времени UTC");
       const list = document.createElement("div");
-      async function load() {
+      async function load(cursor) {
         list.replaceChildren();
         const query = new URLSearchParams();
         if (person.value) query.set("user", person.value);
@@ -1629,6 +1644,7 @@
         if (kind.value) query.set("kind", kind.value);
         if (after.value) query.set("after", after.value);
         if (before.value) query.set("before", before.value);
+        if (cursor) query.set("before_id", String(cursor));
         const data = await (await fetch("/admin/audit?" + query.toString())).json();
         const events = data.events || [];
         events.forEach((event) => {
@@ -1641,7 +1657,7 @@
           const last = events[events.length - 1];
           list.append(adminButton("Дальше", () => {
             before.value = last.time || "";
-            load();
+            load(last.id);
           }));
         }
       }
