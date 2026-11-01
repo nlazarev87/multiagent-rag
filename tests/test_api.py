@@ -1,5 +1,7 @@
 import asyncio
+import tempfile
 import threading
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
@@ -21,6 +23,27 @@ def _answer_row():
 @pytest.fixture(autouse=True)
 def ui_store(tmp_path, monkeypatch):
     monkeypatch.setattr("workspace.PATH", tmp_path / "workspace.json")
+    monkeypatch.setenv("APP_ROOT", tempfile.mkdtemp(prefix="rag-auth-"))
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("CONFIG_DIR", str(repo / "config"))
+    monkeypatch.setenv("PROMPTS_DIR", str(repo / "data" / "prompts"))
+    import settings
+    settings.reload()
+    import access
+    import auth
+    import kb
+    auth.ensure()
+    if auth.count_users() == 0:
+        auth.setup("admin", "password12")
+    user = auth.user_by_login("admin")
+    kb.ensure_legacy()
+    access.backfill_legacy(user["id"])
+    monkeypatch.setenv("RAG_TEST_USER", user["id"])
+
+
+def _doc_names(payload):
+    rows = payload.get("documents", payload) if isinstance(payload, dict) else payload
+    return [row["name"] if isinstance(row, dict) else row for row in rows]
 
 
 def test_api_routes(tmp_path, monkeypatch):
@@ -74,7 +97,7 @@ def test_upload_lists_document(tmp_path, monkeypatch):
     client = TestClient(app)
     response = client.post("/upload", files=[("files", ("note.txt", "Цех имеет номер 4.", "text/plain"))])
     assert response.status_code == 200
-    assert client.get("/documents").json()["documents"] == ["note.txt"]
+    assert _doc_names(client.get("/documents").json()) == ["note.txt"]
     page = client.get("/")
     assert page.status_code == 200
     assert "insertAdjacentHTML" not in page.text and "innerHTML" not in page.text
@@ -231,7 +254,7 @@ def test_preview_listed_document(monkeypatch):
     rows = [{"text": "абзац", "section": "Введение", "chunk_index": 0}]
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
     monkeypatch.setattr("api.chunks_for_document", lambda name: rows if name == "note.txt" else [])
-    response = TestClient(app).get("/documents/note.txt/preview")
+    response = TestClient(app).get("/kb/00000000-0000-4000-8000-000000000001/documents/note.txt/preview")
     assert response.status_code == 200
     assert response.json() == {"document_name": "note.txt", "chunks": rows}
 
@@ -239,7 +262,7 @@ def test_preview_listed_document(monkeypatch):
 def test_preview_unknown_document(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
     monkeypatch.setattr("api.chunks_for_document", lambda name: (_ for _ in ()).throw(AssertionError(name)))
-    assert TestClient(app).get("/documents/missing.txt/preview").status_code == 404
+    assert TestClient(app).get("/kb/00000000-0000-4000-8000-000000000001/documents/missing.txt/preview").status_code == 404
 
 
 def test_preview_stays_inside_listed_names(tmp_path, monkeypatch):
@@ -266,7 +289,7 @@ def test_delete_document_stays_inside_inbox(tmp_path, monkeypatch):
     (inbox / "note.txt").write_text("текст", encoding="utf-8")
     outside = tmp_path / "outside.txt"
     outside.write_text("чужой файл", encoding="utf-8")
-    assert TestClient(app).delete("/documents/note.txt").status_code == 200
+    assert TestClient(app).delete("/kb/00000000-0000-4000-8000-000000000001/documents/note.txt").status_code == 200
     api.documents_delete("../outside.txt")
     assert removed == ["note.txt", "outside.txt"]
     assert not (inbox / "note.txt").exists()
@@ -519,7 +542,7 @@ def test_upload_writes_only_the_file_name(tmp_path, monkeypatch):
     assert (inbox / "note.txt").read_text(encoding="utf-8") == "Насос Н-12."
     assert not (inbox / "subdir").exists()
     assert outside.read_text(encoding="utf-8") == "чужой файл"
-    assert result["documents"] == ["outside.txt", "note.txt"]
+    assert _doc_names(result) == ["outside.txt", "note.txt"]
 
 def test_delete_document_keeps_the_saved_answer(tmp_path, monkeypatch):
     inbox = tmp_path / "inbox"
@@ -551,9 +574,9 @@ def test_delete_document_keeps_the_saved_answer(tmp_path, monkeypatch):
         },
     })
     assert placed.status_code == 200
-    response = client.delete("/documents/gone.txt")
+    response = client.delete("/kb/00000000-0000-4000-8000-000000000001/documents/gone.txt")
     assert response.status_code == 200
-    assert response.json()["documents"] == ["note.txt"]
+    assert _doc_names(response.json()) == ["note.txt"]
     assert workspace.iter_files(response.json()["tree"]) == ["note.txt"]
     saved = next(item for item in workspace.load()["dialogs"] if item["id"] == created["id"])
     assert saved["turns"][0]["query"] == "вопрос"
@@ -584,7 +607,7 @@ def test_query_failure_does_not_save_a_turn(monkeypatch):
     created = client.post("/ui/dialogs").json()
     response = client.post("/query", json={"query": "номер", "dialog_id": created["id"]})
     assert response.status_code == 500
-    assert response.json()["detail"] == "model down"
+    assert response.json()["detail"] == "Ошибка сервера"
     assert workspace.get_dialog_row(created["id"])["turns"] == []
 
 def test_ratings_reject_out_of_range_and_missing_turns(monkeypatch):
@@ -875,9 +898,9 @@ def test_delete_document_drops_tree_node_and_keeps_dialog(tmp_path, monkeypatch)
     }})
     created = client.post("/ui/dialogs").json()
     workspace.append_turn(created["id"], "вопрос", _answer_row())
-    response = client.delete("/documents/note.txt")
+    response = client.delete("/kb/00000000-0000-4000-8000-000000000001/documents/note.txt")
     assert response.status_code == 200
-    assert response.json()["documents"] == ["keep.txt"]
+    assert _doc_names(response.json()) == ["keep.txt"]
     assert workspace.iter_files(response.json()["tree"]) == ["keep.txt"]
     assert response.json()["tree"]["children"][0]["name"] == "Папка"
     saved = workspace.load()
@@ -931,9 +954,9 @@ def test_delete_document_keeps_the_dialog(tmp_path, monkeypatch):
             ],
         }
     })
-    response = client.delete("/documents/note.txt")
+    response = client.delete("/kb/00000000-0000-4000-8000-000000000001/documents/note.txt")
     assert response.status_code == 200
-    assert response.json()["documents"] == ["kept.txt"]
+    assert _doc_names(response.json()) == ["kept.txt"]
     assert "note.txt" not in workspace.iter_files(response.json()["tree"])
     assert {"document_name": "kept.txt"} in response.json()["tree"]["children"]
     saved = next(row for row in workspace.load()["dialogs"] if row["id"] == created["id"])
@@ -1223,7 +1246,7 @@ def test_upload_keeps_the_file_when_indexing_fails(tmp_path, monkeypatch):
         files=[("files", ("note.txt", "Цех имеет номер 4.".encode(), "text/plain"))],
     )
     assert response.status_code == 500
-    assert response.json()["detail"] == "index down"
+    assert response.json()["detail"] == "Не удалось записать файл"
     assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "Цех имеет номер 4."
     cache.cache_clear()
 

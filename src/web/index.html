@@ -7,6 +7,8 @@
   <style>
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; }
+    body { display: flex; flex-direction: column; }
+    #shell { flex: 1; min-height: 0; height: auto; }
     body {
       --left: 260px;
       --mid: 380px;
@@ -347,13 +349,84 @@
     }
     .chunk p.hit { background: var(--hit); padding: 2px 4px; }
     .file { margin: 4px 0; }
+    #gate, #admin, #pick {
+      position: fixed;
+      inset: 0;
+      background: var(--chrome);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 5;
+    }
+    #admin { align-items: stretch; justify-content: stretch; }
+    .card {
+      width: min(420px, calc(100% - 32px));
+      background: var(--editor);
+      border: 1px solid var(--line2);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .card input, .admin-body input, .admin-body select {
+      font: inherit;
+      color: inherit;
+      background: var(--chrome);
+      border: 1px solid var(--line2);
+      border-radius: 6px;
+      padding: 6px 8px;
+    }
+    .card button, .text-btn {
+      font: inherit;
+      background: var(--btn);
+      color: white;
+      border: 0;
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    #status {
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 8px;
+      background: var(--chrome);
+      border-top: 1px solid var(--line);
+      color: var(--fg2);
+      font-size: 12px;
+    }
+    .admin-body { flex: 1; overflow: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+    .admin-head { display: flex; gap: 8px; padding: 8px; border-bottom: 1px solid var(--line); }
   </style>
 </head>
 <body>
+  <form id="gate" class="hidden">
+    <div class="card">
+      <p id="gate-title">Вход</p>
+      <input id="gate-login" autocomplete="username" placeholder="Логин" aria-label="Логин">
+      <input id="gate-password" type="password" autocomplete="current-password" placeholder="Пароль" aria-label="Пароль">
+      <button id="gate-submit" class="text-btn" type="submit">Войти</button>
+      <p id="gate-error"></p>
+    </div>
+  </form>
+  <section id="admin" class="hidden" aria-label="Управление">
+    <div class="admin-head">
+      <button type="button" id="admin-users" class="text-btn">Люди</button>
+      <button type="button" id="admin-roles" class="text-btn">Роли</button>
+      <button type="button" id="admin-groups" class="text-btn">Группы</button>
+      <button type="button" id="admin-access" class="text-btn">Доступы</button>
+      <button type="button" id="admin-audit" class="text-btn">Журнал</button>
+      <button type="button" id="admin-close" class="text-btn">Закрыть</button>
+    </div>
+    <div id="admin-body" class="admin-body"></div>
+  </section>
   <main class="shell" id="shell">
     <aside class="pane" aria-label="Диалоги">
       <div class="side-head">
         <button id="fresh" type="button">Новый диалог</button>
+        <button id="manage" type="button" class="hidden">Управление</button>
       </div>
       <ul id="chats"></ul>
       <div class="status">
@@ -399,6 +472,7 @@
       </div>
     </section>
   </main>
+  <footer id="status"><span id="status-login"></span><span id="status-role"></span><button type="button" id="status-password">Сменить пароль</button><button type="button" id="status-out">Выйти</button></footer>
   <script>
     const shell = document.getElementById("shell");
     const chatsEl = document.getElementById("chats");
@@ -436,6 +510,16 @@
     let treeStamp = 0;
     let treePending = false;
     let treeWriting = false;
+    let me = null;
+    let fileBase = {};
+
+    function field(parent, tag, text, className) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text) node.textContent = text;
+      parent.append(node);
+      return node;
+    }
 
     function element(tag, className, text) {
       const node = document.createElement(tag);
@@ -593,33 +677,66 @@
       preview.parentNode.scrollTop = 0;
     }
 
-    async function showPreview(name, where) {
+    async function showPreview(name, where, kbId) {
       if (!name) return;
-      if (!openTabs.includes(name)) openTabs.push(name);
-      activeTab = name;
+      const known = (typeof fileBase === "object" && fileBase) ? (fileBase[name] || []) : [];
+      const chosen = kbId || (where && where.kb_id) || (known.length === 1 ? known[0].kb_id : "");
+      if (!chosen && known.length > 1) {
+        preview.classList.remove("idle");
+        const note = element("p", "muted", "Файл есть в нескольких базах");
+        const list = document.createElement("ul");
+        known.forEach((row) => {
+          const item = document.createElement("li");
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = row.kb_name + " / " + name;
+          button.addEventListener("click", () => showPreview(name, where, row.kb_id));
+          item.append(button);
+          list.append(item);
+        });
+        preview.replaceChildren(note, list);
+        return;
+      }
+      const tabKey = chosen ? chosen + ":" + name : name;
+      if (!openTabs.includes(tabKey)) openTabs.push(tabKey);
+      activeTab = tabKey;
       paintTabs();
-      if (!tabChunks[name]) {
+      if (!tabChunks[name] && !tabChunks[tabKey]) {
         preview.classList.add("idle");
         preview.replaceChildren(element("p", "muted", "Открывается…"));
         try {
-          const response = await fetch("/documents/" + encodeURIComponent(name) + "/preview", {
+          const url = chosen
+            ? "/kb/" + encodeURIComponent(chosen) + "/documents/" + encodeURIComponent(name) + "/preview"
+            : "/documents/" + encodeURIComponent(name) + "/preview";
+          const response = await fetch(url, {
             signal: AbortSignal.timeout(15000),
           });
           const data = await response.json().catch(() => ({}));
-          if (response.ok) tabChunks[name] = data.chunks || [];
-          if (activeTab !== name) return;
+          if (response.ok) {
+            tabChunks[name] = data.chunks || [];
+            tabChunks[tabKey] = tabChunks[name];
+          }
+          if (!chosen) {
+            if (activeTab !== name) return;
+          } else if (activeTab !== tabKey) {
+            return;
+          }
           if (!response.ok) {
             preview.replaceChildren(element("p", "muted", data.detail || "Документ не найден"));
             return;
           }
         } catch (error) {
-          if (activeTab !== name) return;
+          if (!chosen) {
+            if (activeTab !== name) return;
+          } else if (activeTab !== tabKey) {
+            return;
+          }
           preview.replaceChildren(element("p", "muted", "Сервер не ответил"));
           return;
         }
       }
-      if (activeTab !== name) return;
-      const chunks = tabChunks[name] || [];
+      if (activeTab !== name && activeTab !== tabKey) return;
+      const chunks = tabChunks[name] || tabChunks[tabKey] || [];
       if (!chunks.length) {
         preview.replaceChildren(element("p", "muted", "Нет текста"));
         return;
@@ -731,9 +848,25 @@
     function ensureTreeFiles(names) {
       const have = new Set(treeFiles(tree));
       tree.children = tree.children || [];
-      (names || []).forEach((name) => {
+      (names || []).forEach((item) => {
+        const name = item && item.name ? item.name : item;
+        const kbId = item && item.kb_id ? item.kb_id : "";
+        if (name && kbId) {
+          fileBase[name] = fileBase[name] || [];
+          if (!fileBase[name].some((row) => row.kb_id === kbId)) fileBase[name].push(item);
+        }
         if (name && !have.has(name)) {
-          tree.children.push({ document_name: name });
+          const kbIds = new Set((names || []).map((row) => row && row.kb_id).filter(Boolean));
+          if (kbIds.size > 1 && kbId) {
+            let folder = (tree.children || []).find((child) => child.id === "kb-" + kbId);
+            if (!folder) {
+              folder = { id: "kb-" + kbId, name: item.kb_name || kbId, children: [] };
+              tree.children.push(folder);
+            }
+            folder.children.push({ document_name: name });
+          } else {
+            tree.children.push({ document_name: name });
+          }
           have.add(name);
         }
       });
@@ -1110,6 +1243,7 @@
         return;
       }
       showPreview(name, {
+        kb_id: node.getAttribute("data-kb") || "",
         chunkIndex: node.getAttribute("data-index"),
         section: node.getAttribute("data-section") || "",
         answer: node.getAttribute("data-answer") || "",
@@ -1140,6 +1274,47 @@
       box.querySelector("span").textContent = label;
     }
 
+    async function chooseBase() {
+      const targets = await (await fetch("/upload-targets")).json();
+      if (!targets.bases.length && !targets.create) return null;
+      if (targets.bases.length === 1 && !targets.create) return { kb_id: targets.bases[0].id };
+      return await new Promise((resolve) => {
+        const wrap = document.createElement("div");
+        wrap.id = "pick";
+        const form = document.createElement("form");
+        form.className = "card";
+        const select = document.createElement("select");
+        targets.bases.forEach((item) => {
+          const option = document.createElement("option");
+          option.value = item.id;
+          option.textContent = item.name;
+          select.append(option);
+        });
+        if (targets.create) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "Новая база";
+          select.append(option);
+        }
+        const name = document.createElement("input");
+        name.placeholder = "Имя новой базы";
+        name.classList.toggle("hidden", select.value !== "");
+        select.addEventListener("change", () => name.classList.toggle("hidden", select.value !== ""));
+        const ok = document.createElement("button");
+        ok.className = "text-btn";
+        ok.type = "submit";
+        ok.textContent = "Загрузить";
+        form.append(field(form, "p", "Куда загрузить"), select, name, ok);
+        wrap.append(form);
+        document.body.append(wrap);
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          wrap.remove();
+          resolve(select.value ? { kb_id: select.value } : { new_name: name.value });
+        });
+      });
+    }
+
     files.onchange = async () => {
       const chosen = [...files.files];
       const stamp = treeStamp;
@@ -1147,7 +1322,14 @@
       if (!chosen.length) return;
       setMode("docs");
       steps.replaceChildren(...chosen.map(row));
+      const target = await chooseBase();
+      if (!target) {
+        steps.append(element("p", "", "Нет базы для загрузки"));
+        return;
+      }
       const body = new FormData();
+      if (target.kb_id) body.append("kb_id", target.kb_id);
+      if (target.new_name) body.append("new_name", target.new_name);
       for (const file of chosen) body.append("files", file);
       const request = new XMLHttpRequest();
       request.open("POST", "/upload");
@@ -1166,7 +1348,7 @@
         if (data.tree && stamp === treeStamp && !treePending && !treeWriting) tree = data.tree;
         else ensureTreeFiles(data.documents || []);
         paintTree();
-        const known = new Set(data.documents || []);
+        const known = new Set((data.documents || []).map((item) => item.name || item));
         for (const file of chosen) {
           if (known.has(file.name)) paintStep(file.name, 3, "готов к получению вопросов");
         }
@@ -1230,9 +1412,165 @@
       }
     };
 
-    idlePreview();
-    showReady();
-    loadUi(true);
+    const gate = document.getElementById("gate");
+    const admin = document.getElementById("admin");
+    const adminBody = document.getElementById("admin-body");
+
+    function paintMe(data) {
+      me = data;
+      document.getElementById("status-login").textContent = data.login || "";
+      document.getElementById("status-role").textContent = data.role || "";
+      const actions = data.actions || [];
+      document.getElementById("manage").classList.toggle("hidden", !actions.length);
+      ["users", "roles", "groups", "access", "audit"].forEach((name) => {
+        const button = document.getElementById("admin-" + name);
+        const need = { users: "manage_users", roles: "manage_roles", groups: "manage_groups", access: "manage_access", audit: "view_audit" }[name];
+        button.classList.toggle("hidden", !actions.includes(need));
+      });
+    }
+
+    async function showGate() {
+      const state = await (await fetch("/auth/state")).json();
+      document.getElementById("gate-title").textContent = state.has_users ? "Вход" : "Создать администратора";
+      document.getElementById("gate-submit").textContent = state.has_users ? "Войти" : "Создать администратора";
+      gate.dataset.mode = state.has_users ? "login" : "setup";
+      gate.classList.remove("hidden");
+      document.getElementById("shell").classList.add("hidden");
+    }
+
+    gate.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const path = gate.dataset.mode === "setup" ? "/setup" : "/login";
+      const response = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          login: document.getElementById("gate-login").value,
+          password: document.getElementById("gate-password").value,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        document.getElementById("gate-error").textContent = data.detail || "Ошибка";
+        return;
+      }
+      gate.classList.add("hidden");
+      document.getElementById("shell").classList.remove("hidden");
+      paintMe(data);
+      idlePreview();
+      showReady();
+      loadUi(true);
+    });
+
+    document.getElementById("status-out").addEventListener("click", async () => {
+      await fetch("/logout", { method: "POST" });
+      location.reload();
+    });
+    document.getElementById("status-password").addEventListener("click", async () => {
+      const oldPassword = window.prompt("Прежний пароль", "");
+      const newPassword = window.prompt("Новый пароль", "");
+      if (!oldPassword || !newPassword) return;
+      const response = await fetch("/me/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ old: oldPassword, new: newPassword }),
+      });
+      const data = await response.json().catch(() => ({}));
+      window.alert(response.ok ? "Пароль изменён" : (data.detail || "Ошибка"));
+    });
+    document.getElementById("manage").addEventListener("click", () => admin.classList.remove("hidden"));
+    document.getElementById("admin-close").addEventListener("click", () => admin.classList.add("hidden"));
+
+    async function showUsers() {
+      adminBody.replaceChildren();
+      const data = await (await fetch("/admin/users")).json();
+      (data.users || []).forEach((user) => field(adminBody, "p", user.login + " — " + user.role + (user.blocked ? " (заблокирован)" : "")));
+      const form = document.createElement("form");
+      form.className = "card";
+      const login = document.createElement("input");
+      login.placeholder = "Логин";
+      const password = document.createElement("input");
+      password.placeholder = "Пароль";
+      const role = document.createElement("input");
+      role.placeholder = "id роли";
+      const ok = document.createElement("button");
+      ok.className = "text-btn";
+      ok.type = "submit";
+      ok.textContent = "Создать";
+      form.append(login, password, role, ok);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const response = await fetch("/admin/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ login: login.value, password: password.value, role_id: role.value }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        field(adminBody, "p", response.ok ? "Создан" : (payload.detail || "Ошибка"));
+        if (response.ok) showUsers();
+      });
+      adminBody.append(form);
+    }
+
+    async function showAudit() {
+      adminBody.replaceChildren();
+      const data = await (await fetch("/admin/audit")).json();
+      (data.events || []).forEach((event) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = event.time + " " + event.kind + " " + event.login;
+        button.addEventListener("click", async () => {
+          const full = await (await fetch("/admin/audit/" + event.id)).json();
+          field(adminBody, "pre", JSON.stringify(full, null, 2));
+        });
+        adminBody.append(button);
+      });
+    }
+
+    document.getElementById("admin-users").addEventListener("click", showUsers);
+    document.getElementById("admin-audit").addEventListener("click", showAudit);
+    document.getElementById("admin-roles").addEventListener("click", async () => {
+      adminBody.replaceChildren();
+      const data = await (await fetch("/admin/roles")).json();
+      (data.roles || []).forEach((role) => field(adminBody, "p", role.name + " — " + (role.actions || []).join(", ")));
+      field(adminBody, "p", "Действие роли само базу не открывает. Создание базы и «Открыть себе» эту матрицу не меняют.");
+    });
+    document.getElementById("admin-groups").addEventListener("click", async () => {
+      adminBody.replaceChildren();
+      const data = await (await fetch("/admin/groups")).json();
+      field(adminBody, "p", "Роль в группе — это все, у кого она есть сейчас и будет потом.");
+      (data.groups || []).forEach((group) => field(adminBody, "p", group.name));
+    });
+    document.getElementById("admin-access").addEventListener("click", async () => {
+      adminBody.replaceChildren();
+      const data = await (await fetch("/admin/kb")).json();
+      field(adminBody, "p", "Остальные с вашей ролью эту базу не получат, пока им отдельно не откроют доступ и не включат действия.");
+      (data.bases || []).forEach((base) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "text-btn";
+        button.textContent = "Открыть себе: " + base.name;
+        button.addEventListener("click", async () => {
+          const response = await fetch("/admin/kb/" + base.id + "/self", { method: "POST" });
+          const payload = await response.json().catch(() => ({}));
+          field(adminBody, "p", response.ok ? "Доступ записан" : (payload.detail || "Ошибка"));
+        });
+        adminBody.append(button);
+      });
+    });
+
+    async function boot() {
+      const response = await fetch("/me");
+      if (!response.ok) {
+        showGate();
+        return;
+      }
+      paintMe(await response.json());
+      idlePreview();
+      showReady();
+      loadUi(true);
+    }
+    boot();
   </script>
 </body>
 </html>

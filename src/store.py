@@ -1,7 +1,7 @@
-"""Индекс Chroma и поиск BM25 + RRF.
+"""Индекс и поиск по словам и по смыслу.
 
-Два файла с одним текстом не делят id чанка. Поиск, который уже открыл индекс,
-не падает, если параллельная запись этот индекс очистила.
+Два файла с одним текстом не схлопываются в одну запись. Удаление документа
+во время поиска не роняет уже идущий запрос.
 """
 import math
 import os
@@ -131,7 +131,7 @@ def _chunk_id(chunk):
 
 
 def upsert_chunks(chunks):
-    """Записать чанки. Тот же checksum и то же число чанков документ не переписывают."""
+    """Записать куски текста. Тот же текст и то же число кусков файл не переписывают."""
     global _index
     if not chunks:
         return
@@ -169,7 +169,7 @@ def upsert_chunks(chunks):
 
 
 def delete_document(document_name):
-    """Удалить из индекса только чанки этого файла."""
+    """Удалить из индекса только куски этого файла."""
     global _index
     with _index_lock:
         col = collection()
@@ -190,7 +190,7 @@ def list_documents():
 
 
 def chunks_for_document(name):
-    """Все чанки одного файла по возрастанию chunk_index."""
+    """Все куски одного файла по порядку."""
     with _index_lock:
         _, texts, metas = _rows(collection(), where={"document_name": name})
         rows = [
@@ -346,7 +346,7 @@ def scope(index, query):
             doc: sum(_marker_hit(name, marks[doc], index["vocabulary"][doc]) for name in known)
             for doc in documents
         }
-    # Одна основа имени не привязывает поиск к файлу: «задания» есть у многих документов.
+    # Одно слово из имени не сужает поиск до одного файла. Нужны два совпавших.
     if len(query_stems) >= 2:
         stemmed = set.intersection(*query_stems)
         if stemmed:
@@ -500,8 +500,69 @@ def _contexts(index, ranked, limit):
     return found
 
 
+def _same_path(left, right):
+    return Path(left).resolve() == Path(right).resolve()
+
+
+def _elsewhere(path, fn):
+    """Выполнить fn, пока оболочка смотрит на другой каталог, и вернуть прежний путь."""
+    path = Path(path)
+    if _same_path(path, CHROMA):
+        return fn()
+    with _index_lock:
+        saved = (CHROMA, _client, _collection, _index)
+        temp = None
+        try:
+            globals()["CHROMA"] = path
+            globals()["_client"] = None
+            globals()["_collection"] = None
+            globals()["_index"] = None
+            return fn()
+        finally:
+            temp = globals().get("_client")
+            globals()["CHROMA"], globals()["_client"], globals()["_collection"], globals()["_index"] = saved
+            if temp is not None and temp is not saved[1]:
+                system = getattr(temp, "_system", None)
+                if system is not None and hasattr(system, "stop"):
+                    try:
+                        system.stop()
+                    except Exception:
+                        pass
+
+
+def search_at(path, clear_query, limit=4, document_names=None):
+    return _elsewhere(path, lambda: search_chunks(clear_query, limit, document_names))
+
+
+def upsert_at(path, chunks):
+    return _elsewhere(path, lambda: upsert_chunks(chunks))
+
+
+def delete_at(path, document_name):
+    return _elsewhere(path, lambda: delete_document(document_name))
+
+
+def list_at(path):
+    return _elsewhere(path, list_documents)
+
+
+def chunks_at(path, name):
+    return _elsewhere(path, lambda: chunks_for_document(name))
+
+
+def known_at(path, term):
+    return _elsewhere(path, lambda: known(term))
+
+
+def search_permit(permit, clear_query, limit=4, document_names=None):
+    """Поиск только после повторной проверки допуска. Чужой путь не читается."""
+    if permit is None or not permit.confirm():
+        raise PermissionError("closed")
+    return search_at(permit.chroma, clear_query, limit, document_names)
+
+
 def search_chunks(clear_query, limit=4, document_names=None):
-    """Вернуть до limit чанков. document_names ограничивает уже выбранными файлами.
+    """Вернуть не больше limit кусков. Имена ограничивают поиск уже выбранными файлами.
 
     Пустой список означает весь индекс: третьим аргументом его не передают.
     """

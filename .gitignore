@@ -8,5 +8,9 @@ data/inbox/
 data/models/
 data/load_time.txt
 data/ui/
+data/auth.sqlite
+data/audit/
+data/kbs/
+data/users/
 
 .env
