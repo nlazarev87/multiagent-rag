@@ -114,6 +114,7 @@ let tabChunks = {};
 let tree = { id: "root", name: "", children: [] };
 let treePending = false;
 let treeWriting = false;
+let treeDragging = false;
 let treeStamp = 0;
 let painted = 0;
 
@@ -285,6 +286,23 @@ async function main() {
   }
   if (painted !== 1) throw new Error("a stale save repainted the tree");
 
+  treeDragging = true;
+  treeWriting = false;
+  treePending = false;
+  painted = 0;
+  tree = { id: "root", name: "", children: [{ document_name: "drag.txt" }] };
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => ({ tree: { id: "root", name: "", children: [{ document_name: "server.txt" }] } }),
+  });
+  persistTree();
+  await flush();
+  if (tree.children[0].document_name !== "drag.txt") {
+    throw new Error("a save that finished while dragging replaced the tree");
+  }
+  if (painted !== 0) throw new Error("a save that finished while dragging repainted the tree");
+  treeDragging = false;
+
   openTabs = [];
   activeTab = "";
   tabChunks = {};
@@ -392,7 +410,7 @@ def test_preview_and_tree_save_ignore_a_stale_result():
 def test_preview_ignores_a_stale_document_and_a_stale_tree_save():
     page = HTML.read_text(encoding="utf-8")
     assert "if (activeTab !== name) return;" in page
-    assert "if (!ok || treePending) continue;" in page
+    assert "if (!ok || treePending || treeDragging) continue;" in page
     completed = subprocess.run(
         [NODE, "-e", SCRIPT],
         check=False,
@@ -431,6 +449,7 @@ let tree = { id: "root", name: "", children: [{ document_name: "kept.txt" }] };
 let treeStamp = 0;
 let treePending = false;
 let treeWriting = false;
+let treeDragging = false;
 let dialogs = [{ id: "kept" }];
 let dialogId = "kept";
 let uiLoaded = true;
@@ -509,6 +528,16 @@ async function main() {
   if (tree.children[0].document_name !== "server.txt") {
     throw new Error("a quiet refresh did not take the server tree");
   }
+
+  treeDragging = true;
+  treeStamp = 9;
+  tree = { id: "root", name: "", children: [{ document_name: "drag.txt" }] };
+  global.fetch = async () => server("server.txt", ["kept"]);
+  await loadUi(false);
+  if (tree.children[0].document_name !== "drag.txt") {
+    throw new Error("a refresh while a folder is dragged replaced the tree");
+  }
+  treeDragging = false;
   console.log("ok");
 }
 

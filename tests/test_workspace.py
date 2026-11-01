@@ -1573,3 +1573,18 @@ def test_prepare_dialog_loads_only_the_latest_twenty_turns(tmp_path, monkeypatch
     loaded = workspace.get_dialog_row(row["id"])
     assert [turn["query"] for turn in loaded["turns"]] == [str(index) for index in range(21)]
     assert [turn["query"] for turn in dialog.get_dialog(row["id"])] == [str(index) for index in range(1, 21)]
+
+
+def test_append_turn_keeps_the_base_on_the_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    dialog.reset()
+    row = workspace.create_dialog()
+    saved = workspace.append_turn(row["id"], "где", {
+        "answer": "в цехе",
+        "document_names": ["note.txt"],
+        "sources": [{"document_name": "note.txt", "kb_id": "base-1", "chunk_index": 0, "text": "фраза"}],
+    })
+    assert saved["turns"][0]["places"] == [{"kb_id": "base-1", "document_name": "note.txt"}]
+    dialog.reset()
+    workspace.prepare_dialog(row["id"])
+    assert dialog.get_dialog(row["id"])[0]["places"] == [{"kb_id": "base-1", "document_name": "note.txt"}]

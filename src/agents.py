@@ -1839,12 +1839,18 @@ def _grounded(fact, text):
 
 
 def _source(number, chunk):
-    return {
+    row = {
         "number": number,
         "document_name": chunk["document_name"],
         "section": chunk.get("section", ""),
         "chunk_index": chunk.get("chunk_index", 0),
     }
+    if chunk.get("kb_id"):
+        row["kb_id"] = chunk["kb_id"]
+        row["kb_name"] = chunk.get("kb_name") or ""
+    if chunk.get("text"):
+        row["text"] = chunk["text"]
+    return row
 
 
 def _copied(text, flats):

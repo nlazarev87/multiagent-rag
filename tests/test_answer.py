@@ -1895,6 +1895,17 @@ def test_check_keeps_only_fragments_that_hold_the_value():
     assert [source["number"] for source in both["sources"]] == [1, 2]
 
 
+def test_source_keeps_the_base_and_the_chunk_text():
+    left = {"text": "альфа", "document_name": "note.txt", "chunk_index": 0, "section": "", "kb_id": "a", "kb_name": "А"}
+    right = {"text": "бета", "document_name": "note.txt", "chunk_index": 0, "section": "", "kb_id": "b", "kb_name": "Б"}
+    assert agents._source(1, left)["kb_id"] == "a"
+    assert agents._source(1, left)["text"] == "альфа"
+    assert agents._source(2, right)["kb_id"] == "b"
+    bare = agents._source(1, {"text": "текст", "document_name": "note.txt", "chunk_index": 0})
+    assert "kb_id" not in bare
+    assert bare["text"] == "текст"
+
+
 def test_check_moves_wording_to_the_fragment_that_contains_it():
     plain = {"text": "Общий комментарий без совпадений вообще.", "document_name": "x.txt", "section": "", "chunk_index": 0}
     rich = {

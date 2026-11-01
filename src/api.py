@@ -893,12 +893,14 @@ def admin_user_create(body: UserBody, request: Request):
 def admin_user_patch(user_id: str, body: UserBody, request: Request):
     user = _user(request)
     _need(user, "manage_users")
-    if body.password:
-        auth.set_password(user_id, body.password)
-        audit.write("password_set", user, {"user_id": user_id})
-        audit.write("session_drop", user, {"user_id": user_id})
     try:
+        if body.password:
+            auth.set_password(user_id, body.password)
+            audit.write("password_set", user, {"user_id": user_id})
+            audit.write("session_drop", user, {"user_id": user_id})
         updated = auth.update_user(user_id, role_id=body.role_id or None, blocked=body.blocked)
+    except ValueError:
+        raise HTTPException(400, detail="Пароль короче 8 знаков") from None
     except PermissionError:
         raise HTTPException(400, detail="Нельзя оставить систему без управляющего") from None
     except LookupError:
@@ -1111,6 +1113,8 @@ def kb_create(body: KbBody, request: Request):
     auth.acl_add(row["id"], "user", user["id"], "allow")
     auth.set_user_content(user["id"], row["id"], list(auth.CONTENT_ACTIONS))
     audit.write("kb_create", user, {"kb_id": row["id"], "name": row["name"]})
+    audit.write("access_allow", user, {"kb_id": row["id"], "subject_type": "user", "subject_id": user["id"]})
+    audit.write("personal_actions", user, {"kb_id": row["id"], "actions": list(auth.CONTENT_ACTIONS)})
     return {"id": row["id"], "name": row["name"]}
 
 
