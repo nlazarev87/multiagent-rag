@@ -18,6 +18,14 @@ def _toc_style(document):
         return document.styles.add_style("toc 1", WD_STYLE_TYPE.PARAGRAPH)
 
 
+def _set_outline(element, level):
+    marker = element.get_or_add_pPr().find(qn("w:outlineLvl"))
+    if marker is None:
+        marker = OxmlElement("w:outlineLvl")
+        element.get_or_add_pPr().append(marker)
+    marker.set(qn("w:val"), str(level))
+
+
 def test_txt_and_md(tmp_path):
     (tmp_path / "a.txt").write_text("Цех имеет номер 4.", encoding="utf-8")
     (tmp_path / "b.md").write_text("# Насос\nНасос Н-12.", encoding="utf-8")
@@ -255,6 +263,41 @@ def test_spanned_body_cell_keeps_the_next_value_in_its_column(tmp_path, monkeypa
         overview = next(chunk["text"] for chunk in chunks if chunk["kind"] == "overview")
         assert "Разных значений в столбце «Максимум»: 30." in overview
         assert "столбце «Минимум»" not in overview
+        assert "максимальное давление режима номер 1 в рабочем контуре" in overview
+        assert "максимальное давление режима номер 30 в рабочем контуре" in overview
+    finally:
+        _word_tokens.cache_clear()
+
+
+def test_merged_body_under_a_repeated_header_keeps_the_next_column(tmp_path, monkeypatch):
+    # The span sits under one repeated header, so it must not add a second pair.
+    # An extra blank pair shifts the next column, and the summary counts it under
+    # the repeated name.
+    from ingest import _word_tokens
+
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
+    _word_tokens.cache_clear()
+    try:
+        document = Document()
+        table = document.add_table(rows=31, cols=3)
+        for cell, text in zip(table.rows[0].cells, ("Показатель", "Показатель", "Максимум")):
+            cell.text = text
+        for number, row in enumerate(table.rows[1:], 1):
+            row.cells[0].text = "Насос"
+            row.cells[0].merge(row.cells[1])
+            row.cells[2].text = f"максимальное давление режима номер {number} в рабочем контуре"
+        document.save(tmp_path / "repeat.docx")
+        block = _docx_blocks(tmp_path / "repeat.docx")[0]
+        assert block["labels"] == ["Показатель", "Максимум"]
+        assert block["width"] == 3
+        assert block["rows"][0] == [
+            ("Показатель", "Насос"),
+            ("Максимум", "максимальное давление режима номер 1 в рабочем контуре"),
+        ]
+        chunks = ingest.chunks_from_blocks([block], "repeat.docx")
+        overview = next(chunk["text"] for chunk in chunks if chunk["kind"] == "overview")
+        assert "Разных значений в столбце «Максимум»: 30." in overview
+        assert "столбце «Показатель»" not in overview
         assert "максимальное давление режима номер 1 в рабочем контуре" in overview
         assert "максимальное давление режима номер 30 в рабочем контуре" in overview
     finally:
@@ -718,6 +761,44 @@ def test_deep_numbered_heading_stays_with_its_paragraphs(tmp_path, monkeypatch):
         _word_tokens.cache_clear()
 
 
+def test_numbered_sentence_stays_in_the_section(tmp_path, monkeypatch):
+    # A title of seven spaces and 80 letters is a section. One more word, one
+    # more letter, or an abbreviation dot is a sentence and stays in that section.
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    try:
+        title = "Насос держит давление контура штатно сегодня утром здесь" + "а" * 24
+        wordy = "Насос держит давление контура штатно сегодня утром здесь ещё"
+        long = "А" * 81
+        cited = "См. схему насоса"
+        assert len(title) == 80 and title.count(" ") == 7
+        assert wordy.count(" ") == 8 and len(wordy) <= 80 and not wordy.endswith(".")
+        document = Document()
+        document.add_paragraph("1 " + title)
+        document.add_paragraph("Текст раздела.")
+        document.add_paragraph("1 " + wordy)
+        document.add_paragraph("Продолжение абзаца.")
+        document.add_paragraph("1 " + long)
+        document.add_paragraph("Ещё текст.")
+        document.add_paragraph("1 " + cited)
+        document.add_paragraph("После ссылки.")
+        document.save(tmp_path / "numbered.docx")
+        chunks = ingest.chunks_from_blocks(_docx_blocks(tmp_path / "numbered.docx"), "numbered.docx")
+        assert {chunk["section"] for chunk in chunks} == {"1 " + title}
+        body = "\n".join(chunk["text"] for chunk in chunks)
+        assert "Текст раздела." in body
+        assert wordy in body
+        assert "Продолжение абзаца." in body
+        assert long in body
+        assert "Ещё текст." in body
+        assert cited in body
+        assert "После ссылки." in body
+    finally:
+        _word_tokens.cache_clear()
+
+
 def test_docx_does_not_join_a_capitalized_line(tmp_path):
     from ingest import _docx_blocks
 
@@ -1077,6 +1158,36 @@ def test_docx_keeps_text_moved_by_a_revision(tmp_path):
     assert "10 бар" in text
     assert "6 бар" not in text
 
+def test_docx_joins_yo_and_a_second_hyphen_break(tmp_path):
+    document = Document()
+    document.add_paragraph("Рабочий объ-\nём указан в паспорте.")
+    document.add_paragraph("Содержание доку-\nмен-\nта приведено ниже.")
+    document.add_paragraph("Диапазон 6-\nём указан отдельно.")
+    document.add_paragraph("Содержание доку-")
+    document.add_paragraph("мен-")
+    document.add_paragraph("та повторено в следующем абзаце.")
+    document.add_paragraph("Рабочий объ-")
+    document.add_paragraph("Ём указан с большой буквы.")
+    table = document.add_table(rows=2, cols=2)
+    table.rows[0].cells[0].text = "Показатель"
+    table.rows[0].cells[1].text = "Значение"
+    table.rows[1].cells[0].text = "Объём"
+    table.rows[1].cells[1].text = "объ-\nём"
+    document.save(tmp_path / "yo.docx")
+    blocks = _docx_blocks(tmp_path / "yo.docx")
+    texts = [block["text"] for block in blocks if block["kind"] != "table"]
+    text = "\n".join(texts)
+    assert "Рабочий объём указан в паспорте." in text
+    assert "Содержание документа приведено ниже." in text
+    assert "Содержание документа повторено в следующем абзаце." in text
+    assert "Диапазон 6- ём указан отдельно." in text
+    assert "6ём" not in text
+    assert "Рабочий объ-" in texts
+    assert "Ём указан с большой буквы." in texts
+    assert "объЁм" not in text
+    table_block = next(block for block in blocks if block["kind"] == "table")
+    assert ("Значение", "объём") in table_block["rows"][0]
+
 
 def test_docx_keeps_a_hyperlink_revision_a_smart_tag_and_a_joined_link(tmp_path):
     document = Document()
@@ -1123,3 +1234,58 @@ def test_missing_parser_aborts_instead_of_skipping_the_file(tmp_path, monkeypatc
     with pytest.raises(ImportError, match="python-docx"):
         ingest_dir(tmp_path)
     _word_tokens.cache_clear()
+
+
+def test_heading_follows_a_russian_style_an_outline_or_a_base_style(tmp_path, monkeypatch):
+    monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text or "").split())))
+    from ingest import _word_tokens
+
+    _word_tokens.cache_clear()
+    try:
+        document = Document()
+        contents = document.styles.add_style("оглавление 1", WD_STYLE_TYPE.PARAGRAPH)
+        document.add_paragraph("Скрытая строка оглавления", style=contents)
+        heading = document.styles.add_style("Заголовок 1", WD_STYLE_TYPE.PARAGRAPH)
+        document.add_paragraph("Общие сведения", style=heading)
+        document.add_paragraph("Назначение системы описано здесь.")
+        parent = document.styles.add_style("Заголовок 2", WD_STYLE_TYPE.PARAGRAPH)
+        note = document.styles.add_style("Примечание", WD_STYLE_TYPE.PARAGRAPH)
+        note.base_style = parent
+        special = document.add_paragraph("Особые условия")
+        special.style = note
+        document.add_paragraph("Текст особых условий.")
+        mode = document.add_paragraph("Режим работы")
+        _set_outline(mode._p, 0)
+        document.add_paragraph("Смена длится 8 часов.")
+        ordinary = document.add_paragraph("Это не заголовок раздела.")
+        _set_outline(ordinary._p, 9)
+        document.add_paragraph("1 введение в предмет остаётся абзацем.")
+        base = document.styles.add_style("Основа", WD_STYLE_TYPE.PARAGRAPH)
+        _set_outline(base.element, 0)
+        derived = document.styles.add_style("Производный", WD_STYLE_TYPE.PARAGRAPH)
+        derived.base_style = base
+        inherited = document.add_paragraph("Унаследованный раздел")
+        inherited.style = derived
+        document.add_paragraph("Текст унаследованного раздела.")
+        document.save(tmp_path / "guide.docx")
+        chunks = ingest.chunks_from_blocks(_docx_blocks(tmp_path / "guide.docx"), "guide.docx")
+    finally:
+        _word_tokens.cache_clear()
+
+    grouped = {}
+    for chunk in chunks:
+        grouped.setdefault(chunk["section"], []).append(chunk["text"])
+    assert set(grouped) == {
+        "Общие сведения",
+        "Общие сведения > Особые условия",
+        "Режим работы",
+        "Унаследованный раздел",
+    }
+    assert "Назначение системы описано здесь." in grouped["Общие сведения"][0]
+    assert "Текст особых условий." in grouped["Общие сведения > Особые условия"][0]
+    mode_text = grouped["Режим работы"][0]
+    assert "Смена длится 8 часов." in mode_text
+    assert "Это не заголовок раздела." in mode_text
+    assert "1 введение в предмет остаётся абзацем." in mode_text
+    assert "Текст унаследованного раздела." in grouped["Унаследованный раздел"][0]
+    assert all("Скрытая строка оглавления" not in chunk["text"] for chunk in chunks)
