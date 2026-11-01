@@ -187,6 +187,49 @@ def test_relative_inventory_question_still_lists_files(monkeypatch):
     assert scheme["answer"] == "Схема.docx"
 
 
+def test_singular_question_word_does_not_narrow_the_file_list(monkeypatch):
+    # A file whose name is itself a question word stays in the full inventory.
+    # A real kind such as «паспорт» still narrows that list.
+    names = [
+        "Какой-либо.docx",
+        "Какая-либо.docx",
+        "Какое-либо.docx",
+        "Какую-нибудь.docx",
+        "Каков.docx",
+        "Паспорт насоса.docx",
+        "Схема.docx",
+        "заметка.txt",
+    ]
+    monkeypatch.setattr(coordinator, "list_documents", lambda: list(names))
+    monkeypatch.setattr(
+        coordinator,
+        "search_agent",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("search")),
+    )
+    expected = ", ".join(names)
+    for query in (
+        "Какой документ загружен в систему?",
+        "Какая документация загружена в систему?",
+        "Какое из документов загружено в систему?",
+        "Какую документацию загружена в систему?",
+        "Каков документ загружен в систему?",
+        "Какова документация загружена в систему?",
+        "Каково положение загружено в систему?",
+        "Какой документ, который загружен в систему?",
+    ):
+        listed = coordinator.run(query, "question-word-file")
+        assert listed["status"] == agents.CONFIRMED
+        assert listed["answer"] == expected
+        assert listed["sources"] == []
+    passport = coordinator.run("Какой паспорт загружен в систему?", "question-word-passport")
+    assert passport["status"] == agents.CONFIRMED
+    assert passport["answer"] == "Паспорт насоса.docx"
+    scheme = coordinator.run("Какая схема загружена в систему?", "question-word-scheme")
+    assert scheme["answer"] == "Схема.docx"
+    note = coordinator.run("Какую заметка загружена в систему?", "question-word-note")
+    assert note["answer"] == "заметка.txt"
+
+
 def test_relative_clause_keeps_a_three_letter_subject_on_search(monkeypatch):
     # Words shorter than three letters are inventory boilerplate. A three-letter
     # subject, including a number, is the document the question is about.
@@ -648,6 +691,36 @@ def test_catalog_short_skip_matches_only_the_whole_token(monkeypatch):
     assert exact["answer"] == "api.txt, apis.txt, заметка.txt"
     longer = coordinator.run("Какие apis загружены в систему?", "longer-code")
     assert longer["answer"] == "apis.txt"
+
+def test_code_only_followup_searches_the_latest_document(monkeypatch):
+    dialog.reset()
+    pump = {
+        "query": "Что умеет насос Н-12?",
+        "answer": "Насос имеет обозначение Н-12.",
+        "document_names": ["pump.md"],
+    }
+    shift = {
+        "query": "Сколько длится смена?",
+        "answer": "Смена длится 8 часов.",
+        "document_names": ["charter.txt"],
+    }
+    dialog.set_dialog("code-follow", [pump, shift])
+    seen = []
+    monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
+    monkeypatch.setattr(coordinator, "search_agent", lambda clear, names=None: seen.append((clear, names)) or [CHUNK])
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Смена длится 8 часов [1].")
+    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    coordinator.run("Н-12?", "code-follow")
+    coordinator.run("Какое у него давление на Н-12?", "code-follow")
+    assert seen == [
+        ("Сколько длится смена? Н-12? 8", ["charter.txt"]),
+        ("Сколько длится смена? Какое у него давление на Н-12? 8", ["charter.txt"]),
+    ]
+    shift["document_names"] = []
+    dialog.set_dialog("code-follow", [pump, shift])
+    coordinator.run("Н-12?", "code-follow")
+    assert seen[-1] == ("Сколько длится смена? Н-12? 8", None)
+    dialog.reset()
 
 
 def test_finish_drops_only_the_invalid_number_in_a_citation(monkeypatch):
