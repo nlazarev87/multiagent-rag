@@ -7,6 +7,8 @@
   <style>
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; }
+    body { display: flex; flex-direction: column; }
+    #shell { flex: 1; min-height: 0; height: auto; }
     body {
       --left: 260px;
       --mid: 380px;
@@ -347,13 +349,87 @@
     }
     .chunk p.hit { background: var(--hit); padding: 2px 4px; }
     .file { margin: 4px 0; }
+    #gate, #admin, #pick {
+      position: fixed;
+      inset: 0;
+      background: var(--chrome);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 5;
+    }
+    #admin { align-items: stretch; justify-content: stretch; }
+    .card {
+      width: min(420px, calc(100% - 32px));
+      background: var(--editor);
+      border: 1px solid var(--line2);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .card input, .admin-body input, .admin-body select {
+      font: inherit;
+      color: inherit;
+      background: var(--chrome);
+      border: 1px solid var(--line2);
+      border-radius: 6px;
+      padding: 6px 8px;
+    }
+    .card button, .text-btn {
+      font: inherit;
+      background: var(--btn);
+      color: white;
+      border: 0;
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    #status {
+      position: relative;
+      z-index: 6;
+      height: 22px;
+      flex: 0 0 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 8px;
+      background: var(--chrome);
+      border-top: 1px solid var(--line);
+      color: var(--fg2);
+      font-size: 12px;
+    }
+    .admin-body { flex: 1; overflow: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+    .admin-head { display: flex; gap: 8px; padding: 8px; border-bottom: 1px solid var(--line); }
   </style>
 </head>
 <body>
+  <form id="gate" class="hidden">
+    <div class="card">
+      <p id="gate-title">Вход</p>
+      <input id="gate-login" autocomplete="username" placeholder="Логин" aria-label="Логин">
+      <input id="gate-password" type="password" autocomplete="current-password" placeholder="Пароль" aria-label="Пароль">
+      <button id="gate-submit" class="text-btn" type="submit">Войти</button>
+      <p id="gate-error"></p>
+    </div>
+  </form>
+  <section id="admin" class="hidden" aria-label="Управление">
+    <div class="admin-head">
+      <button type="button" id="admin-users" class="text-btn">Люди</button>
+      <button type="button" id="admin-roles" class="text-btn">Роли</button>
+      <button type="button" id="admin-groups" class="text-btn">Группы</button>
+      <button type="button" id="admin-access" class="text-btn">Доступы</button>
+      <button type="button" id="admin-audit" class="text-btn">Журнал</button>
+      <button type="button" id="admin-close" class="text-btn">Закрыть</button>
+    </div>
+    <div id="admin-body" class="admin-body"></div>
+  </section>
   <main class="shell" id="shell">
     <aside class="pane" aria-label="Диалоги">
       <div class="side-head">
         <button id="fresh" type="button">Новый диалог</button>
+        <button id="manage" type="button" class="hidden">Управление</button>
       </div>
       <ul id="chats"></ul>
       <div class="status">
@@ -399,6 +475,7 @@
       </div>
     </section>
   </main>
+  <footer id="status"><span id="status-login"></span><span id="status-role"></span><button type="button" id="status-password">Сменить пароль</button><button type="button" id="status-out">Выйти</button></footer>
   <script>
     const shell = document.getElementById("shell");
     const chatsEl = document.getElementById("chats");
@@ -435,7 +512,18 @@
     let closedFolders = new Set();
     let treeStamp = 0;
     let treePending = false;
+    let treeDragging = false;
     let treeWriting = false;
+    let me = null;
+    let fileBase = {};
+
+    function field(parent, tag, text, className) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text) node.textContent = text;
+      parent.append(node);
+      return node;
+    }
 
     function element(tag, className, text) {
       const node = document.createElement(tag);
@@ -593,33 +681,66 @@
       preview.parentNode.scrollTop = 0;
     }
 
-    async function showPreview(name, where) {
+    async function showPreview(name, where, kbId) {
       if (!name) return;
-      if (!openTabs.includes(name)) openTabs.push(name);
-      activeTab = name;
+      const known = (typeof fileBase === "object" && fileBase) ? (fileBase[name] || []) : [];
+      const chosen = kbId || (where && where.kb_id) || (known.length === 1 ? known[0].kb_id : "");
+      if (!chosen && known.length > 1) {
+        preview.classList.remove("idle");
+        const note = element("p", "muted", "Файл есть в нескольких базах");
+        const list = document.createElement("ul");
+        known.forEach((row) => {
+          const item = document.createElement("li");
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = row.kb_name + " / " + name;
+          button.addEventListener("click", () => showPreview(name, where, row.kb_id));
+          item.append(button);
+          list.append(item);
+        });
+        preview.replaceChildren(note, list);
+        return;
+      }
+      const tabKey = chosen ? chosen + ":" + name : name;
+      if (!openTabs.includes(tabKey)) openTabs.push(tabKey);
+      activeTab = tabKey;
       paintTabs();
-      if (!tabChunks[name]) {
+      if (!tabChunks[name] && !tabChunks[tabKey]) {
         preview.classList.add("idle");
         preview.replaceChildren(element("p", "muted", "Открывается…"));
         try {
-          const response = await fetch("/documents/" + encodeURIComponent(name) + "/preview", {
+          const url = chosen
+            ? "/kb/" + encodeURIComponent(chosen) + "/documents/" + encodeURIComponent(name) + "/preview"
+            : "/documents/" + encodeURIComponent(name) + "/preview";
+          const response = await fetch(url, {
             signal: AbortSignal.timeout(15000),
           });
           const data = await response.json().catch(() => ({}));
-          if (response.ok) tabChunks[name] = data.chunks || [];
-          if (activeTab !== name) return;
+          if (response.ok) {
+            tabChunks[name] = data.chunks || [];
+            tabChunks[tabKey] = tabChunks[name];
+          }
+          if (!chosen) {
+            if (activeTab !== name) return;
+          } else if (activeTab !== tabKey) {
+            return;
+          }
           if (!response.ok) {
             preview.replaceChildren(element("p", "muted", data.detail || "Документ не найден"));
             return;
           }
         } catch (error) {
-          if (activeTab !== name) return;
+          if (!chosen) {
+            if (activeTab !== name) return;
+          } else if (activeTab !== tabKey) {
+            return;
+          }
           preview.replaceChildren(element("p", "muted", "Сервер не ответил"));
           return;
         }
       }
-      if (activeTab !== name) return;
-      const chunks = tabChunks[name] || [];
+      if (activeTab !== name && activeTab !== tabKey) return;
+      const chunks = tabChunks[name] || tabChunks[tabKey] || [];
       if (!chunks.length) {
         preview.replaceChildren(element("p", "muted", "Нет текста"));
         return;
@@ -666,6 +787,7 @@
         const cite = element("button", "chip", "[" + source.number + "]");
         cite.type = "button";
         cite.setAttribute("data-document", source.document_name);
+        if (source.kb_id) cite.setAttribute("data-kb", source.kb_id);
         if (source.chunk_index != null && source.chunk_index !== "") {
           cite.setAttribute("data-index", String(source.chunk_index));
         }
@@ -682,6 +804,7 @@
           const file = element("button", "chip", source.document_name);
           file.type = "button";
           file.setAttribute("data-document", source.document_name);
+          if (source.kb_id) file.setAttribute("data-kb", source.kb_id);
           wrap.append(file);
           wrap.append(rateRow("Правильность документа", docScores[source.document_name], (n) => {
             const payload = { documents: {} };
@@ -731,9 +854,25 @@
     function ensureTreeFiles(names) {
       const have = new Set(treeFiles(tree));
       tree.children = tree.children || [];
-      (names || []).forEach((name) => {
+      (names || []).forEach((item) => {
+        const name = item && item.name ? item.name : item;
+        const kbId = item && item.kb_id ? item.kb_id : "";
+        if (name && kbId) {
+          fileBase[name] = fileBase[name] || [];
+          if (!fileBase[name].some((row) => row.kb_id === kbId)) fileBase[name].push(item);
+        }
         if (name && !have.has(name)) {
-          tree.children.push({ document_name: name });
+          const kbIds = new Set((names || []).map((row) => row && row.kb_id).filter(Boolean));
+          if (kbIds.size > 1 && kbId) {
+            let folder = (tree.children || []).find((child) => child.id === "kb-" + kbId);
+            if (!folder) {
+              folder = { id: "kb-" + kbId, name: item.kb_name || kbId, children: [] };
+              tree.children.push(folder);
+            }
+            folder.children.push({ document_name: name });
+          } else {
+            tree.children.push({ document_name: name });
+          }
           have.add(name);
         }
       });
@@ -854,11 +993,15 @@
           openMenu(event, node, parent);
         });
         btn.addEventListener("dragstart", (event) => {
+          treeDragging = true;
           event.dataTransfer.setData("text/plain", JSON.stringify({
             folder: !isFile,
             id: node.id || "",
             name: node.document_name || "",
           }));
+        });
+        btn.addEventListener("dragend", () => {
+          treeDragging = false;
         });
         if (!isFile) {
           btn.addEventListener("dragover", (event) => {
@@ -915,7 +1058,7 @@
           addMenu("Удалить", () => removeFolder(node, parent));
         }
       } else {
-        addMenu("Удалить", () => removeFile(node.document_name));
+        addMenu("Удалить", () => removeFile(node.document_name, parent));
       }
       menu.classList.remove("hidden");
       const box = docsPane.getBoundingClientRect();
@@ -957,8 +1100,14 @@
       persistTree();
     }
 
-    async function removeFile(name) {
-      await fetch("/documents/" + encodeURIComponent(name), { method: "DELETE" });
+    async function removeFile(name, parent) {
+      let kbId = parent && String(parent.id || "").startsWith("kb-") ? String(parent.id).slice(3) : "";
+      const known = (typeof fileBase === "object" && fileBase) ? (fileBase[name] || []) : [];
+      if (!kbId && known.length === 1) kbId = known[0].kb_id;
+      const url = kbId
+        ? "/kb/" + encodeURIComponent(kbId) + "/documents/" + encodeURIComponent(name)
+        : "/documents/" + encodeURIComponent(name);
+      await fetch(url, { method: "DELETE" });
       if (openTabs.includes(name)) closeTab(name);
       await loadUi(false);
     }
@@ -972,7 +1121,7 @@
         if (!response.ok) throw new Error("ui");
         const data = await response.json();
         dialogs = data.dialogs || [];
-        if (stamp === treeStamp && !treePending && !treeWriting) {
+        if (stamp === treeStamp && !treePending && !treeWriting && !treeDragging) {
           tree = data.tree || { id: "root", name: "", children: [] };
         }
         if (!dialogs.length) {
@@ -1105,11 +1254,13 @@
       const node = event.target.closest("[data-document]");
       if (!node) return;
       const name = node.getAttribute("data-document");
+      const kbId = node.getAttribute("data-kb") || "";
       if (!node.hasAttribute("data-index")) {
-        showPreview(name);
+        showPreview(name, null, kbId);
         return;
       }
       showPreview(name, {
+        kb_id: kbId,
         chunkIndex: node.getAttribute("data-index"),
         section: node.getAttribute("data-section") || "",
         answer: node.getAttribute("data-answer") || "",
@@ -1140,6 +1291,47 @@
       box.querySelector("span").textContent = label;
     }
 
+    async function chooseBase() {
+      const targets = await (await fetch("/upload-targets")).json();
+      if (!targets.bases.length && !targets.create) return null;
+      if (targets.bases.length === 1 && !targets.create) return { kb_id: targets.bases[0].id };
+      return await new Promise((resolve) => {
+        const wrap = document.createElement("div");
+        wrap.id = "pick";
+        const form = document.createElement("form");
+        form.className = "card";
+        const select = document.createElement("select");
+        targets.bases.forEach((item) => {
+          const option = document.createElement("option");
+          option.value = item.id;
+          option.textContent = item.name;
+          select.append(option);
+        });
+        if (targets.create) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "Новая база";
+          select.append(option);
+        }
+        const name = document.createElement("input");
+        name.placeholder = "Имя новой базы";
+        name.classList.toggle("hidden", select.value !== "");
+        select.addEventListener("change", () => name.classList.toggle("hidden", select.value !== ""));
+        const ok = document.createElement("button");
+        ok.className = "text-btn";
+        ok.type = "submit";
+        ok.textContent = "Загрузить";
+        form.append(field(form, "p", "Куда загрузить"), select, name, ok);
+        wrap.append(form);
+        document.body.append(wrap);
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          wrap.remove();
+          resolve(select.value ? { kb_id: select.value } : { new_name: name.value });
+        });
+      });
+    }
+
     files.onchange = async () => {
       const chosen = [...files.files];
       const stamp = treeStamp;
@@ -1147,7 +1339,14 @@
       if (!chosen.length) return;
       setMode("docs");
       steps.replaceChildren(...chosen.map(row));
+      const target = await chooseBase();
+      if (!target) {
+        steps.append(element("p", "", "Нет базы для загрузки"));
+        return;
+      }
       const body = new FormData();
+      if (target.kb_id) body.append("kb_id", target.kb_id);
+      if (target.new_name) body.append("new_name", target.new_name);
       for (const file of chosen) body.append("files", file);
       const request = new XMLHttpRequest();
       request.open("POST", "/upload");
@@ -1163,10 +1362,10 @@
           return;
         }
         for (const file of chosen) paintStep(file.name, 2, "разобран");
-        if (data.tree && stamp === treeStamp && !treePending && !treeWriting) tree = data.tree;
+        if (data.tree && stamp === treeStamp && !treePending && !treeWriting && !treeDragging) tree = data.tree;
         else ensureTreeFiles(data.documents || []);
         paintTree();
-        const known = new Set(data.documents || []);
+        const known = new Set((data.documents || []).map((item) => item.name || item));
         for (const file of chosen) {
           if (known.has(file.name)) paintStep(file.name, 3, "готов к получению вопросов");
         }
@@ -1230,9 +1429,368 @@
       }
     };
 
-    idlePreview();
-    showReady();
-    loadUi(true);
+    const gate = document.getElementById("gate");
+    const admin = document.getElementById("admin");
+    const adminBody = document.getElementById("admin-body");
+
+    async function paintUpload() {
+      const response = await fetch("/upload-targets");
+      if (!response.ok) return;
+      const targets = await response.json();
+      const canSend = (targets.bases || []).length > 0 || targets.create;
+      document.getElementById("upload").classList.toggle("hidden", !canSend);
+    }
+
+    function paintMe(data) {
+      me = data;
+      document.getElementById("status-login").textContent = data.login || "";
+      document.getElementById("status-role").textContent = data.role || "";
+      const actions = data.actions || [];
+      document.getElementById("manage").classList.toggle("hidden", !actions.length);
+      paintUpload();
+      ["users", "roles", "groups", "access", "audit"].forEach((name) => {
+        const button = document.getElementById("admin-" + name);
+        const need = { users: "manage_users", roles: "manage_roles", groups: "manage_groups", access: "manage_access", audit: "view_audit" }[name];
+        button.classList.toggle("hidden", !actions.includes(need));
+      });
+    }
+
+    async function showGate() {
+      const state = await (await fetch("/auth/state")).json();
+      document.getElementById("gate-title").textContent = state.has_users ? "Вход" : "Создать администратора";
+      document.getElementById("gate-submit").textContent = state.has_users ? "Войти" : "Создать администратора";
+      gate.dataset.mode = state.has_users ? "login" : "setup";
+      gate.classList.remove("hidden");
+      document.getElementById("shell").classList.add("hidden");
+    }
+
+    gate.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const path = gate.dataset.mode === "setup" ? "/setup" : "/login";
+      const response = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          login: document.getElementById("gate-login").value,
+          password: document.getElementById("gate-password").value,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        document.getElementById("gate-error").textContent = data.detail || "Ошибка";
+        return;
+      }
+      gate.classList.add("hidden");
+      document.getElementById("shell").classList.remove("hidden");
+      paintMe(data);
+      idlePreview();
+      showReady();
+      loadUi(true);
+    });
+
+    document.getElementById("status-out").addEventListener("click", async () => {
+      await fetch("/logout", { method: "POST" });
+      location.reload();
+    });
+    document.getElementById("status-password").addEventListener("click", async () => {
+      const oldPassword = window.prompt("Прежний пароль", "");
+      const newPassword = window.prompt("Новый пароль", "");
+      if (!oldPassword || !newPassword) return;
+      const response = await fetch("/me/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ old: oldPassword, new: newPassword }),
+      });
+      const data = await response.json().catch(() => ({}));
+      window.alert(response.ok ? "Пароль изменён" : (data.detail || "Ошибка"));
+    });
+    document.getElementById("manage").addEventListener("click", () => admin.classList.remove("hidden"));
+    document.getElementById("admin-close").addEventListener("click", () => admin.classList.add("hidden"));
+
+    function adminInput(placeholder) {
+      const node = document.createElement("input");
+      node.placeholder = placeholder;
+      return node;
+    }
+
+    function adminButton(label, action) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "text-btn";
+      button.textContent = label;
+      button.addEventListener("click", action);
+      return button;
+    }
+
+    function checkboxLine(label, checked) {
+      const line = document.createElement("label");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = Boolean(checked);
+      line.append(box, document.createTextNode(" " + label));
+      return { line: line, box: box };
+    }
+
+    async function sendJson(url, method, body) {
+      const response = await fetch(url, {
+        method: method,
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const payload = await response.json().catch(() => ({}));
+      return { ok: response.ok, payload: payload };
+    }
+
+    async function showUsers() {
+      adminBody.replaceChildren();
+      const data = await (await fetch("/admin/users")).json();
+      let roles = [];
+      if ((me.actions || []).includes("manage_roles")) {
+        roles = (await (await fetch("/admin/roles")).json()).roles || [];
+      }
+      (data.users || []).forEach((user) => {
+        const row = document.createElement("div");
+        field(row, "p", user.login + " — " + user.role + (user.blocked ? " (заблокирован)" : ""));
+        const rolePick = document.createElement("select");
+        roles.forEach((role) => {
+          const option = document.createElement("option");
+          option.value = role.id;
+          option.textContent = role.name;
+          option.selected = role.id === user.role_id;
+          rolePick.append(option);
+        });
+        if (roles.length) row.append(rolePick, adminButton("Сменить роль", async () => {
+          const sent = await sendJson("/admin/users/" + user.id, "PATCH", { role_id: rolePick.value });
+          field(adminBody, "p", sent.ok ? "Роль записана" : (sent.payload.detail || "Ошибка"));
+          if (sent.ok) showUsers();
+        }));
+        row.append(adminButton(user.blocked ? "Разблокировать" : "Заблокировать", async () => {
+          const sent = await sendJson("/admin/users/" + user.id, "PATCH", { blocked: !user.blocked });
+          field(adminBody, "p", sent.ok ? "Записано" : (sent.payload.detail || "Ошибка"));
+          if (sent.ok) showUsers();
+        }));
+        row.append(adminButton("Удалить", async () => {
+          const sent = await sendJson("/admin/users/" + user.id, "DELETE");
+          field(adminBody, "p", sent.ok ? "Удалён" : (sent.payload.detail || "Ошибка"));
+          if (sent.ok) showUsers();
+        }));
+        const password = adminInput("Новый пароль");
+        row.append(password, adminButton("Задать пароль", async () => {
+          const sent = await sendJson("/admin/users/" + user.id, "PATCH", { password: password.value });
+          field(adminBody, "p", sent.ok ? "Пароль задан" : (sent.payload.detail || "Ошибка"));
+        }));
+        adminBody.append(row);
+      });
+      const form = document.createElement("form");
+      form.className = "card";
+      const login = adminInput("Логин");
+      const password = adminInput("Пароль");
+      const role = roles.length ? document.createElement("select") : adminInput("id роли");
+      roles.forEach((item) => {
+        const option = document.createElement("option");
+        option.value = item.id;
+        option.textContent = item.name;
+        role.append(option);
+      });
+      const ok = document.createElement("button");
+      ok.className = "text-btn";
+      ok.type = "submit";
+      ok.textContent = "Создать";
+      form.append(login, password, role, ok);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const sent = await sendJson("/admin/users", "POST", {
+          login: login.value,
+          password: password.value,
+          role_id: role.value,
+        });
+        field(adminBody, "p", sent.ok ? "Создан" : (sent.payload.detail || "Ошибка"));
+        if (sent.ok) showUsers();
+      });
+      adminBody.append(form);
+    }
+
+    async function showAudit() {
+      adminBody.replaceChildren();
+      const person = adminInput("id человека");
+      const role = adminInput("id роли");
+      const group = adminInput("id группы");
+      const kind = adminInput("тип");
+      const after = adminInput("с времени UTC");
+      const before = adminInput("до времени UTC");
+      const list = document.createElement("div");
+      async function load() {
+        list.replaceChildren();
+        const query = new URLSearchParams();
+        if (person.value) query.set("user", person.value);
+        if (role.value) query.set("role", role.value);
+        if (group.value) query.set("group", group.value);
+        if (kind.value) query.set("kind", kind.value);
+        if (after.value) query.set("after", after.value);
+        if (before.value) query.set("before", before.value);
+        const data = await (await fetch("/admin/audit?" + query.toString())).json();
+        const events = data.events || [];
+        events.forEach((event) => {
+          list.append(adminButton(event.time + " " + event.kind + " " + event.login, async () => {
+            const full = await (await fetch("/admin/audit/" + event.id)).json();
+            field(list, "pre", JSON.stringify(full, null, 2));
+          }));
+        });
+        if (events.length === 50) {
+          const last = events[events.length - 1];
+          list.append(adminButton("Дальше", () => {
+            before.value = last.time || "";
+            load();
+          }));
+        }
+      }
+      adminBody.append(person, role, group, kind, after, before, adminButton("Обновить", load), list);
+      await load();
+    }
+
+    document.getElementById("admin-users").addEventListener("click", showUsers);
+    document.getElementById("admin-audit").addEventListener("click", showAudit);
+    document.getElementById("admin-roles").addEventListener("click", async () => {
+      adminBody.replaceChildren();
+      field(adminBody, "p", "Действие роли само базу не открывает. Создание базы и «Открыть себе» эту матрицу не меняют.");
+      const data = await (await fetch("/admin/roles")).json();
+      const globals = ["manage_users", "manage_roles", "manage_groups", "manage_access", "create_kb", "view_audit"];
+      const content = ["ask", "upload", "delete", "arrange"];
+      const contentLabel = { ask: "Спрашивать", upload: "Загружать", delete: "Удалять", arrange: "Раскладывать" };
+      (data.roles || []).forEach((role) => {
+        const block = document.createElement("div");
+        field(block, "p", role.name);
+        const boxes = {};
+        globals.forEach((action) => {
+          const item = checkboxLine(action, (role.actions || []).includes(action));
+          boxes[action] = item.box;
+          block.append(item.line);
+        });
+        const matrix = {};
+        (data.bases || []).forEach((base) => {
+          field(block, "p", base.name);
+          matrix[base.id] = {};
+          content.forEach((action) => {
+            const on = ((role.kb_actions || {})[base.id] || []).includes(action);
+            const item = checkboxLine(contentLabel[action], on);
+            matrix[base.id][action] = item.box;
+            block.append(item.line);
+          });
+        });
+        block.append(adminButton("Записать", async () => {
+          const actions = globals.filter((action) => boxes[action].checked);
+          const kbActions = {};
+          Object.keys(matrix).forEach((kbId) => {
+            kbActions[kbId] = content.filter((action) => matrix[kbId][action].checked);
+          });
+          const sent = await sendJson("/admin/roles/" + role.id, "PATCH", { actions: actions, kb_actions: kbActions });
+          field(adminBody, "p", sent.ok ? "Записано" : (sent.payload.detail || "Ошибка"));
+        }));
+        block.append(adminButton("Удалить роль", async () => {
+          const sent = await sendJson("/admin/roles/" + role.id, "DELETE");
+          field(adminBody, "p", sent.ok ? "Удалена" : (sent.payload.detail || "Ошибка"));
+        }));
+        adminBody.append(block);
+      });
+      const name = adminInput("Имя роли");
+      adminBody.append(name, adminButton("Создать роль", async () => {
+        const sent = await sendJson("/admin/roles", "POST", { name: name.value });
+        field(adminBody, "p", sent.ok ? "Создана" : (sent.payload.detail || "Ошибка"));
+      }));
+    });
+    document.getElementById("admin-groups").addEventListener("click", async () => {
+      adminBody.replaceChildren();
+      field(adminBody, "p", "Роль в группе — это все, у кого она есть сейчас и будет потом.");
+      const data = await (await fetch("/admin/groups")).json();
+      (data.groups || []).forEach((group) => {
+        const block = document.createElement("div");
+        field(block, "p", group.name);
+        const users = adminInput("id людей через пробел");
+        users.value = (group.user_ids || []).join(" ");
+        const roles = adminInput("id ролей через пробел");
+        roles.value = (group.role_ids || []).join(" ");
+        block.append(users, roles, adminButton("Записать состав", async () => {
+          const sent = await sendJson("/admin/groups/" + group.id + "/members", "PUT", {
+            user_ids: users.value.split(/\s+/).filter(Boolean),
+            role_ids: roles.value.split(/\s+/).filter(Boolean),
+          });
+          field(adminBody, "p", sent.ok ? "Состав записан" : (sent.payload.detail || "Ошибка"));
+        }), adminButton("Удалить группу", async () => {
+          const sent = await sendJson("/admin/groups/" + group.id, "DELETE");
+          field(adminBody, "p", sent.ok ? "Удалена" : (sent.payload.detail || "Ошибка"));
+        }));
+        adminBody.append(block);
+      });
+      const name = adminInput("Имя группы");
+      adminBody.append(name, adminButton("Создать группу", async () => {
+        const sent = await sendJson("/admin/groups", "POST", { name: name.value });
+        field(adminBody, "p", sent.ok ? "Создана" : (sent.payload.detail || "Ошибка"));
+      }));
+    });
+    document.getElementById("admin-access").addEventListener("click", async () => {
+      adminBody.replaceChildren();
+      field(adminBody, "p", "Остальные с вашей ролью эту базу не получат, пока им отдельно не откроют доступ и не включат действия.");
+      const data = await (await fetch("/admin/kb")).json();
+      (data.bases || []).forEach((base) => {
+        const block = document.createElement("div");
+        field(block, "p", base.name);
+        block.append(adminButton("Открыть себе", async () => {
+          const sent = await sendJson("/admin/kb/" + base.id + "/self", "POST");
+          field(adminBody, "p", sent.ok ? "Доступ записан" : (sent.payload.detail || "Ошибка"));
+        }));
+        if (base.personal) {
+          (base.acl || []).filter((row) => row.subject_type === "user" && row.effect === "allow").forEach((row) => {
+            const userId = row.subject_id;
+            const person = document.createElement("div");
+            field(person, "p", "Личные действия " + userId);
+            const boxes = {};
+            ["ask", "upload", "delete", "arrange"].forEach((action) => {
+              const item = checkboxLine(action, (base.personal[userId] || []).includes(action));
+              boxes[action] = item.box;
+              person.append(item.line);
+            });
+            person.append(adminButton("Записать личные", async () => {
+              const actions = ["ask", "upload", "delete", "arrange"].filter((action) => boxes[action].checked);
+              const sent = await sendJson("/admin/kb/" + base.id + "/people/" + userId + "/actions", "PUT", { actions: actions });
+              field(block, "p", sent.ok ? "Личные действия записаны" : (sent.payload.detail || "Ошибка"));
+            }));
+            block.append(person);
+          });
+        }
+        if (base.acl) {
+          (base.acl || []).forEach((row) => field(block, "p", row.effect + " " + row.subject_type + " " + row.subject_id));
+          const kind = document.createElement("select");
+          ["user", "role", "group"].forEach((value) => {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = value;
+            kind.append(option);
+          });
+          const subject = adminInput("id");
+          block.append(kind, subject, adminButton("Открыть", async () => {
+            const sent = await sendJson("/admin/kb/" + base.id + "/allow", "POST", { subject_type: kind.value, subject_id: subject.value });
+            field(adminBody, "p", sent.ok ? "Открыто" : (sent.payload.detail || "Ошибка"));
+          }), adminButton("Закрыть", async () => {
+            const sent = await sendJson("/admin/kb/" + base.id + "/deny", "POST", { subject_type: kind.value, subject_id: subject.value });
+            field(adminBody, "p", sent.ok ? "Закрыто" : (sent.payload.detail || "Ошибка"));
+          }));
+        }
+        adminBody.append(block);
+      });
+    });
+
+    async function boot() {
+      const response = await fetch("/me");
+      if (!response.ok) {
+        showGate();
+        return;
+      }
+      paintMe(await response.json());
+      idlePreview();
+      showReady();
+      loadUi(true);
+    }
+    boot();
   </script>
 </body>
 </html>

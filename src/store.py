@@ -1,8 +1,9 @@
-"""Индекс Chroma и поиск BM25 + RRF.
+"""Индекс и поиск по словам и по смыслу.
 
-Два файла с одним текстом не делят id чанка. Поиск, который уже открыл индекс,
-не падает, если параллельная запись этот индекс очистила.
+Два файла с одним текстом не схлопываются в одну запись. Удаление документа
+во время поиска не роняет уже идущий запрос.
 """
+import contextvars
 import math
 import os
 import re
@@ -84,13 +85,28 @@ def _embed(texts):
     return _model.encode(texts, normalize_embeddings=True, batch_size=16).tolist()
 
 
+_pool = {}
+
+
+def _client_for(path):
+    """Один клиент на каталог. reset() закрывает все, а не каждый переход."""
+    global _client
+    key = str(Path(path).resolve())
+    client = _pool.get(key)
+    if client is None:
+        import chromadb
+        client = chromadb.PersistentClient(path=key)
+        _pool[key] = client
+    _client = client
+    return client
+
+
 def collection():
     global _collection, _client
     if _collection is None:
         with _import_lock:
             if _collection is None:
-                import chromadb
-                _client = chromadb.PersistentClient(path=str(CHROMA))
+                _client_for(CHROMA)
                 _collection = _client.get_or_create_collection("fragments", metadata={"hnsw:space": "cosine"})
     return _collection
 
@@ -99,15 +115,20 @@ def reset():
     global _collection, _index, _client, calls
     with _index_lock:
         _collection = None
-        system = getattr(_client, "_system", None) if _client is not None else None
-        if system is not None and hasattr(system, "stop"):
-            try:
-                system.stop()
-            except Exception:
-                pass
-        _client = None
         _index = None
+        clients = list(_pool.values())
+        _pool.clear()
+        if _client is not None and _client not in clients:
+            clients.append(_client)
+        _client = None
         calls = 0
+        for client in clients:
+            system = getattr(client, "_system", None)
+            if system is not None and hasattr(system, "stop"):
+                try:
+                    system.stop()
+                except Exception:
+                    pass
         import gc
         gc.collect()
 
@@ -131,7 +152,7 @@ def _chunk_id(chunk):
 
 
 def upsert_chunks(chunks):
-    """Записать чанки. Тот же checksum и то же число чанков документ не переписывают."""
+    """Записать куски текста. Тот же текст и то же число кусков файл не переписывают."""
     global _index
     if not chunks:
         return
@@ -169,7 +190,7 @@ def upsert_chunks(chunks):
 
 
 def delete_document(document_name):
-    """Удалить из индекса только чанки этого файла."""
+    """Удалить из индекса только куски этого файла."""
     global _index
     with _index_lock:
         col = collection()
@@ -190,7 +211,7 @@ def list_documents():
 
 
 def chunks_for_document(name):
-    """Все чанки одного файла по возрастанию chunk_index."""
+    """Все куски одного файла по порядку."""
     with _index_lock:
         _, texts, metas = _rows(collection(), where={"document_name": name})
         rows = [
@@ -346,7 +367,7 @@ def scope(index, query):
             doc: sum(_marker_hit(name, marks[doc], index["vocabulary"][doc]) for name in known)
             for doc in documents
         }
-    # Одна основа имени не привязывает поиск к файлу: «задания» есть у многих документов.
+    # Одно слово из имени не сужает поиск до одного файла. Нужны два совпавших.
     if len(query_stems) >= 2:
         stemmed = set.intersection(*query_stems)
         if stemmed:
@@ -500,8 +521,97 @@ def _contexts(index, ranked, limit):
     return found
 
 
+def _same_path(left, right):
+    return Path(left).resolve() == Path(right).resolve()
+
+
+def _elsewhere(path, fn):
+    """Выполнить fn, пока оболочка смотрит на другой каталог, и вернуть прежний путь."""
+    path = Path(path)
+    if _same_path(path, CHROMA):
+        return fn()
+    with _index_lock:
+        saved = (CHROMA, _client, _collection, _index)
+        try:
+            globals()["CHROMA"] = path
+            globals()["_client"] = None
+            globals()["_collection"] = None
+            globals()["_index"] = None
+            return fn()
+        finally:
+            globals()["CHROMA"], globals()["_client"], globals()["_collection"], globals()["_index"] = saved
+
+
+_foreign_read = contextvars.ContextVar("store_foreign_read", default=False)
+
+
+def _guard_read(path):
+    """Чужой каталог читается только после повторной проверки допуска."""
+    if _same_path(path, CHROMA) or _foreign_read.get():
+        return
+    raise PermissionError("closed")
+
+
+def _read_permit(permit, fn):
+    if permit is None or not permit.confirm():
+        raise PermissionError("closed")
+    token = _foreign_read.set(True)
+    try:
+        return fn()
+    finally:
+        _foreign_read.reset(token)
+
+
+def search_at(path, clear_query, limit=4, document_names=None):
+    _guard_read(path)
+    return _elsewhere(path, lambda: search_chunks(clear_query, limit, document_names))
+
+
+def upsert_at(path, chunks):
+    return _elsewhere(path, lambda: upsert_chunks(chunks))
+
+
+def delete_at(path, document_name):
+    return _elsewhere(path, lambda: delete_document(document_name))
+
+
+def list_at(path):
+    _guard_read(path)
+    return _elsewhere(path, list_documents)
+
+
+def chunks_at(path, name):
+    _guard_read(path)
+    return _elsewhere(path, lambda: chunks_for_document(name))
+
+
+def known_at(path, term):
+    _guard_read(path)
+    return _elsewhere(path, lambda: known(term))
+
+
+def search_permit(permit, clear_query, limit=4, document_names=None):
+    """Поиск только после повторной проверки допуска. Чужой путь не читается."""
+    return _read_permit(permit, lambda: search_at(permit.chroma, clear_query, limit, document_names))
+
+
+def list_permit(permit):
+    """Список имён только после повторной проверки допуска."""
+    return _read_permit(permit, lambda: list_at(permit.chroma))
+
+
+def chunks_permit(permit, name):
+    """Текст файла только после повторной проверки допуска."""
+    return _read_permit(permit, lambda: chunks_at(permit.chroma, name))
+
+
+def known_permit(permit, term):
+    """Слово из индекса только после повторной проверки допуска."""
+    return _read_permit(permit, lambda: known_at(permit.chroma, term))
+
+
 def search_chunks(clear_query, limit=4, document_names=None):
-    """Вернуть до limit чанков. document_names ограничивает уже выбранными файлами.
+    """Вернуть не больше limit кусков. Имена ограничивают поиск уже выбранными файлами.
 
     Пустой список означает весь индекс: третьим аргументом его не передают.
     """

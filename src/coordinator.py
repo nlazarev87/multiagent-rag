@@ -5,16 +5,18 @@
 """
 from pathlib import Path
 
+import contextvars
 import re
 
 from langgraph.graph import END, StateGraph
 
-from agents import CONFIRMED, MISSING, NO_ANSWER, UNCONFIRMED, _count_ask, _dependent, _from_overview, answer_agent, check_agent, clarify_agent, search_agent, select_agent
+from agents import CONFIRMED, MISSING, NO_ANSWER, UNCONFIRMED, _count_ask, _dependent, _extra_rows, _from_overview, _trace, answer_agent, check_agent, clarify_agent, search_agent, select_agent
 from dialog import add_turn, get_dialog
 from settings import routing, runtime
 from store import known, list_documents
 
 ATTEMPTS = runtime().get("attempts", 2)
+_scope = contextvars.ContextVar("rag_scope", default=None)
 
 
 def _attempts():
@@ -122,10 +124,11 @@ def _catalog_names(query, names):
     return [name for name in names if name in chosen] or names
 
 
-def _catalog_result(query, dialog_id):
+def _catalog_result(query, dialog_id, scope=None):
     if not _catalog_query(query):
         return None
-    names = _catalog_names(query, list_documents())
+    raw = scope.names() if scope is not None else list_documents()
+    names = _catalog_names(query, raw)
     answer = ", ".join(names) if names else NO_ANSWER
     add_turn(dialog_id, {"query": query, "answer": answer, "document_names": []})
     if not names:
@@ -133,9 +136,49 @@ def _catalog_result(query, dialog_id):
     return {"answer": answer, "status": CONFIRMED, "document_names": [], "sources": []}
 
 
-def run(query, dialog_id):
+def _places(work, query):
+    if not work or not _dependent(query):
+        return None
+    places = work[-1].get("places") or None
+    if places:
+        return places
+    names = work[-1].get("document_names") or None
+    if not names:
+        return None
+    return [{"kb_id": "", "document_name": name} for name in names]
+
+
+def _stamp_sources(state):
+    chunks = state.get("chunks") or []
+    for source in state.get("sources") or []:
+        if source.get("kb_id"):
+            continue
+        for chunk in chunks:
+            if chunk.get("document_name") == source.get("document_name") and chunk.get("kb_id"):
+                source["kb_id"] = chunk.get("kb_id")
+                source["kb_name"] = chunk.get("kb_name") or ""
+                break
+
+
+def run(query, dialog_id, scope=None):
     """Вернуть ответ, статус, имена документов и источники для одного вопроса."""
-    listed = _catalog_result(query, dialog_id)
+    active = scope if scope is not None else _scope.get()
+    if active is not None and not active.kbs:
+        add_turn(dialog_id, {"query": query, "answer": NO_ANSWER, "document_names": []})
+        return {"answer": NO_ANSWER, "status": MISSING, "document_names": [], "sources": []}
+    row_token = _extra_rows.set(active.chunks) if active is not None else None
+    trace_token = _trace.set(active.trace) if active is not None else None
+    try:
+        return _run(query, dialog_id, active)
+    finally:
+        if row_token is not None:
+            _extra_rows.reset(row_token)
+        if trace_token is not None:
+            _trace.reset(trace_token)
+
+
+def _run(query, dialog_id, scope):
+    listed = _catalog_result(query, dialog_id, scope)
     if listed is not None:
         return listed
 
@@ -148,6 +191,11 @@ def run(query, dialog_id):
         return state
 
     def search(state):
+        if scope is not None:
+            limit = runtime().get("search_limit", 4)
+            state["chunks"] = scope.search(state["clear"], limit, _places(state["work"], state["query"]))
+            scope.found = list(state["chunks"])
+            return state
         names = None
         if state["work"] and _dependent(state["query"]):
             names = state["work"][-1].get("document_names") or None
@@ -160,10 +208,14 @@ def run(query, dialog_id):
         return state
 
     def check(state):
-        verdict = check_agent(state["answer"], state["chunks"], state["query"], known)
+        checker = scope.known if scope is not None else known
+        verdict = check_agent(state["answer"], state["chunks"], state["query"], checker)
         state["status"] = verdict["status"]
         state["feedback"] = verdict["feedback"]
         state["sources"] = verdict["sources"]
+        if scope is not None:
+            scope.attempts = state.get("attempts") or 0
+            scope.feedback = state.get("feedback") or ""
         return state
 
     def route(state):
@@ -177,7 +229,7 @@ def run(query, dialog_id):
 
     def finish(state):
         overview = None
-        # Вопрос «сколько» не заменяется отказом, если в чанках уже есть полная строка обзора.
+        # Вопрос «сколько» не заменяется отказом, если в найденном тексте уже есть полная строка обзора.
         if state["status"] in (MISSING, UNCONFIRMED) and _count_ask(state.get("query", "")):
             overview = _from_overview(state.get("query", ""), state.get("chunks") or [])
         if state["status"] in (MISSING, UNCONFIRMED) and not overview:
@@ -195,7 +247,19 @@ def run(query, dialog_id):
             if source["document_name"] not in names:
                 names.append(source["document_name"])
         state["document_names"] = names
-        add_turn(state["dialog_id"], {"query": state["query"], "answer": state["answer"], "document_names": names})
+        _stamp_sources(state)
+        places = []
+        seen = set()
+        for source in state["sources"]:
+            kb_id = source.get("kb_id") or ""
+            name = source.get("document_name") or ""
+            if kb_id and name and (kb_id, name) not in seen:
+                places.append({"kb_id": kb_id, "document_name": name})
+                seen.add((kb_id, name))
+        turn = {"query": state["query"], "answer": state["answer"], "document_names": names}
+        if places:
+            turn["places"] = places
+        add_turn(state["dialog_id"], turn)
         return state
 
     graph = StateGraph(dict)

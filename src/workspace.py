@@ -3,6 +3,7 @@
 Запись под замком: оценка не затирает ход, который параллельно дописывает ответ.
 Файл, который индекс временно скрыл, остаётся в своей папке, пока он на диске.
 """
+import contextvars
 import json
 import threading
 import uuid
@@ -19,6 +20,37 @@ TITLE = "Новый диалог"
 # an in-flight answer is about to write.
 _lock = threading.RLock()
 _before_write = None
+_owner = contextvars.ContextVar("workspace_owner", default=None)
+DEFAULT = PATH
+
+
+def set_owner(user_id):
+    return _owner.set(user_id)
+
+
+def reset_owner(token):
+    _owner.reset(token)
+
+
+def _split():
+    owner = _owner.get()
+    try:
+        redirected = PATH.resolve() != DEFAULT.resolve()
+    except OSError:
+        redirected = PATH != DEFAULT
+    return bool(owner) and not redirected
+
+
+def _dialog_file():
+    owner = _owner.get()
+    if _split():
+        from auth import app_root
+        return app_root() / "data" / "users" / owner / "dialogs.json"
+    return PATH
+
+
+def _tree_file():
+    return PATH
 
 
 def blank_ratings():
@@ -34,11 +66,11 @@ def empty():
     return {"dialogs": [], "tree": {"id": "root", "name": "", "children": []}}
 
 
-def _read():
-    if not PATH.is_file():
+def _load_file(path):
+    if not path.is_file():
         return empty()
     try:
-        data = json.loads(PATH.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, TypeError):
         return empty()
     if not isinstance(data, dict):
@@ -52,18 +84,36 @@ def _read():
     return {"dialogs": dialogs, "tree": tree}
 
 
-def _write(data):
+def _dump(path, data):
     hook = _before_write
-    if hook is not None:
+    if hook is not None and path == PATH:
         hook(data)
-    PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = PATH.with_name(f".{PATH.name}.{uuid.uuid4().hex}.tmp")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(PATH)
+        tmp.replace(path)
     except Exception:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def _read():
+    if not _split():
+        return _load_file(PATH)
+    dialogs = _load_file(_dialog_file())["dialogs"]
+    tree = _load_file(_tree_file())["tree"]
+    return {"dialogs": dialogs, "tree": tree}
+
+
+def _write(data):
+    if not _split():
+        _dump(PATH, data)
+        return
+    _dump(_dialog_file(), {"dialogs": data.get("dialogs") or [], "tree": {"id": "root", "name": "", "children": []}})
+    stored = _load_file(_tree_file())
+    stored["tree"] = data.get("tree") or stored["tree"]
+    _dump(_tree_file(), stored)
 
 
 def load():
@@ -263,14 +313,14 @@ def get_dialog_row(dialog_id):
     return row
 
 
-def prepare_dialog(dialog_id):
+def prepare_dialog(dialog_id, *, memory_key=None):
     """Поднять ходы в память процесса. Новый диалог здесь не создаётся."""
     dialog_id = str(dialog_id)
     with _lock:
         data = _read()
         _, row = _find(data, dialog_id)
         turns = [] if row is None else (row.get("turns") or [])
-    set_dialog(dialog_id, turns)
+    set_dialog(memory_key or dialog_id, turns)
     return row
 
 

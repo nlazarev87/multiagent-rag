@@ -1,13 +1,17 @@
-"""Выбор истории, уточнение, поиск, ответ и проверка.
+"""Выбор прошлого хода, уточнение, поиск, ответ и проверка.
 
-Фактов корпуса здесь нет: пороги и словарь единиц читаются из config и prompts.
-Проверка не вызывает модель.
+Фактов из загруженных документов здесь нет: пороги и словарь единиц читаются
+из config и prompts. Проверка не вызывает модель.
 """
+import contextvars
 import re
 
 from llm import complete, count_tokens
 from settings import fewshot, lexicon, prompts, runtime
 from store import chunks_for_document, search_chunks
+
+_extra_rows = contextvars.ContextVar("extra_rows", default=None)
+_trace = contextvars.ContextVar("answer_trace", default=None)
 
 NO_ANSWER = "В документах нет ответа."
 CONFIRMED = "подтверждён"
@@ -113,7 +117,7 @@ def clarify_agent(query, work_turns):
 
 
 def search_agent(clear_query, document_names=None):
-    """Найти чанки. Имена передаются в индекс только когда список непустой."""
+    """Найти куски текста. Имена передаются в индекс только когда список непустой."""
     limit = runtime().get("search_limit", 4)
     if document_names:
         return search_chunks(clear_query, limit, document_names)
@@ -312,7 +316,11 @@ def build_prompt(query, chunks, previous=None, feedback=None, count=None, budget
     room = budget - count("\n\n".join(head + tail))
     parts = []
     for number, chunk in enumerate(chunks, 1):
-        part = _fragment(number, chunk["document_name"], chunk["text"])
+        label = chunk["document_name"]
+        bases = {item.get("kb_id") for item in chunks if item.get("kb_id")}
+        if len(bases) > 1 and chunk.get("kb_name"):
+            label = f"{chunk['kb_name']} / {label}"
+        part = _fragment(number, label, chunk["text"])
         cost = count(part)
         if cost > room:
             part = _trim(part, room, count)
@@ -345,13 +353,31 @@ def _document_names(chunks):
     return names
 
 
+def _rows(name, kb_id=""):
+    fn = _extra_rows.get()
+    if fn is not None:
+        return fn(name, kb_id)
+    return chunks_for_document(name)
+
+
+def _kb_of(chunks, name):
+    for chunk in chunks:
+        if chunk.get("document_name") == name and chunk.get("kb_id"):
+            return chunk.get("kb_id") or ""
+    return ""
+
+
 def _as_chunk(name, row):
-    return {
+    item = {
         "text": row.get("text") or "",
         "document_name": name,
         "section": row.get("section", ""),
         "chunk_index": row.get("chunk_index", 0),
     }
+    if row.get("kb_id"):
+        item["kb_id"] = row.get("kb_id")
+        item["kb_name"] = row.get("kb_name") or ""
+    return item
 
 
 def _cover_latin(query, chunks):
@@ -360,7 +386,7 @@ def _cover_latin(query, chunks):
     missing = [token for token in _latin_tokens(query) if token not in _flat(" ".join(chunk.get("text") or "" for chunk in chunks))]
     found = []
     for name in _document_names(chunks):
-        for row in chunks_for_document(name):
+        for row in _rows(name, _kb_of(chunks, name)):
             text = (row.get("text") or "").lower()
             if all(token in text for token in missing):
                 found.append(_as_chunk(name, row))
@@ -382,7 +408,7 @@ def _prefer_name(query, chunks):
     tokens = _latin_tokens(query) or [word for word in _words(query) if len(word) >= 4]
     found = []
     for name in _document_names(chunks):
-        for row in chunks_for_document(name):
+        for row in _rows(name, _kb_of(chunks, name)):
             section = _flat(row.get("section") or "")
             text = (row.get("text") or "").lower()
             if "наименован" not in section and "характеристик" not in section:
@@ -422,7 +448,7 @@ def _drop_repeat_cite(answer):
 
 
 def answer_agent(query, clear_query, chunks, work_turns, feedback=None):
-    """Текст ответа. Пустые чанки дают отказ, обзор таблицы может обойтись без модели."""
+    """Текст ответа. Пустые куски дают отказ, обзор таблицы может обойтись без модели."""
     if not chunks:
         return NO_ANSWER
     chunks = _cover_latin(query, chunks)
@@ -434,7 +460,11 @@ def answer_agent(query, clear_query, chunks, work_turns, feedback=None):
         if listed:
             return listed
     previous = work_turns[-1] if work_turns and clear_query != query else None
-    return _drop_repeat_cite(_with_cite(complete(SYSTEM, build_prompt(query, chunks, previous, feedback), examples=EXAMPLES), chunks))
+    prompt = build_prompt(query, chunks, previous, feedback)
+    sink = _trace.get()
+    if sink is not None:
+        sink.append(prompt)
+    return _drop_repeat_cite(_with_cite(complete(SYSTEM, prompt, examples=EXAMPLES), chunks))
 
 
 def _pure_number(token):
@@ -2018,7 +2048,7 @@ def _keep_cited(used, scores, facts, bodies):
 
 
 def check_agent(answer, chunks, query="", known=None):
-    """Подтвердить ответ по чанкам или вернуть отзыв. Модель не вызывается."""
+    """Подтвердить ответ по найденному тексту или вернуть отзыв. Модель не вызывается."""
     text = answer.strip()
     known = known or (lambda _term: True)
     absent = [token for token in _specific(query) if not known(_flat(token))]
