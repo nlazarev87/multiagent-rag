@@ -230,6 +230,26 @@ def test_singular_question_word_does_not_narrow_the_file_list(monkeypatch):
     assert note["answer"] == "заметка.txt"
 
 
+def test_relative_clause_keeps_a_three_letter_subject_on_search(monkeypatch):
+    # Words shorter than three letters are inventory boilerplate. A three-letter
+    # subject, including a number, is the document the question is about.
+    monkeypatch.setattr(coordinator, "list_documents", lambda: ["Документ.docx", "Паспорт насоса.docx"])
+    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    listed = coordinator.run("Какие из документов, которые загружены в систему?", "short-before")
+    assert listed["status"] == agents.CONFIRMED
+    assert listed["answer"] == "Документ.docx, Паспорт насоса.docx"
+    assert listed["sources"] == []
+    for question in (
+        "Какой газ у документа, который загружен в систему?",
+        "Какой 220 у документа, который загружен в систему?",
+    ):
+        order = []
+        _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+        coordinator.run(question, "content-before")
+        assert order[0] == "select", question
+        assert "search" in order
+
+
 def test_finish_drops_citations_without_a_source(monkeypatch):
     order = []
     _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
@@ -592,6 +612,50 @@ def test_catalog_lists_every_file_when_the_names_do_not_overlap(monkeypatch):
     assert result["answer"] == "ГОСТ_1.docx, насос.md"
     assert result["sources"] == []
 
+def test_catalog_accepts_each_finite_loaded_form(monkeypatch):
+    names = ["Паспорт насоса.docx", "Руководство.docx", "Пособие.docx"]
+    monkeypatch.setattr(coordinator, "list_documents", lambda: list(names))
+    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    listed = ", ".join(names)
+    passport = coordinator.run("Какой паспорт загружен в систему?", "finite-m")
+    assert passport["status"] == agents.CONFIRMED
+    assert passport["answer"] == "Паспорт насоса.docx"
+    guide = coordinator.run("Какое руководство загружено в систему?", "finite-n")
+    assert guide["answer"] == "Руководство.docx"
+    booklet = coordinator.run("Какое пособие загружено в систему?", "finite-book")
+    assert booklet["answer"] == "Пособие.docx"
+    yo = coordinator.run("Какие документы загружёны в систему?", "finite-yo")
+    assert yo["answer"] == listed
+    spaced = coordinator.run("Какие  ДОКУМЕНТЫ\nзагружены   в   систему?", "finite-space")
+    assert spaced["answer"] == listed
+    # «некоторые» содержит «котор», но это не относительное «который».
+    some = coordinator.run("Какие некоторые документы загружены в систему?", "finite-some")
+    assert some["answer"] == listed
+    relative = coordinator.run("Какие документы, которое загружено в систему?", "finite-rel")
+    assert relative["status"] == agents.CONFIRMED
+    assert relative["answer"] == listed
+
+
+def test_loaded_clause_and_negation_stay_on_search(monkeypatch):
+    questions = [
+        "Какое давление в загруженной в систему схеме?",
+        "Что сказано про загруженную в систему схему?",
+        "Какие схемы из загруженных в систему паспортов?",
+        "Что сказано про загруженные в систему схемы?",
+        "Почему документы не загружены в систему?",
+        "Почему схема не загружена в систему?",
+        "Почему пособие не загружено в систему?",
+        "Почему файл НЕ  загружен\nв систему?",
+        "Какое давление в документе, загружённом в систему?",
+        "Какое пособие, которое загружено в систему?",
+        "Какой ход у схемы, которая загружена в систему?",
+    ]
+    for question in questions:
+        order = []
+        _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+        coordinator.run(question, "loaded-search")
+        assert order[0] == "select", question
+
 
 def test_catalog_skips_a_negated_or_prefixed_load_and_accepts_yo(monkeypatch):
     # «не загружены» and «перезагружен» are not the inventory phrase.
@@ -627,6 +691,37 @@ def test_catalog_short_skip_matches_only_the_whole_token(monkeypatch):
     assert exact["answer"] == "api.txt, apis.txt, заметка.txt"
     longer = coordinator.run("Какие apis загружены в систему?", "longer-code")
     assert longer["answer"] == "apis.txt"
+
+def test_code_only_followup_searches_the_latest_document(monkeypatch):
+    dialog.reset()
+    pump = {
+        "query": "Что умеет насос Н-12?",
+        "answer": "Насос имеет обозначение Н-12.",
+        "document_names": ["pump.md"],
+    }
+    shift = {
+        "query": "Сколько длится смена?",
+        "answer": "Смена длится 8 часов.",
+        "document_names": ["charter.txt"],
+    }
+    dialog.set_dialog("code-follow", [pump, shift])
+    seen = []
+    monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
+    monkeypatch.setattr(coordinator, "search_agent", lambda clear, names=None: seen.append((clear, names)) or [CHUNK])
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Смена длится 8 часов [1].")
+    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    coordinator.run("Н-12?", "code-follow")
+    coordinator.run("Какое у него давление на Н-12?", "code-follow")
+    assert seen == [
+        ("Сколько длится смена? Н-12? 8", ["charter.txt"]),
+        ("Сколько длится смена? Какое у него давление на Н-12? 8", ["charter.txt"]),
+    ]
+    shift["document_names"] = []
+    dialog.set_dialog("code-follow", [pump, shift])
+    coordinator.run("Н-12?", "code-follow")
+    assert seen[-1] == ("Сколько длится смена? Н-12? 8", None)
+    dialog.reset()
+
 
 def test_finish_drops_only_the_invalid_number_in_a_citation(monkeypatch):
     order = []

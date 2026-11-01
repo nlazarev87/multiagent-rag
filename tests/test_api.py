@@ -1247,3 +1247,71 @@ def test_upload_restores_the_file_when_the_parser_is_missing(tmp_path, monkeypat
     assert called == []
     assert (tmp_path / "note.docx").read_bytes() == original
     assert (tmp_path / "keep.txt").read_text(encoding="utf-8") == "Цех имеет номер 4."
+
+
+def test_reindex_does_not_restore_a_document_deleted_while_it_runs(tmp_path, monkeypatch):
+    # POST /documents reads the inbox and then indexes that snapshot. Without the
+    # same lock as upload, a delete in between removes the file and the snapshot
+    # puts it back.
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "keep.txt").write_text("секрет", encoding="utf-8")
+    (inbox / "stay.txt").write_text("остается", encoding="utf-8")
+    indexed = {"keep.txt", "stay.txt"}
+    monkeypatch.setattr(api, "INBOX", inbox)
+    monkeypatch.setattr(api, "delete_document", lambda name: indexed.discard(name))
+    monkeypatch.setattr(api, "list_documents", lambda: sorted(indexed))
+    monkeypatch.setattr(api, "upsert_chunks", lambda chunks: indexed.update(chunk["document_name"] for chunk in chunks))
+    started = threading.Event()
+    release = threading.Event()
+
+    def ingest(folder):
+        chunks = [
+            {"document_name": path.name}
+            for path in sorted(folder.iterdir())
+            if path.is_file() and path.suffix.lower() == ".txt"
+        ]
+        started.set()
+        assert release.wait(5)
+        return chunks
+
+    monkeypatch.setattr(api, "ingest_dir", ingest)
+    began = threading.Event()
+    finished = threading.Event()
+    errors = []
+
+    def delete_keep():
+        began.set()
+        try:
+            api.documents_delete("keep.txt")
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            finished.set()
+
+    def reindex():
+        try:
+            api.documents(api.Docs(directory=str(inbox)))
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            release.set()
+
+    indexer = threading.Thread(target=reindex)
+    deleter = threading.Thread(target=delete_keep)
+    indexer.start()
+    try:
+        assert started.wait(5)
+        deleter.start()
+        assert began.wait(2)
+        assert not finished.wait(0.3)
+    finally:
+        release.set()
+    indexer.join(5)
+    deleter.join(5)
+    assert errors == []
+    assert not indexer.is_alive()
+    assert not deleter.is_alive()
+    assert indexed == {"stay.txt"}
+    assert not (inbox / "keep.txt").exists()
+    assert (inbox / "stay.txt").read_text(encoding="utf-8") == "остается"

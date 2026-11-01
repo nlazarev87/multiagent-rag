@@ -559,8 +559,8 @@ def test_fuse_ranks_a_shared_hit_above_a_single_list(monkeypatch):
     assert store._fuse(["b", "a"], ["a"]) == ["a", "b"]
 
 def test_blank_route_values_are_not_filters(monkeypatch):
-    monkeypatch.setattr(settings, "routing", lambda: {"where": {"collection": "", "kind": None, "tags": [], "keep": "alpha"}})
-    assert settings.where() == {"keep": "alpha"}
+    monkeypatch.setattr(settings, "routing", lambda: {"where": {"collection": "", "kind": None, "tags": [], "version": 0, "keep": "alpha"}})
+    assert settings.where() == {"version": 0, "keep": "alpha"}
     monkeypatch.setattr(store, "route_where", lambda: {})
     assert store._meta_ok({"collection": "beta"}) is True
     assert store._chroma_where(None) is None
