@@ -48,3 +48,17 @@ def test_cli_ingest_and_ask(tmp_path, monkeypatch):
     assert main([]) is None
     assert main(["ask"]) is None
     assert split_chunks("Цех имеет номер 4.", "charter.txt")[0]["text"].startswith("Цех")
+
+
+def test_cli_asks_the_words_after_the_command(capsys, monkeypatch):
+    seen = []
+    monkeypatch.setattr("cli.run", lambda query, dialog_id: seen.append((query, dialog_id)) or {
+        "answer": "4",
+        "status": "подтверждён",
+        "document_names": ["charter.txt"],
+    })
+    monkeypatch.setattr("cli.upsert_chunks", lambda *_args: (_ for _ in ()).throw(AssertionError("ingest")))
+    result = main(["ask", "Какой", "номер?"])
+    assert seen == [("Какой номер?", "cli")]
+    assert result["document_names"] == ["charter.txt"]
+    assert capsys.readouterr().out == "4 подтверждён charter.txt\n"
