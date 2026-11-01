@@ -50,15 +50,35 @@ def test_cli_ingest_and_ask(tmp_path, monkeypatch):
     assert split_chunks("Цех имеет номер 4.", "charter.txt")[0]["text"].startswith("Цех")
 
 
-def test_cli_asks_the_words_after_the_command(capsys, monkeypatch):
+def test_cli_asks_the_words_after_the_command(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("APP_ROOT", str(tmp_path / "root"))
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("CONFIG_DIR", str(repo / "config"))
+    monkeypatch.setenv("PROMPTS_DIR", str(repo / "data" / "prompts"))
+    import settings
+    settings.reload()
+    monkeypatch.setenv("CLI_PASSWORD", "password12")
+    monkeypatch.delenv("RAG_TEST_USER", raising=False)
+    import access
+    import auth
+    import kb
+    auth.setup("admin", "password12")
+    user = auth.user_by_login("admin")
+    kb.ensure_legacy()
+    access.backfill_legacy(user["id"])
     seen = []
-    monkeypatch.setattr("cli.run", lambda query, dialog_id: seen.append((query, dialog_id)) or {
-        "answer": "4",
-        "status": "подтверждён",
-        "document_names": ["charter.txt"],
-    })
+
+    def record(query, dialog_id, scope=None):
+        seen.append((query, dialog_id))
+        return {
+            "answer": "4",
+            "status": "подтверждён",
+            "document_names": ["charter.txt"],
+        }
+
+    monkeypatch.setattr("cli.run", record)
     monkeypatch.setattr("cli.upsert_chunks", lambda *_args: (_ for _ in ()).throw(AssertionError("ingest")))
-    result = main(["ask", "Какой", "номер?"])
+    result = main(["ask", "--user", "admin", "Какой", "номер?"])
     assert seen == [("Какой номер?", "cli")]
     assert result["document_names"] == ["charter.txt"]
     assert capsys.readouterr().out == "4 подтверждён charter.txt\n"
