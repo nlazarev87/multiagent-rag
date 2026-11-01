@@ -3,6 +3,7 @@
 Два файла с одним текстом не схлопываются в одну запись. Удаление документа
 во время поиска не роняет уже идущий запрос.
 """
+import contextvars
 import math
 import os
 import re
@@ -84,13 +85,28 @@ def _embed(texts):
     return _model.encode(texts, normalize_embeddings=True, batch_size=16).tolist()
 
 
+_pool = {}
+
+
+def _client_for(path):
+    """Один клиент на каталог. reset() закрывает все, а не каждый переход."""
+    global _client
+    key = str(Path(path).resolve())
+    client = _pool.get(key)
+    if client is None:
+        import chromadb
+        client = chromadb.PersistentClient(path=key)
+        _pool[key] = client
+    _client = client
+    return client
+
+
 def collection():
     global _collection, _client
     if _collection is None:
         with _import_lock:
             if _collection is None:
-                import chromadb
-                _client = chromadb.PersistentClient(path=str(CHROMA))
+                _client_for(CHROMA)
                 _collection = _client.get_or_create_collection("fragments", metadata={"hnsw:space": "cosine"})
     return _collection
 
@@ -99,15 +115,20 @@ def reset():
     global _collection, _index, _client, calls
     with _index_lock:
         _collection = None
-        system = getattr(_client, "_system", None) if _client is not None else None
-        if system is not None and hasattr(system, "stop"):
-            try:
-                system.stop()
-            except Exception:
-                pass
-        _client = None
         _index = None
+        clients = list(_pool.values())
+        _pool.clear()
+        if _client is not None and _client not in clients:
+            clients.append(_client)
+        _client = None
         calls = 0
+        for client in clients:
+            system = getattr(client, "_system", None)
+            if system is not None and hasattr(system, "stop"):
+                try:
+                    system.stop()
+                except Exception:
+                    pass
         import gc
         gc.collect()
 
@@ -511,7 +532,6 @@ def _elsewhere(path, fn):
         return fn()
     with _index_lock:
         saved = (CHROMA, _client, _collection, _index)
-        temp = None
         try:
             globals()["CHROMA"] = path
             globals()["_client"] = None
@@ -519,18 +539,31 @@ def _elsewhere(path, fn):
             globals()["_index"] = None
             return fn()
         finally:
-            temp = globals().get("_client")
             globals()["CHROMA"], globals()["_client"], globals()["_collection"], globals()["_index"] = saved
-            if temp is not None and temp is not saved[1]:
-                system = getattr(temp, "_system", None)
-                if system is not None and hasattr(system, "stop"):
-                    try:
-                        system.stop()
-                    except Exception:
-                        pass
+
+
+_foreign_read = contextvars.ContextVar("store_foreign_read", default=False)
+
+
+def _guard_read(path):
+    """Чужой каталог читается только после повторной проверки допуска."""
+    if _same_path(path, CHROMA) or _foreign_read.get():
+        return
+    raise PermissionError("closed")
+
+
+def _read_permit(permit, fn):
+    if permit is None or not permit.confirm():
+        raise PermissionError("closed")
+    token = _foreign_read.set(True)
+    try:
+        return fn()
+    finally:
+        _foreign_read.reset(token)
 
 
 def search_at(path, clear_query, limit=4, document_names=None):
+    _guard_read(path)
     return _elsewhere(path, lambda: search_chunks(clear_query, limit, document_names))
 
 
@@ -543,22 +576,38 @@ def delete_at(path, document_name):
 
 
 def list_at(path):
+    _guard_read(path)
     return _elsewhere(path, list_documents)
 
 
 def chunks_at(path, name):
+    _guard_read(path)
     return _elsewhere(path, lambda: chunks_for_document(name))
 
 
 def known_at(path, term):
+    _guard_read(path)
     return _elsewhere(path, lambda: known(term))
 
 
 def search_permit(permit, clear_query, limit=4, document_names=None):
     """Поиск только после повторной проверки допуска. Чужой путь не читается."""
-    if permit is None or not permit.confirm():
-        raise PermissionError("closed")
-    return search_at(permit.chroma, clear_query, limit, document_names)
+    return _read_permit(permit, lambda: search_at(permit.chroma, clear_query, limit, document_names))
+
+
+def list_permit(permit):
+    """Список имён только после повторной проверки допуска."""
+    return _read_permit(permit, lambda: list_at(permit.chroma))
+
+
+def chunks_permit(permit, name):
+    """Текст файла только после повторной проверки допуска."""
+    return _read_permit(permit, lambda: chunks_at(permit.chroma, name))
+
+
+def known_permit(permit, term):
+    """Слово из индекса только после повторной проверки допуска."""
+    return _read_permit(permit, lambda: known_at(permit.chroma, term))
 
 
 def search_chunks(clear_query, limit=4, document_names=None):

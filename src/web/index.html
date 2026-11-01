@@ -387,7 +387,10 @@
       cursor: pointer;
     }
     #status {
+      position: relative;
+      z-index: 6;
       height: 22px;
+      flex: 0 0 22px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -509,6 +512,7 @@
     let closedFolders = new Set();
     let treeStamp = 0;
     let treePending = false;
+    let treeDragging = false;
     let treeWriting = false;
     let me = null;
     let fileBase = {};
@@ -783,6 +787,7 @@
         const cite = element("button", "chip", "[" + source.number + "]");
         cite.type = "button";
         cite.setAttribute("data-document", source.document_name);
+        if (source.kb_id) cite.setAttribute("data-kb", source.kb_id);
         if (source.chunk_index != null && source.chunk_index !== "") {
           cite.setAttribute("data-index", String(source.chunk_index));
         }
@@ -799,6 +804,7 @@
           const file = element("button", "chip", source.document_name);
           file.type = "button";
           file.setAttribute("data-document", source.document_name);
+          if (source.kb_id) file.setAttribute("data-kb", source.kb_id);
           wrap.append(file);
           wrap.append(rateRow("Правильность документа", docScores[source.document_name], (n) => {
             const payload = { documents: {} };
@@ -987,11 +993,15 @@
           openMenu(event, node, parent);
         });
         btn.addEventListener("dragstart", (event) => {
+          treeDragging = true;
           event.dataTransfer.setData("text/plain", JSON.stringify({
             folder: !isFile,
             id: node.id || "",
             name: node.document_name || "",
           }));
+        });
+        btn.addEventListener("dragend", () => {
+          treeDragging = false;
         });
         if (!isFile) {
           btn.addEventListener("dragover", (event) => {
@@ -1111,7 +1121,7 @@
         if (!response.ok) throw new Error("ui");
         const data = await response.json();
         dialogs = data.dialogs || [];
-        if (stamp === treeStamp && !treePending && !treeWriting) {
+        if (stamp === treeStamp && !treePending && !treeWriting && !treeDragging) {
           tree = data.tree || { id: "root", name: "", children: [] };
         }
         if (!dialogs.length) {
@@ -1244,12 +1254,13 @@
       const node = event.target.closest("[data-document]");
       if (!node) return;
       const name = node.getAttribute("data-document");
+      const kbId = node.getAttribute("data-kb") || "";
       if (!node.hasAttribute("data-index")) {
-        showPreview(name);
+        showPreview(name, null, kbId);
         return;
       }
       showPreview(name, {
-        kb_id: node.getAttribute("data-kb") || "",
+        kb_id: kbId,
         chunkIndex: node.getAttribute("data-index"),
         section: node.getAttribute("data-section") || "",
         answer: node.getAttribute("data-answer") || "",
@@ -1351,7 +1362,7 @@
           return;
         }
         for (const file of chosen) paintStep(file.name, 2, "разобран");
-        if (data.tree && stamp === treeStamp && !treePending && !treeWriting) tree = data.tree;
+        if (data.tree && stamp === treeStamp && !treePending && !treeWriting && !treeDragging) tree = data.tree;
         else ensureTreeFiles(data.documents || []);
         paintTree();
         const known = new Set((data.documents || []).map((item) => item.name || item));
@@ -1422,12 +1433,21 @@
     const admin = document.getElementById("admin");
     const adminBody = document.getElementById("admin-body");
 
+    async function paintUpload() {
+      const response = await fetch("/upload-targets");
+      if (!response.ok) return;
+      const targets = await response.json();
+      const canSend = (targets.bases || []).length > 0 || targets.create;
+      document.getElementById("upload").classList.toggle("hidden", !canSend);
+    }
+
     function paintMe(data) {
       me = data;
       document.getElementById("status-login").textContent = data.login || "";
       document.getElementById("status-role").textContent = data.role || "";
       const actions = data.actions || [];
       document.getElementById("manage").classList.toggle("hidden", !actions.length);
+      paintUpload();
       ["users", "roles", "groups", "access", "audit"].forEach((name) => {
         const button = document.getElementById("admin-" + name);
         const need = { users: "manage_users", roles: "manage_roles", groups: "manage_groups", access: "manage_access", audit: "view_audit" }[name];
@@ -1609,12 +1629,20 @@
         if (after.value) query.set("after", after.value);
         if (before.value) query.set("before", before.value);
         const data = await (await fetch("/admin/audit?" + query.toString())).json();
-        (data.events || []).forEach((event) => {
+        const events = data.events || [];
+        events.forEach((event) => {
           list.append(adminButton(event.time + " " + event.kind + " " + event.login, async () => {
             const full = await (await fetch("/admin/audit/" + event.id)).json();
             field(list, "pre", JSON.stringify(full, null, 2));
           }));
         });
+        if (events.length === 50) {
+          const last = events[events.length - 1];
+          list.append(adminButton("Дальше", () => {
+            before.value = last.time || "";
+            load();
+          }));
+        }
       }
       adminBody.append(person, role, group, kind, after, before, adminButton("Обновить", load), list);
       await load();

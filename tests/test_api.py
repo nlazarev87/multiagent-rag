@@ -32,6 +32,8 @@ def ui_store(tmp_path, monkeypatch):
     import access
     import auth
     import kb
+    import store
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
     auth.ensure()
     if auth.count_users() == 0:
         auth.setup("admin", "password12")
@@ -78,6 +80,7 @@ def test_upload_indexes_other_files_when_one_is_unreadable(tmp_path, monkeypatch
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
     response = TestClient(app).post(
         "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
         files=[("files", ("note.txt", "Цех имеет номер 4.", "text/plain"))],
     )
     assert response.status_code == 200
@@ -95,13 +98,17 @@ def test_upload_lists_document(tmp_path, monkeypatch):
     monkeypatch.setattr("api.upsert_chunks", remember)
     monkeypatch.setattr("api.list_documents", lambda: saved)
     client = TestClient(app)
-    response = client.post("/upload", files=[("files", ("note.txt", "Цех имеет номер 4.", "text/plain"))])
+    response = client.post("/upload", data={"kb_id": "00000000-0000-4000-8000-000000000001"}, files=[("files", ("note.txt", "Цех имеет номер 4.", "text/plain"))])
     assert response.status_code == 200
     assert _doc_names(client.get("/documents").json()) == ["note.txt"]
     page = client.get("/")
     assert page.status_code == 200
     assert "insertAdjacentHTML" not in page.text and "innerHTML" not in page.text
     assert "data-document" in page.text and "data-index" in page.text
+    assert "data-kb" in page.text
+    assert "treeDragging" in page.text
+    assert "Дальше" in page.text
+    assert 'id="status"' in page.text and "z-index: 6" in page.text
 
 
 def _token_count(monkeypatch):
@@ -121,6 +128,7 @@ def test_upload_replaces_readable_file(tmp_path, monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
     response = TestClient(app).post(
         "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
         files=[("files", ("note.txt", "новое значение 8".encode(), "text/plain"))],
     )
     assert response.status_code == 200
@@ -138,6 +146,7 @@ def test_upload_keeps_previous_file_when_replacement_cannot_be_read(tmp_path, mo
     monkeypatch.setattr("api.upsert_chunks", called.append)
     response = TestClient(app).post(
         "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
         files=[("files", ("note.txt", b"\xff\xfe not text", "text/plain"))],
     )
     assert response.status_code == 400
@@ -156,6 +165,7 @@ def test_upload_keeps_previous_file_when_replacement_has_no_text(tmp_path, monke
     monkeypatch.setattr("api.upsert_chunks", called.append)
     response = TestClient(app).post(
         "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
         files=[("files", ("note.txt", b" \n\n\t", "text/plain"))],
     )
     assert response.status_code == 400
@@ -172,6 +182,7 @@ def test_upload_keeps_previous_docx_when_replacement_is_corrupt(tmp_path, monkey
     monkeypatch.setattr("api.upsert_chunks", called.append)
     response = TestClient(app).post(
         "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
         files=[("files", ("note.docx", b"not a docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))],
     )
     assert response.status_code == 400
@@ -184,7 +195,7 @@ def test_upload_drops_an_empty_new_file(tmp_path, monkeypatch):
     monkeypatch.setattr("api.INBOX", tmp_path)
     called = []
     monkeypatch.setattr("api.upsert_chunks", called.append)
-    response = TestClient(app).post("/upload", files=[("files", ("empty.txt", b"\n", "text/plain"))])
+    response = TestClient(app).post("/upload", data={"kb_id": "00000000-0000-4000-8000-000000000001"}, files=[("files", ("empty.txt", b"\n", "text/plain"))])
     assert response.status_code == 400
     assert called == []
     assert not (tmp_path / "empty.txt").exists()
@@ -198,6 +209,7 @@ def test_upload_rolls_back_the_batch_when_a_later_file_fails(tmp_path, monkeypat
     monkeypatch.setattr("api.upsert_chunks", called.append)
     response = TestClient(app).post(
         "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
         files=[
             ("files", ("note.txt", "новое значение 8".encode(), "text/plain")),
             ("files", ("other.txt", b"\xff", "text/plain")),
@@ -224,6 +236,7 @@ def test_upload_does_not_follow_a_symlink(tmp_path, monkeypatch):
     monkeypatch.setattr("api.upsert_chunks", called.append)
     response = TestClient(app).post(
         "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
         files=[("files", ("note.txt", "новое".encode(), "text/plain"))],
     )
     assert response.status_code == 400
@@ -236,7 +249,7 @@ def test_upload_rejects_a_parent_directory_name(tmp_path, monkeypatch):
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     monkeypatch.setattr("api.INBOX", inbox)
-    response = TestClient(app).post("/upload", files=[("files", ("..", b"x", "text/plain"))])
+    response = TestClient(app).post("/upload", data={"kb_id": "00000000-0000-4000-8000-000000000001"}, files=[("files", ("..", b"x", "text/plain"))])
     assert response.status_code == 400
     assert list(tmp_path.iterdir()) == [inbox]
     assert list(inbox.iterdir()) == []
@@ -427,6 +440,7 @@ def test_upload_keeps_the_file_inside_inbox(tmp_path, monkeypatch):
     outside.write_text("чужой файл", encoding="utf-8")
     response = TestClient(app).post(
         "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
         files=[("files", ("../outside.txt", "новый текст".encode(), "text/plain"))],
     )
     assert response.status_code == 200
@@ -503,7 +517,7 @@ def test_query_does_not_restore_a_dialog_deleted_while_answering(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: [])
 
     def run(query, dialog_id, scope=None):
-        workspace.delete_dialog(dialog_id)
+        workspace.delete_dialog(dialog_id.split(":", 1)[-1])
         return {"answer": "Цех имеет номер 4 [1].", "status": "подтверждён", "document_names": [], "sources": []}
 
     monkeypatch.setattr("api.run", run)
@@ -534,10 +548,10 @@ def test_upload_writes_only_the_file_name(tmp_path, monkeypatch):
         async def read(self):
             return self.payload
 
-    result = asyncio.run(api.upload([
+    result = asyncio.run(api.upload(None, [
         FakeUpload("../outside.txt", "Цех имеет номер 4.".encode()),
         FakeUpload("subdir/note.txt", "Насос Н-12.".encode()),
-    ]))
+    ], "00000000-0000-4000-8000-000000000001"))
     assert (inbox / "outside.txt").read_text(encoding="utf-8") == "Цех имеет номер 4."
     assert (inbox / "note.txt").read_text(encoding="utf-8") == "Насос Н-12."
     assert not (inbox / "subdir").exists()
@@ -653,6 +667,7 @@ def test_upload_strips_directory_from_filename(tmp_path, monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["outside.txt"])
     response = TestClient(app).post(
         "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
         files=[("files", ("../outside.txt", "чужой файл", "text/plain"))],
     )
     assert response.status_code == 200
@@ -711,7 +726,7 @@ def test_query_after_delete_does_not_reuse_the_answer_memory(monkeypatch):
 
     def run(query, dialog_id, scope=None):
         if query == "первый":
-            workspace.delete_dialog(dialog_id)
+            workspace.delete_dialog(dialog_id.split(":", 1)[-1])
             dialog.add_turn(dialog_id, {"query": query, "answer": "хвост", "document_names": ["note.txt"]})
         seen.append([turn["query"] for turn in dialog.get_dialog(dialog_id)])
         return {"answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []}
@@ -763,6 +778,7 @@ def test_upload_keeps_the_file_inside_the_inbox(tmp_path, monkeypatch):
     outside.write_text("чужой файл", encoding="utf-8")
     response = TestClient(app).post(
         "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
         files=[("files", ("../note.txt", "Цех имеет номер 4.", "text/plain"))],
     )
     assert response.status_code == 200
@@ -826,7 +842,7 @@ def test_upload_keeps_the_name_inside_inbox(tmp_path, monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: saved)
     outside = tmp_path / "outside.txt"
     client = TestClient(app)
-    response = client.post("/upload", files=[
+    response = client.post("/upload", data={"kb_id": "00000000-0000-4000-8000-000000000001"}, files=[
         ("files", ("../outside.txt", "Секретный текст.", "text/plain")),
         ("files", ("nested/secret.txt", "Второй текст.", "text/plain")),
     ])
@@ -1182,6 +1198,7 @@ def test_upload_rejects_a_directory_and_restores_the_earlier_file(tmp_path, monk
     monkeypatch.setattr("api.upsert_chunks", called.append)
     response = TestClient(app).post(
         "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
         files=[
             ("files", ("note.txt", "новое значение".encode(), "text/plain")),
             ("files", ("slot.txt", "внутрь".encode(), "text/plain")),
@@ -1243,6 +1260,7 @@ def test_upload_keeps_the_file_when_indexing_fails(tmp_path, monkeypatch):
     monkeypatch.setattr("api.upsert_chunks", boom)
     response = TestClient(app).post(
         "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
         files=[("files", ("note.txt", "Цех имеет номер 4.".encode(), "text/plain"))],
     )
     assert response.status_code == 500
@@ -1264,6 +1282,7 @@ def test_upload_restores_the_file_when_the_parser_is_missing(tmp_path, monkeypat
     monkeypatch.setattr("ingest._docx_blocks", missing)
     response = TestClient(app).post(
         "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
         files=[("files", ("note.docx", b"new-docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))],
     )
     assert response.status_code == 500
@@ -1338,3 +1357,55 @@ def test_reindex_does_not_restore_a_document_deleted_while_it_runs(tmp_path, mon
     assert indexed == {"stay.txt"}
     assert not (inbox / "keep.txt").exists()
     assert (inbox / "stay.txt").read_text(encoding="utf-8") == "остается"
+
+def test_upload_without_a_base_is_refused(monkeypatch):
+    monkeypatch.delenv("RAG_TEST_USER", raising=False)
+    client = TestClient(app)
+    client.post("/login", json={"login": "admin", "password": "password12"})
+    response = client.post("/upload", files=[("files", ("note.txt", b"text", "text/plain"))])
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Нужно выбрать базу"
+
+
+def test_query_memory_key_is_the_person_and_the_dialog(monkeypatch):
+    seen = []
+
+    def run(query, dialog_id, scope=None):
+        seen.append((dialog_id, [turn["query"] for turn in dialog.get_dialog(dialog_id)]))
+        return {"answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []}
+
+    monkeypatch.setattr("api.run", run)
+    client = TestClient(app)
+    user = __import__("auth").user_by_login("admin")
+    assert client.post("/query", json={"query": "первый", "dialog_id": "d"}).status_code == 200
+    assert client.post("/query", json={"query": "второй", "dialog_id": "d"}).status_code == 200
+    assert seen[0][0] == f"{user['id']}:d"
+    assert seen[1] == (f"{user['id']}:d", ["первый"])
+
+
+def test_query_writes_the_chunk_and_a_failure_keeps_the_fields(monkeypatch):
+    import audit
+
+    def run(query, dialog_id, scope=None):
+        if query == "сбой":
+            raise RuntimeError("model down")
+        return {
+            "answer": "фраза из куска",
+            "status": "подтверждён",
+            "document_names": ["note.txt"],
+            "sources": [{"number": 1, "document_name": "note.txt", "chunk_index": 0, "text": "фраза из куска"}],
+        }
+
+    monkeypatch.setattr("api.run", run)
+    client = TestClient(app)
+    assert client.post("/query", json={"query": "вопрос", "dialog_id": "d"}).status_code == 200
+    saved = audit.list_events(kind="query")[0]
+    assert saved["payload"]["answer"] == "фраза из куска"
+    assert saved["payload"]["sources"][0]["text"] == "фраза из куска"
+    assert client.post("/query", json={"query": "сбой", "dialog_id": "d"}).status_code == 500
+    failed = audit.list_events(kind="query")[0]
+    assert failed["ok"] is False
+    assert failed["payload"]["answer"] == ""
+    assert failed["payload"]["status"] == "нет"
+    assert failed["payload"]["error"] == "RuntimeError"
+    assert "rejected" in failed["payload"]

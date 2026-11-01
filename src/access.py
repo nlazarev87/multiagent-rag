@@ -41,6 +41,15 @@ def has_global(user, action):
     return user is not None and action in (user.get("actions") or [])
 
 
+def issue_see(user, kb_id):
+    """Допуск на чтение списка или текста: хватает любого из четырёх действий."""
+    for action in CONTENT:
+        permit = issue(user, kb_id, action)
+        if permit is not None:
+            return permit
+    return None
+
+
 def issue(user, kb_id, action):
     row = kb.get(kb_id)
     if row is None or not can(user, kb_id, action):
@@ -75,7 +84,13 @@ def visible_documents(user):
         if item["legacy"]:
             names = store.list_documents()
         else:
-            names = store.list_at(item["chroma"])
+            permit = issue_see(user, item["id"])
+            if permit is None:
+                continue
+            try:
+                names = store.list_permit(permit)
+            except PermissionError:
+                continue
         for name in names:
             rows.append({"kb_id": item["id"], "kb_name": item["name"], "name": name})
     return rows
@@ -196,10 +211,15 @@ def build_scope(user):
         return _rrf_merge(rankings, limit)
 
     def word(term):
-        for kb_id in kbs:
-            row = kb.get(kb_id)
-            if row and store.known_at(row["chroma"], term):
-                return True
+        for kb_id in list(used):
+            permit = issue(user, kb_id, "ask")
+            if permit is None:
+                continue
+            try:
+                if store.known_permit(permit, term):
+                    return True
+            except PermissionError:
+                continue
         return False
 
     def chunks(name, kb_id):
@@ -208,9 +228,12 @@ def build_scope(user):
         if not kb_id:
             return []
         permit = issue(user, kb_id, "ask")
-        if permit is None or not permit.confirm():
+        if permit is None:
             return []
-        rows = store.chunks_at(permit.chroma, name)
+        try:
+            rows = store.chunks_permit(permit, name)
+        except PermissionError:
+            return []
         row = kb.get(kb_id) or {}
         tagged = []
         for item in rows:
@@ -233,6 +256,53 @@ def build_scope(user):
     scope.attempts = 0
     scope.feedback = ""
     return scope
+
+
+def opened_now(scope):
+    """Базы, которые этот вопрос реально открыл. Отсечённая сюда не входит."""
+    used = list(getattr(scope, "used", None) or [])
+    skipped = list(getattr(scope, "skipped", None) or [])
+    closed = list(getattr(scope, "closed", None) or [])
+    if used or skipped or closed:
+        return used
+    return list(getattr(scope, "kbs", None) or [])
+
+
+def source_rows(result, found):
+    """Текст куска в журнале тот же, что уже найден, а не пересказ."""
+    sources = []
+    for source in (result or {}).get("sources") or []:
+        item = dict(source)
+        if not item.get("text"):
+            for chunk in found or []:
+                same_name = chunk.get("document_name") == item.get("document_name")
+                same_index = chunk.get("chunk_index") == item.get("chunk_index")
+                if same_name and same_index:
+                    item["text"] = chunk.get("text") or ""
+                    item.setdefault("kb_id", chunk.get("kb_id") or "")
+                    item.setdefault("section", chunk.get("section") or "")
+                    break
+        sources.append(item)
+    return sources
+
+
+def query_record(user, scope, *, query, answer, status, dialog_id, sources, attempts=0, feedback="", error=""):
+    """Одна запись вопроса: открытые базы, отказ и пустой текст модели при сбое."""
+    payload = {
+        "query": query,
+        "answer": answer or "",
+        "status": status or "",
+        "dialog_id": dialog_id,
+        "opened": opened_now(scope),
+        "rejected": rejections(user, scope),
+        "sources": sources or [],
+        "trace": list(getattr(scope, "trace", None) or []),
+        "attempts": attempts or 0,
+        "feedback": feedback or "",
+    }
+    if error:
+        payload["error"] = error
+    return payload
 
 
 def rejections(user, scope):

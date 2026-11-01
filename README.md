@@ -12,10 +12,11 @@
 .\start.ps1 big      # та же команда, но модель 7B, если файл уже лежит в data/models
 ```
 
-Один вопрос из консоли, без страницы:
+Один вопрос из консоли, без страницы. Без `--user` команда отказывает. Пароль лежит в `CLI_PASSWORD` и не печатается.
 
 ```powershell
 $env:PYTHONPATH = "src"
+$env:CLI_PASSWORD = "пароль"
 python -m cli --user ИМЯ ingest --kb ИД data/inbox
 python -m cli --user ИМЯ сколько насосов в цехе
 ```

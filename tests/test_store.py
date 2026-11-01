@@ -819,3 +819,62 @@ def test_reset_clears_the_index_when_shutdown_fails(tmp_path, monkeypatch):
         real._system.stop()
     except Exception:
         pass
+
+
+def _vectors(monkeypatch):
+    monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
+
+
+def test_foreign_catalog_is_not_read(tmp_path):
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    (foreign / "note.txt").write_text("чужой текст", encoding="utf-8")
+    for call in (
+        lambda: store.chunks_at(foreign, "note.txt"),
+        lambda: store.list_at(foreign),
+        lambda: store.search_at(foreign, "вопрос"),
+        lambda: store.known_at(foreign, "чужой"),
+    ):
+        try:
+            call()
+        except PermissionError:
+            continue
+        raise AssertionError("foreign path was read")
+
+
+def test_two_catalogs_stay_apart_and_reset_follows_chroma(tmp_path, monkeypatch):
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    _vectors(monkeypatch)
+    first = tmp_path / "one"
+    second = tmp_path / "two"
+    monkeypatch.setattr(store, "CHROMA", first)
+    store.reset()
+    store.upsert_chunks([
+        {"text": "первый каталог", "document_name": "same.txt", "chunk_index": 0, "checksum": "1", "section": ""},
+    ])
+    monkeypatch.setattr(store, "CHROMA", second)
+    store.reset()
+    assert store.list_documents() == []
+    store.upsert_chunks([
+        {"text": "второй каталог", "document_name": "same.txt", "chunk_index": 0, "checksum": "2", "section": ""},
+    ])
+    assert store.chunks_for_document("same.txt")[0]["text"] == "второй каталог"
+    store.delete_document("same.txt")
+    assert store.list_documents() == []
+    script = (
+        "import store\n"
+        "from pathlib import Path\n"
+        f"store.CHROMA = Path({str(first)!r})\n"
+        "store.reset()\n"
+        "print(store.chunks_for_document('same.txt')[0]['text'])\n"
+    )
+    env = dict(os.environ)
+    env["PYTHONPATH"] = "src"
+    done = subprocess.run([sys.executable, "-c", script], cwd=str(Path(__file__).resolve().parents[1]), env=env, capture_output=True, text=True, encoding="utf-8")
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "первый каталог"
+    store.reset()

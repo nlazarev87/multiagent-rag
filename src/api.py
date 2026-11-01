@@ -178,8 +178,14 @@ def _rows(user):
         if item["id"] == kb.LEGACY_ID or item["legacy"]:
             names = list_documents()
         else:
-            from store import list_at
-            names = list_at(item["chroma"])
+            permit = access.issue_see(user, item["id"])
+            if permit is None:
+                continue
+            try:
+                from store import list_permit
+                names = list_permit(permit)
+            except PermissionError:
+                continue
         for name in names:
             rows.append({"kb_id": item["id"], "kb_name": item["name"], "name": name})
     return rows
@@ -332,13 +338,19 @@ def documents_delete_old(document_name: str):
     raise HTTPException(404, detail="Документ не найден")
 
 
-def _chunks(row, name):
-    from store import chunks_at
+def _chunks(row, name, user):
+    permit = access.issue_see(user, row["id"])
+    if permit is None or not permit.confirm():
+        return None
     if row["legacy"]:
         if name not in list_documents():
             return None
         return chunks_for_document(name)
-    return chunks_at(row["chroma"], name)
+    try:
+        from store import chunks_permit
+        return chunks_permit(permit, name)
+    except PermissionError:
+        return None
 
 
 @app.get("/kb/{kb_id}/documents/{document_name:path}/preview")
@@ -354,7 +366,7 @@ def documents_preview(kb_id: str, document_name: str = None, request: Request = 
     row = kb.get(kb_id)
     if row is None or not access.can_see(_user(request), kb_id):
         raise HTTPException(404, detail="Документ не найден")
-    chunks = _chunks(row, name)
+    chunks = _chunks(row, name, _user(request))
     if not chunks:
         raise HTTPException(404, detail="Документ не найден")
     return {"document_name": name, "chunks": chunks}
@@ -398,13 +410,16 @@ def documents_delete(kb_id: str, document_name: str = None, request: Request = N
 
 @app.post("/documents")
 def documents(body: Docs, request: Request = None):
-    """Переиндексировать только папку базы «Документы», не путь с клиента."""
+    """Переиндексировать только папку базы «Документы» из реестра, не путь с клиента."""
     user = _user(request)
     if not access.can(user, kb.LEGACY_ID, "upload"):
         raise HTTPException(403, detail="Нет права загружать")
-    folder = Path(body.directory).resolve()
-    if folder != Path(INBOX).resolve():
-        raise HTTPException(400, detail="Загружать можно только папку data/inbox")
+    row = kb.get(kb.LEGACY_ID)
+    if row is None:
+        raise HTTPException(404, detail="База не найдена")
+    folder = Path(row["inbox"]).resolve()
+    if Path(body.directory).resolve() != folder:
+        raise HTTPException(400, detail="Загружать можно только папку базы")
     with _upload_lock:
         upsert_chunks(ingest_dir(folder))
     return {"ok": True}
@@ -515,10 +530,7 @@ async def upload(request: Request = None, files: list[UploadFile] = File(None), 
         target = row["id"]
         created = True
     if not target:
-        if os.environ.get("RAG_TEST_USER") and access.can(user, kb.LEGACY_ID, "upload"):
-            target = kb.LEGACY_ID
-        else:
-            raise HTTPException(400, detail="Нужно выбрать базу")
+        raise HTTPException(400, detail="Нужно выбрать базу")
     if not kb.is_uuid(target):
         raise HTTPException(404, detail="База не найдена")
     row = kb.get(target)
@@ -540,13 +552,19 @@ def _visible_names(user):
     return names
 
 
-def _kb_file_names(row):
+def _kb_file_names(row, user):
     if row["legacy"]:
         names = set(list_documents())
         names.update(_on_disk())
         return names
-    from store import list_at
-    return set(list_at(row["chroma"]))
+    permit = access.issue_see(user, row["id"])
+    if permit is None:
+        return set()
+    try:
+        from store import list_permit
+        return set(list_permit(permit))
+    except PermissionError:
+        return set()
 
 
 def _visible_rows(user):
@@ -573,7 +591,7 @@ def _page_tree(user):
     trees.migrate()
     parts = []
     for row in _visible_rows(user):
-        names = _kb_file_names(row)
+        names = _kb_file_names(row, user)
         stored = trees.read(trees.path_for(row))
         clean = workspace.ensure_files(workspace.sanitize_tree(stored, names), names)
         parts.append((row, clean))
@@ -590,10 +608,10 @@ def _same_tree(left, right):
     return json.dumps(left, sort_keys=True, ensure_ascii=False) == json.dumps(right, sort_keys=True, ensure_ascii=False)
 
 
-def _split_flat(visible, node):
+def _split_flat(visible, node, user):
     owners = {}
     for row in visible:
-        for name in _kb_file_names(row):
+        for name in _kb_file_names(row, user):
             owners.setdefault(name, row["id"])
     named = [name for name in workspace.iter_files(node) if name in owners]
     owner_ids = {owners[name] for name in named}
@@ -649,10 +667,10 @@ def _store_page_tree(user, incoming):
         if visible:
             targets.append((visible[0], node))
     else:
-        targets.extend(_split_flat(visible, node))
+        targets.extend(_split_flat(visible, node, user))
     pending = []
     for row, tree in targets:
-        names = _kb_file_names(row)
+        names = _kb_file_names(row, user)
         known = set(names) | set(workspace.iter_files(trees.read(trees.path_for(row))))
         clean = workspace.sanitize_tree(tree, known)
         current = workspace.sanitize_tree(trees.read(trees.path_for(row)), known)
@@ -772,28 +790,11 @@ def ui_ratings(dialog_id: str, turn_index: int, body: Ratings):
     return turn
 
 
-def _audit_sources(result, found):
-    sources = []
-    for source in result.get("sources") or []:
-        item = dict(source)
-        if not item.get("text"):
-            for chunk in found:
-                same_name = chunk.get("document_name") == item.get("document_name")
-                same_index = chunk.get("chunk_index") == item.get("chunk_index")
-                if same_name and same_index:
-                    item["text"] = chunk.get("text") or ""
-                    item.setdefault("kb_id", chunk.get("kb_id") or "")
-                    item.setdefault("section", chunk.get("section") or "")
-                    break
-        sources.append(item)
-    return sources
-
-
 @app.post("/query")
 def query(body: Query, request: Request):
     """Ответить на вопрос. Базу выбирает проверка прав, не поле запроса."""
     user = _user(request)
-    memory_key = body.dialog_id if os.environ.get("RAG_TEST_USER") else f"{user['id']}:{body.dialog_id}"
+    memory_key = f"{user['id']}:{body.dialog_id}"
     scope = access.build_scope(user)
     try:
         existed = workspace.prepare_dialog(body.dialog_id, memory_key=memory_key) is not None
@@ -802,21 +803,29 @@ def query(body: Query, request: Request):
         else:
             result = run(body.query, memory_key, scope)
         workspace.append_turn(body.dialog_id, body.query, result, create=not existed)
-        audit.write("query", user, {
-            "query": body.query,
-            "answer": result.get("answer", ""),
-            "status": result.get("status", ""),
-            "dialog_id": body.dialog_id,
-            "opened": list(scope.kbs),
-            "rejected": access.rejections(user, scope),
-            "sources": _audit_sources(result, getattr(scope, "found", None) or []),
-            "trace": list(scope.trace),
-            "attempts": getattr(scope, "attempts", 0) or 0,
-            "feedback": getattr(scope, "feedback", "") or "",
-        })
+        audit.write("query", user, access.query_record(
+            user, scope,
+            query=body.query,
+            answer=result.get("answer", ""),
+            status=result.get("status", ""),
+            dialog_id=body.dialog_id,
+            sources=access.source_rows(result, getattr(scope, "found", None) or []),
+            attempts=getattr(scope, "attempts", 0) or 0,
+            feedback=getattr(scope, "feedback", "") or "",
+        ))
         return result
     except Exception as exc:
-        audit.write("query", user, {"query": body.query, "error": type(exc).__name__}, ok=False)
+        audit.write("query", user, access.query_record(
+            user, scope,
+            query=body.query,
+            answer="",
+            status="нет",
+            dialog_id=body.dialog_id,
+            sources=[],
+            attempts=getattr(scope, "attempts", 0) or 0,
+            feedback="",
+            error=type(exc).__name__,
+        ), ok=False)
         raise HTTPException(500, detail="Ошибка сервера") from exc
 
 

@@ -69,12 +69,16 @@ def _stamp():
 
 def write(kind, user, payload, ok=True):
     ensure()
+    payload = payload or {}
+    login = "" if user is None else user.get("login", "")
+    if not login:
+        login = str(payload.get("login") or "")
     body = {
         "kind": kind,
         "time": _stamp(),
         "ok": bool(ok),
         "user_id": "" if user is None else user.get("id", ""),
-        "login": "" if user is None else user.get("login", ""),
+        "login": login,
         "role_id": "" if user is None else user.get("role_id", ""),
         "role": "" if user is None else user.get("role", ""),
         "groups": [] if user is None else sorted(auth.group_ids_for(user)),

@@ -9,7 +9,7 @@ from pathlib import Path
 import audit
 import auth
 import kb
-from access import build_scope, can, rejections
+from access import build_scope, can, query_record, source_rows
 from coordinator import run
 from ingest import ingest_dir
 from store import upsert_chunks
@@ -116,21 +116,28 @@ def main(argv=None):
         else:
             result = run(" ".join(words), "cli", scope)
     except Exception as exc:
-        audit.write("query", user, {"query": " ".join(words), "error": type(exc).__name__}, ok=False)
+        audit.write("query", user, query_record(
+            user, scope,
+            query=" ".join(words),
+            answer="",
+            status="нет",
+            dialog_id="cli",
+            sources=[],
+            attempts=getattr(scope, "attempts", 0) or 0,
+            error=type(exc).__name__,
+        ), ok=False)
         print("Ошибка сервера", file=sys.stderr)
         return None
-    audit.write("query", user, {
-        "query": " ".join(words),
-        "answer": result.get("answer", ""),
-        "status": result.get("status", ""),
-        "dialog_id": "cli",
-        "opened": list(scope.kbs),
-        "rejected": rejections(user, scope),
-        "sources": result.get("sources") or [],
-        "trace": list(getattr(scope, "trace", []) or []),
-        "attempts": getattr(scope, "attempts", 0) or 0,
-        "feedback": getattr(scope, "feedback", "") or "",
-    })
+    audit.write("query", user, query_record(
+        user, scope,
+        query=" ".join(words),
+        answer=result.get("answer", ""),
+        status=result.get("status", ""),
+        dialog_id="cli",
+        sources=source_rows(result, getattr(scope, "found", None) or []),
+        attempts=getattr(scope, "attempts", 0) or 0,
+        feedback=getattr(scope, "feedback", "") or "",
+    ))
     print(result["answer"], result["status"], " ".join(result["document_names"]))
     return result
 
