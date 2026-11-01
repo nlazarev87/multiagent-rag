@@ -1,29 +1,31 @@
-# Метрики
+# Как измерять качество
 
-Код: [tests/eval/scorecard.py](../tests/eval/scorecard.py). Короткая инструкция для агента: [.cursor/skills/scorecard/SKILL.md](../.cursor/skills/scorecard/SKILL.md). Полы: [tests/eval/floors.json](../tests/eval/floors.json).
+Код: [tests/eval/scorecard.py](../tests/eval/scorecard.py). Команды для агента: [.cursor/skills/scorecard/SKILL.md](../.cursor/skills/scorecard/SKILL.md). Нижняя граница метрик: [tests/eval/floors.json](../tests/eval/floors.json).
 
-Scorecard заново прогоняет узлы и пишет снимок в `tests/eval/last.json`.
+Программа заново прогоняет проверки и пишет снимок в `tests/eval/last.json`.
 
 ## Что чем мерить
 
-| Правка | Узлы |
+Имена справа вводят как аргумент `--nodes`.
+
+| Что изменилось | Какие проверки |
 | --- | --- |
-| `src/ingest.py` | `ingest`, `search` |
-| `src/store.py` | `search`, `univ` |
-| `src/agents.py` | `select`, `clarify`, `search`, `check`; `answer`, если изменился путь ответа |
-| `src/coordinator.py` | `coord` |
-| `config/`, `data/prompts/` | `univ` и узел, чьё поведение сдвинулось |
+| `src/ingest.py` | загрузка и поиск |
+| `src/store.py` | поиск и подмена документов |
+| `src/agents.py` | выбор хода, уточнение, поиск, проверка; ответ, если изменился путь ответа |
+| `src/coordinator.py` | сборка вопроса |
+| `config/`, `data/prompts/` | подмена документов и та проверка, чьё поведение сдвинулось |
 | Неясно | `--nodes fast` |
 
-`--nodes fast` — это `ingest`, `select`, `clarify`, `search`, `check`, `coord`, `univ`. Модель 1.5B там не отвечает.
+`--nodes fast` — загрузка, выбор хода, уточнение, поиск, проверка, сборка и подмена документов. Модель 1.5B там не отвечает.
 
-`answer` и сквозные вопросы (`e2e`) долгие. Их гоняет `python scripts/release_check.py` перед PR: сначала утечка, подмена и guard, потом `--nodes all --holdout`.
+Ответ модели и сквозные вопросы долгие. Их гоняет `python scripts/release_check.py` перед PR: сначала утечка, подмена и `tests/test_guard.py`, потом полный набор, включая вопросы из запасного списка. Флаг этого запасного списка — `--holdout`.
 
-## Инварианты
+## Что нельзя сломать
 
-- `pytest tests/test_floors.py` сравнивает `floors.json` и `last.json`. Он не перемеривает код. Зелёный тест при старом `last.json` ничего не доказывает.
-- Упавшая карточка чинится в своём узле. Полы не опускать. `--write-floors` и `--raise-floors` только по просьбе и только при GATE OK.
-- В `src/` не добавлять имена и факты корпуса, чтобы поднять карточку.
-- В отчёте писать `now / floor / room` по тем ключам, которые реально прогонялись.
+- `pytest tests/test_floors.py` сравнивает `floors.json` и `last.json`. Он не перемеривает код. Зелёный тест при старом снимке ничего не доказывает.
+- Упавшая проверка чинится в своём месте. Нижнюю границу в `tests/eval/floors.json` не опускать. `--write-floors` и `--raise-floors` только по просьбе и только когда отчёт пишет, что порог пройден.
+- В `src/` не добавлять имена и факты из документов, чтобы поднять число.
+- В отчёте писать текущее значение, границу и запас по тем проверкам, которые реально прогонялись.
 
-Python: `C:\Users\Home\AppData\Local\Programs\Python\Python312\python.exe`. `PYTHONPATH=src` задаёт `pytest.ini` и сам scorecard.
+Python: `C:\Users\Home\AppData\Local\Programs\Python\Python312\python.exe`. `PYTHONPATH=src` задаёт `pytest.ini` и сама программа проверки.
