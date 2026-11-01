@@ -590,6 +590,27 @@ def test_docx_keeps_an_inserted_table_cell(tmp_path):
     assert "10 бар" in values
 
 
+def test_docx_keeps_text_inside_a_smart_tag(tmp_path):
+    document = Document()
+    paragraph = document.add_paragraph("Давление равно ")
+    tag = OxmlElement("w:smartTag")
+    tag.append(_word_run("10 бар"))
+    paragraph._p.append(tag)
+    table = document.add_table(rows=2, cols=2)
+    table.rows[0].cells[0].text = "Показатель"
+    table.rows[0].cells[1].text = "Значение"
+    table.rows[1].cells[0].text = "Давление"
+    cell = OxmlElement("w:smartTag")
+    cell.append(_word_run("6 бар"))
+    table.rows[1].cells[1].paragraphs[0]._p.append(cell)
+    _save(document, tmp_path / "tagged.docx")
+    blocks = _docx_blocks(tmp_path / "tagged.docx")
+    text = "\n".join(block["text"] for block in blocks if block["kind"] != "table")
+    assert text == "Давление равно 10 бар"
+    table_block = next(block for block in blocks if block["kind"] == "table")
+    assert ("Значение", "6 бар") in table_block["rows"][0]
+
+
 def test_docx_keeps_a_nested_control_inside_an_insertion(tmp_path):
     document = Document()
     paragraph = document.add_paragraph("Код ")

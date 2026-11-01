@@ -649,6 +649,36 @@ def test_catalog_short_skip_matches_only_the_whole_token(monkeypatch):
     longer = coordinator.run("Какие apis загружены в систему?", "longer-code")
     assert longer["answer"] == "apis.txt"
 
+def test_code_only_followup_searches_the_latest_document(monkeypatch):
+    dialog.reset()
+    pump = {
+        "query": "Что умеет насос Н-12?",
+        "answer": "Насос имеет обозначение Н-12.",
+        "document_names": ["pump.md"],
+    }
+    shift = {
+        "query": "Сколько длится смена?",
+        "answer": "Смена длится 8 часов.",
+        "document_names": ["charter.txt"],
+    }
+    dialog.set_dialog("code-follow", [pump, shift])
+    seen = []
+    monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
+    monkeypatch.setattr(coordinator, "search_agent", lambda clear, names=None: seen.append((clear, names)) or [CHUNK])
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Смена длится 8 часов [1].")
+    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    coordinator.run("Н-12?", "code-follow")
+    coordinator.run("Какое у него давление на Н-12?", "code-follow")
+    assert seen == [
+        ("Сколько длится смена? Н-12? 8", ["charter.txt"]),
+        ("Сколько длится смена? Какое у него давление на Н-12? 8", ["charter.txt"]),
+    ]
+    shift["document_names"] = []
+    dialog.set_dialog("code-follow", [pump, shift])
+    coordinator.run("Н-12?", "code-follow")
+    assert seen[-1] == ("Сколько длится смена? Н-12? 8", None)
+    dialog.reset()
+
 
 def test_finish_drops_only_the_invalid_number_in_a_citation(monkeypatch):
     order = []
