@@ -56,6 +56,23 @@ def test_per_question_present(fresh_run):
     assert not missing, f"per_question missing fields: {missing}"
 
 
+def test_per_question_has_overview_columns(fresh_run):
+    pq = fresh_run.get("_per_question", [])
+    assert pq, "no per_question entries"
+    assert "overview_columns_in_slots" in pq[0], (
+        "per_question missing overview_columns_in_slots field"
+    )
+    for q in pq:
+        val = q["overview_columns_in_slots"]
+        assert isinstance(val, list), (
+            f"{q['id']}: overview_columns_in_slots is not a list ({type(val).__name__})"
+        )
+        for item in val:
+            assert isinstance(item, str), (
+                f"{q['id']}: overview_columns_in_slots item is not str"
+            )
+
+
 def test_per_question_has_staged_fields(fresh_run):
     pq = fresh_run.get("_per_question", [])
     assert pq, "no per_question entries"
