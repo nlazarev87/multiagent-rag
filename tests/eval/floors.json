@@ -98,6 +98,42 @@
     "direction": "higher",
     "hits": 46
   },
+  "search_retrieval_recall": {
+    "now": 0.9565217391304348,
+    "best": 1.0,
+    "room": 0.04347826086956519,
+    "floor": 0.9565217391304348,
+    "n": 46,
+    "direction": "higher",
+    "hits": 44
+  },
+  "search_fusion_recall_at_30": {
+    "now": 0.9565217391304348,
+    "best": 1.0,
+    "room": 0.04347826086956519,
+    "floor": 0.9565217391304348,
+    "n": 46,
+    "direction": "higher",
+    "hits": 44
+  },
+  "search_fusion_recall_at_12": {
+    "now": 0.9565217391304348,
+    "best": 1.0,
+    "room": 0.04347826086956519,
+    "floor": 0.9565217391304348,
+    "n": 46,
+    "direction": "higher",
+    "hits": 44
+  },
+  "search_fusion_recall_at_4": {
+    "now": 0.9130434782608695,
+    "best": 1.0,
+    "room": 0.08695652173913049,
+    "floor": 0.9130434782608695,
+    "n": 46,
+    "direction": "higher",
+    "hits": 42
+  },
   "search_hit1_dev": {
     "now": 0.6956521739130435,
     "best": 1.0,

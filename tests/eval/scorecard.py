@@ -288,6 +288,23 @@ def _retrieval_ok(item, chunks):
     return ok and any(item.get(key) for key in ("evidence", "evidence_any", "together"))
 
 
+def _retrieval_ok_any(chunks, item):
+    """True, если фразы вопроса есть хотя бы в одном куске, без проверки префикса."""
+    if not chunks:
+        return False
+    texts = [_flat(chunk.get("text", "")) for chunk in chunks]
+    evidence = item.get("evidence") or []
+    if evidence:
+        return all(any(_flat(phrase) in text for text in texts) for phrase in evidence)
+    evidence_any = item.get("evidence_any") or []
+    if evidence_any:
+        return any(any(_flat(phrase) in text for text in texts) for phrase in evidence_any)
+    together = item.get("together") or []
+    if together:
+        return any(all(_flat(phrase) in text for phrase in together) for text in texts)
+    return True
+
+
 def _first_needed_rank(item, chunks):
     if not chunks:
         return None
@@ -317,13 +334,18 @@ def measure_search(holdout=True, existing=None):
                 continue
             rows = [item for item in items if item["split"] == split and any(item.get(key) for key in ("evidence", "evidence_any", "together"))]
             hit4 = hit1 = mrr = 0.0
+            retrieval_hits = candidate_hits = fusion_hits_12 = fusion_hits_4 = 0
             doc_scores = []
             together_hits = together_n = 0
             overview_hits = overview_n = 0
             times = []
             for item in rows:
                 _start = time.perf_counter()
-                chunks = store.search_chunks(item["query"], 4)
+                _result = store.search_chunks(item["query"], 4, debug=True)
+                chunks = _result["slots"]
+                _raw_lex = _result["raw_lexical"]
+                _raw_dense = _result["raw_dense"]
+                _ranked = _result["ranked"]
                 _latency = (time.perf_counter() - _start) * 1000
                 times.append(_latency)
                 rank = _first_needed_rank(item, chunks)
@@ -361,6 +383,37 @@ def measure_search(holdout=True, existing=None):
                     "search_latency_ms": _latency,
                     "ok": rank is not None and rank <= 4,
                 })
+                _retrieval_pool = _raw_lex + _raw_dense
+                _retrieval_hit = _retrieval_ok_any(_retrieval_pool, item)
+                _candidate_pool = _ranked[:30]
+                _candidate_hit = _retrieval_ok_any(_candidate_pool, item)
+                _fusion_hit_12 = _retrieval_ok_any(_ranked[:12], item)
+                _fusion_hit_4 = _retrieval_ok_any(_ranked[:4], item)
+                retrieval_hits += int(_retrieval_hit)
+                candidate_hits += int(_candidate_hit)
+                fusion_hits_12 += int(_fusion_hit_12)
+                fusion_hits_4 += int(_fusion_hit_4)
+                if rank is not None:
+                    _stage_lost = None
+                elif _candidate_hit:
+                    if _retrieval_ok_any(_ranked, item):
+                        _stage_lost = "contexts"
+                    else:
+                        _stage_lost = "filter"
+                else:
+                    _stage_lost = "retrieval"
+                per_question[-1]["candidate_hit"] = _candidate_hit
+                per_question[-1]["fusion_hit_12"] = _fusion_hit_12
+                per_question[-1]["fusion_hit_4"] = _fusion_hit_4
+                per_question[-1]["in_retrieval"] = _retrieval_hit
+                per_question[-1]["in_ranked_30"] = _retrieval_ok_any(_ranked[:30], item)
+                per_question[-1]["in_ranked_12"] = _retrieval_ok_any(_ranked[:12], item)
+                per_question[-1]["in_ranked_4"] = _retrieval_ok_any(_ranked[:4], item)
+                per_question[-1]["in_slots"] = rank is not None
+                per_question[-1]["stage_lost"] = _stage_lost
+                per_question[-1]["raw_lexical_rank"] = _first_needed_rank(item, _raw_lex)
+                per_question[-1]["raw_dense_rank"] = _first_needed_rank(item, _raw_dense)
+                per_question[-1]["ranked_rank"] = _first_needed_rank(item, _ranked)
             cards.update(card(f"search_hit4_{suffix}", _rate(hit4, len(rows)), len(rows), hits=int(hit4)))
             if split == "dev":
                 cards.update(card("search_hit1_dev", _rate(hit1, len(rows)), len(rows), hits=int(hit1)))
@@ -373,6 +426,26 @@ def measure_search(holdout=True, existing=None):
                 if FLOORS.exists() and "search_latency_ms" in _load(FLOORS):
                     best = min(latency, _load(FLOORS)["search_latency_ms"]["best"])
                 cards.update(card("search_latency_ms", latency, len(rows), best=best))
+                cards.update(card(
+                    "search_retrieval_recall",
+                    _rate(retrieval_hits, len(rows)),
+                    len(rows), hits=int(retrieval_hits),
+                ))
+                cards.update(card(
+                    "search_fusion_recall_at_30",
+                    _rate(candidate_hits, len(rows)),
+                    len(rows), hits=int(candidate_hits),
+                ))
+                cards.update(card(
+                    "search_fusion_recall_at_12",
+                    _rate(fusion_hits_12, len(rows)),
+                    len(rows), hits=int(fusion_hits_12),
+                ))
+                cards.update(card(
+                    "search_fusion_recall_at_4",
+                    _rate(fusion_hits_4, len(rows)),
+                    len(rows), hits=int(fusion_hits_4),
+                ))
         cards["_per_question"] = per_question
         cards["_n_questions_search"] = len(per_question)
         cards["_n_questions_total"] = len(items)
