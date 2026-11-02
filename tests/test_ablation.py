@@ -39,6 +39,7 @@ def test_cover_latin_off_does_not_refuse(monkeypatch):
         return "из модели"
 
     monkeypatch.setattr(agents, "_cover_latin", cover)
+    monkeypatch.setattr(agents, "count_tokens", lambda text: len(text.split()))
     monkeypatch.setattr(agents, "complete", model)
     chunks = [{"text": "Насос работает.", "document_name": "a.txt", "chunk_index": 0, "section": ""}]
     off = {"cover_latin": False, "prefer_name": False, "from_overview": False}
