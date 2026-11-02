@@ -1067,6 +1067,10 @@ def admin_allow(kb_id: str, body: AclBody, request: Request):
     _need(user, "manage_access")
     auth.acl_add(kb_id, body.subject_type, body.subject_id, "allow")
     audit.write("access_allow", user, {"kb_id": kb_id, "subject_type": body.subject_type, "subject_id": body.subject_id})
+    person = auth.user_by_id(body.subject_id) if body.subject_type == "user" else None
+    if person is not None and not (access.actions_for(person, kb_id) & set(auth.CONTENT_ACTIONS)):
+        auth.set_user_content(person["id"], kb_id, ["ask"])
+        audit.write("personal_actions", user, {"kb_id": kb_id, "user_id": person["id"], "actions": ["ask"]})
     return {"ok": True}
 
 

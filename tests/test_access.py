@@ -268,6 +268,50 @@ def test_access_screen_lists_people_and_roles_by_name(tmp_path, monkeypatch):
     assert "Сотрудник" in [row["name"] for row in listed["roles"]]
 
 
+def test_opening_a_person_shows_the_base(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    _stub_index(monkeypatch)
+    monkeypatch.setattr("api.list_documents", lambda: ["secret.txt"])
+    _admin, ivan, maria = _people()
+    import store
+    other = kb.create("Разное")
+    store.upsert_at(other["chroma"], [{
+        "text": "личный файл",
+        "document_name": "mine.txt",
+        "chunk_index": 0,
+        "checksum": "m",
+        "section": "",
+    }])
+    sent = client.post(
+        f"/admin/kb/{other['id']}/allow",
+        json={"subject_type": "user", "subject_id": ivan["id"]},
+    )
+    assert sent.status_code == 200
+    assert auth.user_content(ivan["id"], other["id"]) == {"ask"}
+    person = TestClient(app)
+    person.post("/login", json={"login": "ivan", "password": "password12"})
+    listed = person.get("/documents").json()["documents"]
+    assert [row["kb_name"] for row in listed] == ["Разное"]
+    assert [row["name"] for row in listed] == ["mine.txt"]
+    twin = TestClient(app)
+    twin.post("/login", json={"login": "maria", "password": "password12"})
+    assert twin.get("/documents").json()["documents"] == []
+
+
+def test_opening_a_role_does_not_add_ask(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    _admin, ivan, _maria = _people()
+    other = kb.create("Разное")
+    sent = client.post(
+        f"/admin/kb/{other['id']}/allow",
+        json={"subject_type": "role", "subject_id": ivan["role_id"]},
+    )
+    assert sent.status_code == 200
+    assert auth.role_content(ivan["role_id"], other["id"]) == set()
+    assert access.opened(ivan, other["id"]) is True
+    assert access.can_see(ivan, other["id"]) is False
+
+
 def test_store_page_tree_refuses_a_folder_without_a_visible_base(tmp_path, monkeypatch):
     from fastapi import HTTPException
     import api

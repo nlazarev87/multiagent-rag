@@ -113,6 +113,9 @@ def test_upload_lists_document(tmp_path, monkeypatch):
     assert "response.status === 401" in page.text
     assert 'adminButton("Обновить", () => load())' in page.text
     assert "person.login" in page.text
+    assert "access-row" in page.text
+    assert "Спрашивать" in page.text
+    assert 'document.getElementById("admin-access").click()' not in page.text
     assert "request.status === 401" in page.text
     assert "showGate();" in page.text
 
