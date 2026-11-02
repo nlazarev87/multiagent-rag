@@ -94,6 +94,8 @@ def test_n_questions_matches_floors(fresh_run, floors):
     "search_hit1_dev",
     "search_mrr_dev",
     "search_hit4_holdout",
+    "search_hit1_holdout",
+    "search_mrr_holdout",
 ])
 def test_metric_above_floor(fresh_run, floors, metric):
     card = fresh_run.get(metric)

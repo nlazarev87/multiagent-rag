@@ -415,10 +415,23 @@ def measure_search(holdout=True, existing=None):
                 per_question[-1]["raw_dense_rank"] = _first_needed_rank(item, _raw_dense)
                 per_question[-1]["ranked_rank"] = _first_needed_rank(item, _ranked)
             cards.update(card(f"search_hit4_{suffix}", _rate(hit4, len(rows)), len(rows), hits=int(hit4)))
+            cards.update(card(
+                f"search_hit1_{suffix}",
+                _rate(hit1, len(rows)),
+                len(rows), hits=int(hit1),
+            ))
+            cards.update(card(
+                f"search_mrr_{suffix}",
+                mrr / len(rows) if rows else 0.0,
+                len(rows),
+            ))
+            if doc_scores:
+                cards.update(card(
+                    f"search_doc_p4_{suffix}",
+                    _mean(doc_scores),
+                    len(doc_scores),
+                ))
             if split == "dev":
-                cards.update(card("search_hit1_dev", _rate(hit1, len(rows)), len(rows), hits=int(hit1)))
-                cards.update(card("search_mrr_dev", mrr / len(rows) if rows else 0.0, len(rows)))
-                cards.update(card("search_doc_p4_dev", _mean(doc_scores), len(doc_scores)))
                 cards.update(card("search_together_dev", _rate(together_hits, together_n), together_n, hits=together_hits))
                 cards.update(card("search_overview_dev", _rate(overview_hits, overview_n), overview_n, hits=overview_hits))
                 latency = _mean(times)
