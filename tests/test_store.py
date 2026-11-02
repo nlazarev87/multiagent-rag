@@ -6,6 +6,8 @@ import ingest
 import settings
 import store
 from ingest import ingest_dir, split_chunks
+from pathlib import Path
+import pytest
 
 
 def _fresh(tmp_path, monkeypatch):
@@ -28,6 +30,10 @@ def test_identical_text_is_stored_for_each_document(tmp_path, monkeypatch):
     assert store.collection().count() == 3
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_upsert_skips_same_checksum(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     chunks = split_chunks("Цех имеет номер 4. Мастер цеха Иванов.", "charter.txt")
@@ -60,6 +66,10 @@ def test_reingest_applies_overlap_change(tmp_path, monkeypatch):
     ingest._word_tokens.cache_clear()
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_upsert_replaces_changed_document(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     store.upsert_chunks(split_chunks("Насос синий.", "pump.md"))
@@ -141,6 +151,10 @@ def test_empty_search_returns_empty(tmp_path, monkeypatch):
     assert store.search_chunks("номер цеха") == []
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_search_finds_document(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     store.upsert_chunks(split_chunks("Насос имеет обозначение Н-12. Рабочее давление равно 6 бар.", "pump.md"))
@@ -149,6 +163,10 @@ def test_search_finds_document(tmp_path, monkeypatch):
     assert "6 бар" in found[0]["text"]
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_search_keeps_to_document_named_in_question(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     store.upsert_chunks(split_chunks("Система АЛЬФА передаёт данные по протоколу HTTP.", "a.txt"))
@@ -166,6 +184,10 @@ def test_scope_narrows_only_when_one_document_owns_the_number():
     assert store.scope(alone, "Что указано в 1.2-99?") is None
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_search_keeps_to_numbered_filename_in_question(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     same = "В разделе Назначение программы должны быть указаны сведения о назначении программы."
@@ -175,6 +197,10 @@ def test_search_keeps_to_numbered_filename_in_question(tmp_path, monkeypatch):
     assert {chunk["document_name"] for chunk in found} == {"STD_1.2-99.txt"}
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_search_finds_exact_code(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     lines = [f"Поток X_{number}.1 передаёт заявки номер {number}." for number in range(1, 9)]
@@ -269,6 +295,10 @@ def test_delete_during_query_embed_does_not_crash_search(tmp_path, monkeypatch):
         store.reset()
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_table_row_comes_with_its_table(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     folder = tmp_path / "docs"

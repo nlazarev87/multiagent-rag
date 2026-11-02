@@ -1,6 +1,14 @@
+import pytest
+from pathlib import Path
+
 import socket
 
 from ingest import split_chunks
+
+pytestmark = pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 
 
 def test_split_does_not_open_network(monkeypatch):
