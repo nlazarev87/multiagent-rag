@@ -312,8 +312,9 @@ def _first_needed_rank(item, chunks):
     return None
 
 
-def measure_search(holdout=True, existing=None):
+def measure_search(holdout=True, existing=None, features=None):
     import store
+    from settings import runtime
 
     if not _inbox_ready():
         return {}
@@ -336,7 +337,7 @@ def measure_search(holdout=True, existing=None):
             times = []
             for item in rows:
                 _start = time.perf_counter()
-                _result = store.search_chunks(item["query"], 4, debug=True)
+                _result = store.search_chunks(item["query"], 4, debug=True, features=features)
                 chunks = _result["slots"]
                 _raw_lex = _result["raw_lexical"]
                 _raw_dense = _result["raw_dense"]
@@ -414,6 +415,10 @@ def measure_search(holdout=True, existing=None):
                         if _col and _col not in _overview_columns:
                             _overview_columns.append(_col)
                 per_question[-1]["overview_columns_in_slots"] = _overview_columns
+                _active = features if features is not None else runtime().get("features", {})
+                per_question[-1]["features_active"] = sorted(
+                    name for name, on in _active.items() if on
+                )
             cards.update(card(f"search_hit4_{suffix}", _rate(hit4, len(rows)), len(rows), hits=int(hit4)))
             cards.update(card(
                 f"search_hit1_{suffix}",
@@ -942,7 +947,7 @@ def measure_universality():
     return cards
 
 
-def measure(nodes, holdout=False):
+def measure(nodes, holdout=False, features=None):
     cards = {}
     for node in nodes:
         print(f"== {node} ==", flush=True)
@@ -953,7 +958,7 @@ def measure(nodes, holdout=False):
         elif node == "clarify":
             cards.update(measure_clarify())
         elif node == "search":
-            cards.update(measure_search(holdout=True))
+            cards.update(measure_search(holdout=True, features=features))
         elif node == "check":
             cards.update(measure_check())
         elif node == "coord":
@@ -1091,6 +1096,8 @@ def main(argv=None):
     parser.add_argument("--write-floors", action="store_true")
     parser.add_argument("--raise-floors", action="store_true")
     parser.add_argument("--freeze", action="store_true")
+    parser.add_argument("--disable", default="", help="comma-separated feature names to disable")
+    parser.add_argument("--enable", default="", help="comma-separated feature names to enable")
     args = parser.parse_args(argv)
     if args.freeze:
         freeze_chunks()
@@ -1098,7 +1105,17 @@ def main(argv=None):
         if args.nodes == "fast" and not args.write_floors:
             return 0
     nodes = _parse_nodes(args.nodes)
-    cards = measure(nodes, holdout=args.holdout)
+    from settings import runtime
+    features = dict(runtime().get("features") or {})
+    for name in args.enable.split(","):
+        name = name.strip()
+        if name:
+            features[name] = True
+    for name in args.disable.split(","):
+        name = name.strip()
+        if name:
+            features[name] = False
+    cards = measure(nodes, holdout=args.holdout, features=features)
     previous = _load(LAST) if LAST.exists() else {}
     run = dict(previous)
     run.update(cards)

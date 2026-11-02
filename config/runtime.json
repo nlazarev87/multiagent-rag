@@ -11,5 +11,15 @@
   "temperature": 0.0,
   "prompt_tokens": 1500,
   "span": 30,
-  "search_limit": 4
+  "search_limit": 4,
+  "features": {
+    "inject_rare": true,
+    "focus": true,
+    "scope": true,
+    "cover_latin": true,
+    "prefer_name": true,
+    "from_overview": true,
+    "table_neighbors": true,
+    "overview_rows": true
+  }
 }

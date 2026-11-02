@@ -73,6 +73,20 @@ def test_per_question_has_overview_columns(fresh_run):
             )
 
 
+def test_per_question_has_features_active(fresh_run):
+    pq = fresh_run.get("_per_question", [])
+    assert pq, "no per_question entries"
+    assert "features_active" in pq[0], "per_question missing features_active"
+    for q in pq:
+        assert isinstance(q["features_active"], list), (
+            f"{q['id']}: features_active is not a list"
+        )
+        for name in q["features_active"]:
+            assert isinstance(name, str), (
+                f"{q['id']}: features_active item is not str"
+            )
+
+
 def test_per_question_has_staged_fields(fresh_run):
     pq = fresh_run.get("_per_question", [])
     assert pq, "no per_question entries"

@@ -133,10 +133,10 @@
     "hits": 7
   },
   "search_latency_ms": {
-    "now": 119.52098268691613,
+    "now": 102.86805002302255,
     "best": 99.22587175590351,
-    "room": 20.295110931012616,
-    "floor": 119.52098268691613,
+    "room": 3.6421782671190357,
+    "floor": 102.86805002302255,
     "n": 46,
     "direction": "lower"
   },
@@ -508,7 +508,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 3201.5875997021794,
+      "search_latency_ms": 2573.8463001325727,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -522,7 +522,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "impus-developer",
@@ -533,7 +543,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 55.19780004397035,
+      "search_latency_ms": 39.12830026820302,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -547,7 +557,17 @@
       "raw_lexical_rank": 2,
       "raw_dense_rank": 3,
       "ranked_rank": 2,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "impus-perimeter",
@@ -558,7 +578,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 64.97729988768697,
+      "search_latency_ms": 58.15390031784773,
       "ok": true,
       "candidate_hit": false,
       "fusion_hit_12": false,
@@ -575,6 +595,16 @@
       "overview_columns_in_slots": [
         "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ",
         "Характеристика"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -586,7 +616,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 58.85599972680211,
+      "search_latency_ms": 68.94489983096719,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -602,6 +632,16 @@
       "ranked_rank": 1,
       "overview_columns_in_slots": [
         "Характеристика"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -613,7 +653,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 56.6580998711288,
+      "search_latency_ms": 61.520999763160944,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -630,6 +670,16 @@
       "overview_columns_in_slots": [
         "ИД потока",
         "Характеристика"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -641,7 +691,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 59.13710035383701,
+      "search_latency_ms": 56.85959989205003,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -658,6 +708,16 @@
       "overview_columns_in_slots": [
         "ИД",
         "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -669,7 +729,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 59.39969979226589,
+      "search_latency_ms": 50.80460011959076,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -683,7 +743,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "impus-frequency",
@@ -694,7 +764,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 48.93120005726814,
+      "search_latency_ms": 42.396700009703636,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -708,7 +778,17 @@
       "raw_lexical_rank": 4,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "impus-what",
@@ -719,7 +799,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 53.70509997010231,
+      "search_latency_ms": 54.7857997007668,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -736,6 +816,16 @@
       "overview_columns_in_slots": [
         "Характеристика",
         "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -747,7 +837,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 48.47870022058487,
+      "search_latency_ms": 43.988799676299095,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -763,6 +853,16 @@
       "ranked_rank": 5,
       "overview_columns_in_slots": [
         "ИД потока"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -774,7 +874,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 49.236500170081854,
+      "search_latency_ms": 49.174000043421984,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -791,6 +891,16 @@
       "overview_columns_in_slots": [
         "ИД потока",
         "Термин / сокращение"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -802,7 +912,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": null,
-      "search_latency_ms": 36.73869976773858,
+      "search_latency_ms": 36.45600005984306,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -816,7 +926,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "impus-gossopka",
@@ -827,7 +947,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 71.23040035367012,
+      "search_latency_ms": 56.127400137484074,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -843,6 +963,16 @@
       "ranked_rank": 1,
       "overview_columns_in_slots": [
         "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -854,7 +984,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 51.14710005000234,
+      "search_latency_ms": 50.46139983460307,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -870,6 +1000,16 @@
       "ranked_rank": 2,
       "overview_columns_in_slots": [
         "Термин / сокращение"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -881,7 +1021,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 60.12190040200949,
+      "search_latency_ms": 60.770800337195396,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -897,6 +1037,16 @@
       "ranked_rank": 1,
       "overview_columns_in_slots": [
         "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -908,7 +1058,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 49.54960010945797,
+      "search_latency_ms": 51.141100004315376,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -924,6 +1074,16 @@
       "ranked_rank": 2,
       "overview_columns_in_slots": [
         "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -935,7 +1095,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.3333333333333333,
       "doc_p4": 1.0,
-      "search_latency_ms": 65.97230024635792,
+      "search_latency_ms": 62.072400003671646,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -952,6 +1112,16 @@
       "overview_columns_in_slots": [
         "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ",
         "ИД потока"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -963,7 +1133,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 0.5,
-      "search_latency_ms": 86.71490009874105,
+      "search_latency_ms": 72.01209990307689,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -980,6 +1150,16 @@
       "overview_columns_in_slots": [
         "Характеристика",
         "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -991,7 +1171,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 66.06939993798733,
+      "search_latency_ms": 65.05230022594333,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1007,6 +1187,16 @@
       "ranked_rank": 1,
       "overview_columns_in_slots": [
         "ИД"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -1018,7 +1208,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 88.96870026364923,
+      "search_latency_ms": 84.28830001503229,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1034,6 +1224,16 @@
       "ranked_rank": 1,
       "overview_columns_in_slots": [
         "ИД потока"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -1045,7 +1245,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 109.09719998016953,
+      "search_latency_ms": 99.23620009794831,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1061,6 +1261,16 @@
       "ranked_rank": 1,
       "overview_columns_in_slots": [
         "ИД"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -1072,7 +1282,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 60.786399990320206,
+      "search_latency_ms": 61.16210017353296,
       "ok": true,
       "candidate_hit": false,
       "fusion_hit_12": false,
@@ -1088,6 +1298,16 @@
       "ranked_rank": null,
       "overview_columns_in_slots": [
         "Термин / сокращение"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -1099,7 +1319,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 38.85680017992854,
+      "search_latency_ms": 36.43509978428483,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1113,7 +1333,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19201-q03",
@@ -1124,7 +1354,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 36.51680005714297,
+      "search_latency_ms": 45.81570019945502,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1138,7 +1368,17 @@
       "raw_lexical_rank": 4,
       "raw_dense_rank": 1,
       "ranked_rank": 2,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19201-q05",
@@ -1149,7 +1389,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 36.635699681937695,
+      "search_latency_ms": 35.477499943226576,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1163,7 +1403,17 @@
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19301-q06",
@@ -1174,7 +1424,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 37.173899821937084,
+      "search_latency_ms": 33.64149993285537,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1188,7 +1438,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19301-q08",
@@ -1199,7 +1459,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 38.22340024635196,
+      "search_latency_ms": 39.69890018925071,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1213,7 +1473,17 @@
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19301-q10",
@@ -1224,7 +1494,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 59.92660019546747,
+      "search_latency_ms": 37.89269970729947,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1238,7 +1508,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19501-q11",
@@ -1249,7 +1529,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 46.89959995448589,
+      "search_latency_ms": 36.149800289422274,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1263,7 +1543,17 @@
       "raw_lexical_rank": 2,
       "raw_dense_rank": 2,
       "ranked_rank": 2,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19501-q13",
@@ -1274,7 +1564,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 41.15599999204278,
+      "search_latency_ms": 35.83539975807071,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1288,7 +1578,17 @@
       "raw_lexical_rank": 2,
       "raw_dense_rank": 2,
       "ranked_rank": 2,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19501-q15",
@@ -1299,7 +1599,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 39.38260022550821,
+      "search_latency_ms": 38.44220004975796,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1313,7 +1613,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19502-q16",
@@ -1324,7 +1634,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 43.107000179588795,
+      "search_latency_ms": 41.39170004054904,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1338,7 +1648,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19502-q18",
@@ -1349,7 +1669,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 41.35800013318658,
+      "search_latency_ms": 37.55389992147684,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1363,7 +1683,17 @@
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
       "ranked_rank": 2,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19503-q19",
@@ -1374,7 +1704,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 40.70310015231371,
+      "search_latency_ms": 36.19310026988387,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1388,7 +1718,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19503-q21",
@@ -1399,7 +1739,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 40.14280019327998,
+      "search_latency_ms": 46.40200035646558,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1413,7 +1753,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19504-q23",
@@ -1424,7 +1774,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 40.46849999576807,
+      "search_latency_ms": 44.70589989796281,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1438,7 +1788,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19504-q25",
@@ -1449,7 +1809,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 49.90570014342666,
+      "search_latency_ms": 36.69170010834932,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1463,7 +1823,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 3,
       "ranked_rank": 2,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19505-q26",
@@ -1474,7 +1844,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 45.54500011727214,
+      "search_latency_ms": 38.5020999237895,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1488,7 +1858,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19505-q28",
@@ -1499,7 +1879,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 42.99530014395714,
+      "search_latency_ms": 34.46780005469918,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1513,7 +1893,17 @@
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
       "ranked_rank": 2,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19505-q30",
@@ -1524,7 +1914,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 36.31949983537197,
+      "search_latency_ms": 37.01850026845932,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1538,7 +1928,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19506-q31",
@@ -1549,7 +1949,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 39.71690032631159,
+      "search_latency_ms": 36.45490016788244,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1563,7 +1963,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19506-q33",
@@ -1574,7 +1984,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 44.1732001490891,
+      "search_latency_ms": 36.92810004577041,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1588,7 +1998,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19506-q35",
@@ -1599,7 +2019,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 36.434400361031294,
+      "search_latency_ms": 36.01879999041557,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1613,7 +2033,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19507-q36",
@@ -1624,7 +2054,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 45.777599792927504,
+      "search_latency_ms": 53.195899818092585,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1638,7 +2068,17 @@
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
       "ranked_rank": 2,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19508-q37",
@@ -1649,7 +2089,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 36.458300426602364,
+      "search_latency_ms": 36.309400107711554,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1663,7 +2103,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19508-q39",
@@ -1674,7 +2124,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 37.52680029720068,
+      "search_latency_ms": 42.323699686676264,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1688,7 +2138,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "h-impus-why",
@@ -1699,7 +2159,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 41.387599892914295,
+      "search_latency_ms": 41.411499958485365,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1715,6 +2175,16 @@
       "ranked_rank": 1,
       "overview_columns_in_slots": [
         "Характеристика"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -1726,7 +2196,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 45.175399631261826,
+      "search_latency_ms": 47.094200272113085,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1740,7 +2210,17 @@
       "raw_lexical_rank": 7,
       "raw_dense_rank": 2,
       "ranked_rank": 2,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "h-impus-perimeter",
@@ -1751,7 +2231,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 51.252400036901236,
+      "search_latency_ms": 56.02770019322634,
       "ok": true,
       "candidate_hit": false,
       "fusion_hit_12": false,
@@ -1768,6 +2248,16 @@
       "overview_columns_in_slots": [
         "Термин / сокращение",
         "Характеристика"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -1779,7 +2269,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 46.118199825286865,
+      "search_latency_ms": 48.22060000151396,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1795,6 +2285,16 @@
       "ranked_rank": 5,
       "overview_columns_in_slots": [
         "ИД"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -1806,7 +2306,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 53.831799887120724,
+      "search_latency_ms": 49.20209990814328,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1822,6 +2322,16 @@
       "ranked_rank": 1,
       "overview_columns_in_slots": [
         "ИД"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -1833,7 +2343,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 50.55319983512163,
+      "search_latency_ms": 53.43619966879487,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1847,7 +2357,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "h-impus-gossopka-status",
@@ -1858,7 +2378,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.3333333333333333,
       "doc_p4": 1.0,
-      "search_latency_ms": 47.36429965123534,
+      "search_latency_ms": 49.37210027128458,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1874,6 +2394,16 @@
       "ranked_rank": 3,
       "overview_columns_in_slots": [
         "Характеристика"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -1885,7 +2415,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 48.4653003513813,
+      "search_latency_ms": 53.23580000549555,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1902,6 +2432,16 @@
       "overview_columns_in_slots": [
         "Характеристика",
         "Термин / сокращение"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -1913,7 +2453,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 72.12450029328465,
+      "search_latency_ms": 71.40519982203841,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1930,6 +2470,16 @@
       "overview_columns_in_slots": [
         "Характеристика",
         "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -1941,7 +2491,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 73.23259999975562,
+      "search_latency_ms": 67.87210004404187,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1959,6 +2509,16 @@
         "Характеристика",
         "Термин / сокращение",
         "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -1970,7 +2530,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 48.713100142776966,
+      "search_latency_ms": 42.206999845802784,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1984,7 +2544,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "h-impus-port",
@@ -1995,7 +2565,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 81.2546000815928,
+      "search_latency_ms": 67.2101997770369,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2013,6 +2583,16 @@
         "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ",
         "Термин / сокращение",
         "ИД потока"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -2024,7 +2604,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": null,
-      "search_latency_ms": 79.33400012552738,
+      "search_latency_ms": 67.0616002753377,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2040,6 +2620,16 @@
       "ranked_rank": 4,
       "overview_columns_in_slots": [
         "Термин / сокращение"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -2051,7 +2641,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 49.08440029248595,
+      "search_latency_ms": 43.96970011293888,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2065,7 +2655,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 17,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "h-toreks-count",
@@ -2076,7 +2676,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 101.71830002218485,
+      "search_latency_ms": 94.63910013437271,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2092,6 +2692,16 @@
       "ranked_rank": 2,
       "overview_columns_in_slots": [
         "ИД"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -2103,7 +2713,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 0.5,
-      "search_latency_ms": 66.68289983645082,
+      "search_latency_ms": 64.67030011117458,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2119,6 +2729,16 @@
       "ranked_rank": 8,
       "overview_columns_in_slots": [
         "Характеристика"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -2130,7 +2750,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 0.75,
-      "search_latency_ms": 62.228200025856495,
+      "search_latency_ms": 63.93650034442544,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2146,6 +2766,16 @@
       "ranked_rank": 2,
       "overview_columns_in_slots": [
         "Характеристика"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -2157,7 +2787,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 0.5,
-      "search_latency_ms": 76.42130041494966,
+      "search_latency_ms": 50.9257004596293,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2169,10 +2799,20 @@
       "in_slots": true,
       "stage_lost": null,
       "raw_lexical_rank": 1,
-      "raw_dense_rank": 3,
+      "raw_dense_rank": null,
       "ranked_rank": 1,
       "overview_columns_in_slots": [
         "Характеристика"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -2184,7 +2824,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 59.99729968607426,
+      "search_latency_ms": 55.9299997985363,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2200,6 +2840,16 @@
       "ranked_rank": 1,
       "overview_columns_in_slots": [
         "ИД"
+      ],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
       ]
     },
     {
@@ -2211,7 +2861,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 35.988999996334314,
+      "search_latency_ms": 38.446899969130754,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2225,7 +2875,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19201-q04",
@@ -2236,7 +2896,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 41.00450035184622,
+      "search_latency_ms": 46.24569974839687,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2250,7 +2910,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19301-q07",
@@ -2261,7 +2931,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 41.71440005302429,
+      "search_latency_ms": 47.678499948233366,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2275,7 +2945,17 @@
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19301-q09",
@@ -2286,7 +2966,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 46.820899937301874,
+      "search_latency_ms": 38.40389987453818,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2300,7 +2980,17 @@
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
       "ranked_rank": 2,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19501-q12",
@@ -2311,7 +3001,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.3333333333333333,
       "doc_p4": 1.0,
-      "search_latency_ms": 44.18600024655461,
+      "search_latency_ms": 44.54510007053614,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2325,7 +3015,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 6,
       "ranked_rank": 3,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19501-q14",
@@ -2336,7 +3036,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 40.777300018817186,
+      "search_latency_ms": 38.374800235033035,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2350,7 +3050,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19502-q17",
@@ -2361,7 +3071,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 44.59210019558668,
+      "search_latency_ms": 38.82750030606985,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2375,7 +3085,17 @@
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
       "ranked_rank": 2,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19503-q20",
@@ -2386,7 +3106,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 37.68960013985634,
+      "search_latency_ms": 38.80300000309944,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2400,7 +3120,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19503-q22",
@@ -2411,7 +3141,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 41.62199981510639,
+      "search_latency_ms": 36.87399998307228,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2425,7 +3155,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19504-q24",
@@ -2436,7 +3176,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 40.93179991468787,
+      "search_latency_ms": 47.72560019046068,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2450,7 +3190,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19505-q27",
@@ -2461,7 +3211,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 40.35140015184879,
+      "search_latency_ms": 38.8327999971807,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2475,7 +3225,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19505-q29",
@@ -2486,7 +3246,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 35.49619996920228,
+      "search_latency_ms": 35.379800014197826,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2500,7 +3260,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19506-q32",
@@ -2511,7 +3281,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 41.34900029748678,
+      "search_latency_ms": 41.79679974913597,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2525,7 +3295,17 @@
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
       "ranked_rank": 2,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19506-q34",
@@ -2536,7 +3316,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 41.80039977654815,
+      "search_latency_ms": 39.372400380671024,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2550,7 +3330,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19508-q38",
@@ -2561,7 +3351,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 38.61819999292493,
+      "search_latency_ms": 34.03480025008321,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2575,7 +3365,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     },
     {
       "id": "gost-19508-q40",
@@ -2586,7 +3386,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 44.393499847501516,
+      "search_latency_ms": 34.02710007503629,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2600,7 +3400,17 @@
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
       "ranked_rank": 1,
-      "overview_columns_in_slots": []
+      "overview_columns_in_slots": [],
+      "features_active": [
+        "cover_latin",
+        "focus",
+        "from_overview",
+        "inject_rare",
+        "overview_rows",
+        "prefer_name",
+        "scope",
+        "table_neighbors"
+      ]
     }
   ],
   "_n_questions_search": 81,

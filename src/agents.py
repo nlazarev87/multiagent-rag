@@ -448,15 +448,19 @@ def _drop_repeat_cite(answer):
     return text
 
 
-def answer_agent(query, clear_query, chunks, work_turns, feedback=None):
+def answer_agent(query, clear_query, chunks, work_turns, feedback=None, features=None):
     """Текст ответа. Пустые куски дают отказ, обзор таблицы может обойтись без модели."""
     if not chunks:
         return NO_ANSWER
-    chunks = _cover_latin(query, chunks)
-    if not chunks:
-        return NO_ANSWER
-    chunks = _prefer_name(query, chunks)
-    if not feedback:
+    if features is None:
+        features = runtime().get("features", {})
+    if features.get("cover_latin", True):
+        chunks = _cover_latin(query, chunks)
+        if not chunks:
+            return NO_ANSWER
+    if features.get("prefer_name", True):
+        chunks = _prefer_name(query, chunks)
+    if not feedback and features.get("from_overview", True):
         listed = _from_overview(query, chunks)
         if listed:
             return listed

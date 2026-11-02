@@ -207,7 +207,7 @@ def _stamp_sources(state):
                 break
 
 
-def run(query, dialog_id, scope=None):
+def run(query, dialog_id, scope=None, features=None):
     """Вернуть ответ, статус, имена документов и источники для одного вопроса."""
     active = scope if scope is not None else _scope.get()
     if active is not None and not active.kbs:
@@ -216,7 +216,7 @@ def run(query, dialog_id, scope=None):
     row_token = _extra_rows.set(active.chunks) if active is not None else None
     trace_token = _trace.set(active.trace) if active is not None else None
     try:
-        return _run(query, dialog_id, active)
+        return _run(query, dialog_id, active, features)
     finally:
         if row_token is not None:
             _extra_rows.reset(row_token)
@@ -224,7 +224,9 @@ def run(query, dialog_id, scope=None):
             _trace.reset(trace_token)
 
 
-def _run(query, dialog_id, scope):
+def _run(query, dialog_id, scope, features=None):
+    if features is None:
+        features = runtime().get("features", {})
     listed = _catalog_result(query, dialog_id, scope)
     if listed is not None:
         return listed
@@ -250,7 +252,10 @@ def _run(query, dialog_id, scope):
 
     def answer(state):
         state["attempts"] = state.get("attempts", 0) + 1
-        state["answer"] = answer_agent(state["query"], state["clear"], state["chunks"], state["work"], state.get("feedback"))
+        state["answer"] = answer_agent(
+            state["query"], state["clear"], state["chunks"], state["work"],
+            state.get("feedback"), state.get("features"),
+        )
         return state
 
     def check(state):
@@ -276,7 +281,8 @@ def _run(query, dialog_id, scope):
     def finish(state):
         overview = None
         # Вопрос «сколько» не заменяется отказом, если в найденном тексте уже есть полная строка обзора.
-        if state["status"] in (MISSING, UNCONFIRMED) and _count_ask(state.get("query", "")):
+        show_overview = (state.get("features") or {}).get("from_overview", True)
+        if show_overview and state["status"] in (MISSING, UNCONFIRMED) and _count_ask(state.get("query", "")):
             overview = _from_overview(state.get("query", ""), state.get("chunks") or [])
         if state["status"] in (MISSING, UNCONFIRMED) and not overview:
             state["answer"] = NO_ANSWER
@@ -323,7 +329,7 @@ def _run(query, dialog_id, scope):
     graph.add_edge("answer", "check")
     graph.add_conditional_edges("check", route, {"answer": "answer", "search": "search", "finish": "finish"})
     graph.add_edge("finish", END)
-    out = graph.compile().invoke({"query": query, "dialog_id": dialog_id})
+    out = graph.compile().invoke({"query": query, "dialog_id": dialog_id, "features": features})
     return {
         "answer": out["answer"],
         "status": out["status"],
