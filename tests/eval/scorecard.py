@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -27,7 +28,7 @@ HIGHER = {
     "select_exact", "select_precision", "select_recall",
     "clarify_passthrough", "clarify_rewrite", "clarify_anchor", "clarify_search_hit4",
     "search_hit4_dev", "search_hit4_holdout", "search_hit1_dev", "search_mrr_dev",
-    "search_doc_p4_dev", "search_together_dev", "search_overview_dev",
+    "search_doc_p4_dev", "search_together_dev",
     "answer_facts_dev", "answer_starts_dev", "answer_forbidden_dev", "answer_cite_dev",
     "answer_noanswer_dev",
     "check_status_exact", "check_source_doc", "check_feedback_type",
@@ -46,7 +47,7 @@ LOWER = {
 TIME_KEYS = {"search_latency_ms", "answer_latency_s", "e2e_latency_s"}
 FAST_NODES = ("ingest", "select", "clarify", "search", "check", "coord", "univ")
 SLOW_NODES = ("answer", "e2e")
-OVERVIEW_MARKERS = ("сколько", "какие", "перечисли")
+_OVERVIEW_COLUMN_RE = re.compile(r"Разных значений в столбце «([^»]+)»")
 NO_ANSWER = "В документах нет ответа."
 EDGE = "0-9a-zа-я_"
 DIALOG_STEPS = [
@@ -97,11 +98,6 @@ def _item_type(item):
     if "перечисли" in query or query.startswith("какие") or " какие " in query:
         return "list"
     return "fact"
-
-
-def _is_overview_query(query):
-    text = query.lower()
-    return any(marker in text for marker in OVERVIEW_MARKERS)
 
 
 def _direction(key):
@@ -337,7 +333,6 @@ def measure_search(holdout=True, existing=None):
             retrieval_hits = candidate_hits = fusion_hits_12 = fusion_hits_4 = 0
             doc_scores = []
             together_hits = together_n = 0
-            overview_hits = overview_n = 0
             times = []
             for item in rows:
                 _start = time.perf_counter()
@@ -368,9 +363,6 @@ def measure_search(holdout=True, existing=None):
                 if item.get("together"):
                     together_n += 1
                     together_hits += int(any(all(_flat(phrase) in _flat(chunk["text"]) for phrase in item["together"]) for chunk in chunks))
-                if split == "dev" and _is_overview_query(item["query"]):
-                    overview_n += 1
-                    overview_hits += int(any(chunk.get("kind") == "overview" for chunk in chunks))
                 per_question.append({
                     "id": item["id"],
                     "split": split,
@@ -414,6 +406,14 @@ def measure_search(holdout=True, existing=None):
                 per_question[-1]["raw_lexical_rank"] = _first_needed_rank(item, _raw_lex)
                 per_question[-1]["raw_dense_rank"] = _first_needed_rank(item, _raw_dense)
                 per_question[-1]["ranked_rank"] = _first_needed_rank(item, _ranked)
+                _overview_columns = []
+                for _chunk in chunks:
+                    _text = _chunk.get("text") or ""
+                    for _col in _OVERVIEW_COLUMN_RE.findall(_text):
+                        _col = _col.strip()
+                        if _col and _col not in _overview_columns:
+                            _overview_columns.append(_col)
+                per_question[-1]["overview_columns_in_slots"] = _overview_columns
             cards.update(card(f"search_hit4_{suffix}", _rate(hit4, len(rows)), len(rows), hits=int(hit4)))
             cards.update(card(
                 f"search_hit1_{suffix}",
@@ -433,7 +433,6 @@ def measure_search(holdout=True, existing=None):
                 ))
             if split == "dev":
                 cards.update(card("search_together_dev", _rate(together_hits, together_n), together_n, hits=together_hits))
-                cards.update(card("search_overview_dev", _rate(overview_hits, overview_n), overview_n, hits=overview_hits))
                 latency = _mean(times)
                 best = latency
                 if FLOORS.exists() and "search_latency_ms" in _load(FLOORS):

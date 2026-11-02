@@ -132,20 +132,11 @@
     "direction": "higher",
     "hits": 7
   },
-  "search_overview_dev": {
-    "now": 1.0,
-    "best": 1.0,
-    "room": 0.0,
-    "floor": 1.0,
-    "n": 3,
-    "direction": "higher",
-    "hits": 3
-  },
   "search_latency_ms": {
-    "now": 107.33627176681614,
+    "now": 119.52098268691613,
     "best": 99.22587175590351,
-    "room": 8.110400010912628,
-    "floor": 107.33627176681614,
+    "room": 20.295110931012616,
+    "floor": 119.52098268691613,
     "n": 46,
     "direction": "lower"
   },
@@ -517,7 +508,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 2671.007600147277,
+      "search_latency_ms": 3201.5875997021794,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -530,7 +521,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "impus-developer",
@@ -541,7 +533,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 46.2116003036499,
+      "search_latency_ms": 55.19780004397035,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -554,7 +546,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 3,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": []
     },
     {
       "id": "impus-perimeter",
@@ -565,7 +558,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 77.89319986477494,
+      "search_latency_ms": 64.97729988768697,
       "ok": true,
       "candidate_hit": false,
       "fusion_hit_12": false,
@@ -578,7 +571,11 @@
       "stage_lost": null,
       "raw_lexical_rank": null,
       "raw_dense_rank": null,
-      "ranked_rank": null
+      "ranked_rank": null,
+      "overview_columns_in_slots": [
+        "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ",
+        "Характеристика"
+      ]
     },
     {
       "id": "impus-confidentiality",
@@ -589,7 +586,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 58.53120004758239,
+      "search_latency_ms": 58.85599972680211,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -602,7 +599,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "Характеристика"
+      ]
     },
     {
       "id": "impus-technology",
@@ -613,7 +613,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 54.11989986896515,
+      "search_latency_ms": 56.6580998711288,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -626,7 +626,11 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 16,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": [
+        "ИД потока",
+        "Характеристика"
+      ]
     },
     {
       "id": "impus-flow-names",
@@ -637,7 +641,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 57.580800261348486,
+      "search_latency_ms": 59.13710035383701,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -650,7 +654,11 @@
       "stage_lost": null,
       "raw_lexical_rank": 14,
       "raw_dense_rank": 1,
-      "ranked_rank": 7
+      "ranked_rank": 7,
+      "overview_columns_in_slots": [
+        "ИД",
+        "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ]
     },
     {
       "id": "impus-volume",
@@ -661,7 +669,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 58.97179991006851,
+      "search_latency_ms": 59.39969979226589,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -674,7 +682,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "impus-frequency",
@@ -685,7 +694,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 53.41310007497668,
+      "search_latency_ms": 48.93120005726814,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -698,7 +707,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 4,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "impus-what",
@@ -709,7 +719,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 69.41960006952286,
+      "search_latency_ms": 53.70509997010231,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -722,7 +732,11 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 2,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "Характеристика",
+        "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ]
     },
     {
       "id": "impus-flow-count",
@@ -733,7 +747,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 49.798100255429745,
+      "search_latency_ms": 48.47870022058487,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -746,7 +760,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 28,
       "raw_dense_rank": 1,
-      "ranked_rank": 5
+      "ranked_rank": 5,
+      "overview_columns_in_slots": [
+        "ИД потока"
+      ]
     },
     {
       "id": "impus-protocol",
@@ -757,7 +774,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 51.97559995576739,
+      "search_latency_ms": 49.236500170081854,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -770,7 +787,11 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "ИД потока",
+        "Термин / сокращение"
+      ]
     },
     {
       "id": "approval",
@@ -781,7 +802,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": null,
-      "search_latency_ms": 47.56810003891587,
+      "search_latency_ms": 36.73869976773858,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -794,7 +815,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "impus-gossopka",
@@ -805,7 +827,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 65.93659985810518,
+      "search_latency_ms": 71.23040035367012,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -818,7 +840,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ]
     },
     {
       "id": "impus-customer",
@@ -829,7 +854,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 47.92470019310713,
+      "search_latency_ms": 51.14710005000234,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -842,7 +867,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 2,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": [
+        "Термин / сокращение"
+      ]
     },
     {
       "id": "impus-infrastructure",
@@ -853,7 +881,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 67.43429973721504,
+      "search_latency_ms": 60.12190040200949,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -866,7 +894,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 3,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ]
     },
     {
       "id": "contract-number",
@@ -877,7 +908,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 51.989799831062555,
+      "search_latency_ms": 49.54960010945797,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -890,7 +921,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 11,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": [
+        "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ]
     },
     {
       "id": "tz-number",
@@ -901,7 +935,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.3333333333333333,
       "doc_p4": 1.0,
-      "search_latency_ms": 74.3094002828002,
+      "search_latency_ms": 65.97230024635792,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -914,7 +948,11 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": null,
-      "ranked_rank": 4
+      "ranked_rank": 4,
+      "overview_columns_in_slots": [
+        "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ",
+        "ИД потока"
+      ]
     },
     {
       "id": "toreks-partner",
@@ -925,7 +963,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 0.5,
-      "search_latency_ms": 82.77070010080934,
+      "search_latency_ms": 86.71490009874105,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -938,7 +976,11 @@
       "stage_lost": null,
       "raw_lexical_rank": 5,
       "raw_dense_rank": 1,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": [
+        "Характеристика",
+        "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ]
     },
     {
       "id": "toreks-flow-request",
@@ -949,7 +991,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 66.49940041825175,
+      "search_latency_ms": 66.06939993798733,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -962,7 +1004,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": null,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "ИД"
+      ]
     },
     {
       "id": "toreks-protocol",
@@ -973,7 +1018,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 78.67809990420938,
+      "search_latency_ms": 88.96870026364923,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -986,7 +1031,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "ИД потока"
+      ]
     },
     {
       "id": "toreks-supplier",
@@ -997,7 +1045,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 88.5491999797523,
+      "search_latency_ms": 109.09719998016953,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1010,7 +1058,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 11,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "ИД"
+      ]
     },
     {
       "id": "toreks-perimeter",
@@ -1021,7 +1072,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 61.89109990373254,
+      "search_latency_ms": 60.786399990320206,
       "ok": true,
       "candidate_hit": false,
       "fusion_hit_12": false,
@@ -1034,7 +1085,10 @@
       "stage_lost": null,
       "raw_lexical_rank": null,
       "raw_dense_rank": null,
-      "ranked_rank": null
+      "ranked_rank": null,
+      "overview_columns_in_slots": [
+        "Термин / сокращение"
+      ]
     },
     {
       "id": "gost-19201-q01",
@@ -1045,7 +1099,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 39.07709987834096,
+      "search_latency_ms": 38.85680017992854,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1058,7 +1112,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19201-q03",
@@ -1069,7 +1124,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 36.26620024442673,
+      "search_latency_ms": 36.51680005714297,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1082,7 +1137,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 4,
       "raw_dense_rank": 1,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19201-q05",
@@ -1093,7 +1149,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 38.45230024307966,
+      "search_latency_ms": 36.635699681937695,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1106,7 +1162,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19301-q06",
@@ -1117,7 +1174,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 45.13079999014735,
+      "search_latency_ms": 37.173899821937084,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1130,7 +1187,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19301-q08",
@@ -1141,7 +1199,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 45.565000269562006,
+      "search_latency_ms": 38.22340024635196,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1154,7 +1212,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19301-q10",
@@ -1165,7 +1224,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 37.218600045889616,
+      "search_latency_ms": 59.92660019546747,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1178,7 +1237,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19501-q11",
@@ -1189,7 +1249,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 43.55449974536896,
+      "search_latency_ms": 46.89959995448589,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1202,7 +1262,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 2,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19501-q13",
@@ -1213,7 +1274,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 40.736999828368425,
+      "search_latency_ms": 41.15599999204278,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1226,7 +1287,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 2,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19501-q15",
@@ -1237,7 +1299,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 43.89509977772832,
+      "search_latency_ms": 39.38260022550821,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1250,7 +1312,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19502-q16",
@@ -1261,7 +1324,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 37.64689993113279,
+      "search_latency_ms": 43.107000179588795,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1274,7 +1337,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19502-q18",
@@ -1285,7 +1349,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 39.16250029578805,
+      "search_latency_ms": 41.35800013318658,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1298,7 +1362,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19503-q19",
@@ -1309,7 +1374,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 38.6350997723639,
+      "search_latency_ms": 40.70310015231371,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1322,7 +1387,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19503-q21",
@@ -1333,7 +1399,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 38.32409996539354,
+      "search_latency_ms": 40.14280019327998,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1346,7 +1412,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19504-q23",
@@ -1357,7 +1424,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 36.38039994984865,
+      "search_latency_ms": 40.46849999576807,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1370,7 +1437,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19504-q25",
@@ -1381,7 +1449,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 35.70750029757619,
+      "search_latency_ms": 49.90570014342666,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1394,7 +1462,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 3,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19505-q26",
@@ -1405,7 +1474,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 41.36929986998439,
+      "search_latency_ms": 45.54500011727214,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1418,7 +1487,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19505-q28",
@@ -1429,7 +1499,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 42.55109978839755,
+      "search_latency_ms": 42.99530014395714,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1442,7 +1512,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19505-q30",
@@ -1453,7 +1524,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 45.83820002153516,
+      "search_latency_ms": 36.31949983537197,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1466,7 +1537,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19506-q31",
@@ -1477,7 +1549,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 36.376699805259705,
+      "search_latency_ms": 39.71690032631159,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1490,7 +1562,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19506-q33",
@@ -1501,7 +1574,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 39.07229984179139,
+      "search_latency_ms": 44.1732001490891,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1514,7 +1587,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19506-q35",
@@ -1525,7 +1599,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 39.4661002792418,
+      "search_latency_ms": 36.434400361031294,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1538,7 +1612,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19507-q36",
@@ -1549,7 +1624,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 33.94260024651885,
+      "search_latency_ms": 45.777599792927504,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1562,7 +1637,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19508-q37",
@@ -1573,7 +1649,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 40.55290017277002,
+      "search_latency_ms": 36.458300426602364,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1586,7 +1662,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19508-q39",
@@ -1597,7 +1674,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 40.072300005704165,
+      "search_latency_ms": 37.52680029720068,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1610,7 +1687,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "h-impus-why",
@@ -1621,7 +1699,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 47.48769989237189,
+      "search_latency_ms": 41.387599892914295,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1634,7 +1712,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "Характеристика"
+      ]
     },
     {
       "id": "h-impus-developer",
@@ -1645,7 +1726,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 41.46680003032088,
+      "search_latency_ms": 45.175399631261826,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1658,7 +1739,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 7,
       "raw_dense_rank": 2,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": []
     },
     {
       "id": "h-impus-perimeter",
@@ -1669,7 +1751,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 52.873500157147646,
+      "search_latency_ms": 51.252400036901236,
       "ok": true,
       "candidate_hit": false,
       "fusion_hit_12": false,
@@ -1682,7 +1764,11 @@
       "stage_lost": null,
       "raw_lexical_rank": null,
       "raw_dense_rank": null,
-      "ranked_rank": null
+      "ranked_rank": null,
+      "overview_columns_in_slots": [
+        "Термин / сокращение",
+        "Характеристика"
+      ]
     },
     {
       "id": "h-impus-flows",
@@ -1693,7 +1779,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 51.26339988783002,
+      "search_latency_ms": 46.118199825286865,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1706,7 +1792,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 5,
       "raw_dense_rank": 1,
-      "ranked_rank": 5
+      "ranked_rank": 5,
+      "overview_columns_in_slots": [
+        "ИД"
+      ]
     },
     {
       "id": "h-impus-volume",
@@ -1717,7 +1806,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 53.847100120037794,
+      "search_latency_ms": 53.831799887120724,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1730,7 +1819,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 3,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "ИД"
+      ]
     },
     {
       "id": "h-impus-mode",
@@ -1741,7 +1833,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 59.99370012432337,
+      "search_latency_ms": 50.55319983512163,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1754,7 +1846,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "h-impus-gossopka-status",
@@ -1765,7 +1858,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.3333333333333333,
       "doc_p4": 1.0,
-      "search_latency_ms": 54.243599995970726,
+      "search_latency_ms": 47.36429965123534,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1778,7 +1871,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 28,
-      "ranked_rank": 3
+      "ranked_rank": 3,
+      "overview_columns_in_slots": [
+        "Характеристика"
+      ]
     },
     {
       "id": "h-impus-platform",
@@ -1789,7 +1885,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 49.25510007888079,
+      "search_latency_ms": 48.4653003513813,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1802,7 +1898,11 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 17,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "Характеристика",
+        "Термин / сокращение"
+      ]
     },
     {
       "id": "h-impus-owner",
@@ -1813,7 +1913,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 68.16320028156042,
+      "search_latency_ms": 72.12450029328465,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1826,7 +1926,11 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "Характеристика",
+        "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ]
     },
     {
       "id": "h-impus-landscapes",
@@ -1837,7 +1941,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 72.49559974297881,
+      "search_latency_ms": 73.23259999975562,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1850,7 +1954,12 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "Характеристика",
+        "Термин / сокращение",
+        "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ"
+      ]
     },
     {
       "id": "h-impus-migration",
@@ -1861,7 +1970,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 40.31139984726906,
+      "search_latency_ms": 48.713100142776966,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1874,7 +1983,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "h-impus-port",
@@ -1885,7 +1995,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 75.61160018667579,
+      "search_latency_ms": 81.2546000815928,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1898,7 +2008,12 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "ИНИЦИАТОР СОЕДИНЕНИЯ / НАЗВАНИЕ",
+        "Термин / сокращение",
+        "ИД потока"
+      ]
     },
     {
       "id": "h-eosdo",
@@ -1909,7 +2024,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": null,
-      "search_latency_ms": 76.55469980090857,
+      "search_latency_ms": 79.33400012552738,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1922,7 +2037,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": null,
-      "ranked_rank": 4
+      "ranked_rank": 4,
+      "overview_columns_in_slots": [
+        "Термин / сокращение"
+      ]
     },
     {
       "id": "h-impus-author",
@@ -1933,7 +2051,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 43.355599977076054,
+      "search_latency_ms": 49.08440029248595,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1946,7 +2064,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 17,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "h-toreks-count",
@@ -1957,7 +2076,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 85.11290000751615,
+      "search_latency_ms": 101.71830002218485,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1970,7 +2089,10 @@
       "stage_lost": null,
       "raw_lexical_rank": null,
       "raw_dense_rank": 1,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": [
+        "ИД"
+      ]
     },
     {
       "id": "h-toreks-what",
@@ -1981,7 +2103,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 0.5,
-      "search_latency_ms": 77.18340028077364,
+      "search_latency_ms": 66.68289983645082,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -1994,7 +2116,10 @@
       "stage_lost": null,
       "raw_lexical_rank": null,
       "raw_dense_rank": 3,
-      "ranked_rank": 8
+      "ranked_rank": 8,
+      "overview_columns_in_slots": [
+        "Характеристика"
+      ]
     },
     {
       "id": "h-toreks-owner",
@@ -2005,7 +2130,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 0.75,
-      "search_latency_ms": 63.92570026218891,
+      "search_latency_ms": 62.228200025856495,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2018,7 +2143,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 3,
       "raw_dense_rank": 1,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": [
+        "Характеристика"
+      ]
     },
     {
       "id": "h-toreks-gossopka-plan",
@@ -2029,7 +2157,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 0.5,
-      "search_latency_ms": 55.700299795717,
+      "search_latency_ms": 76.42130041494966,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2042,7 +2170,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 3,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "Характеристика"
+      ]
     },
     {
       "id": "h-toreks-defects",
@@ -2053,7 +2184,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 60.42589992284775,
+      "search_latency_ms": 59.99729968607426,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2066,7 +2197,10 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": [
+        "ИД"
+      ]
     },
     {
       "id": "gost-19201-q02",
@@ -2077,7 +2211,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 44.55790016800165,
+      "search_latency_ms": 35.988999996334314,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2090,7 +2224,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19201-q04",
@@ -2101,7 +2236,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 40.56850029155612,
+      "search_latency_ms": 41.00450035184622,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2114,7 +2249,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19301-q07",
@@ -2125,7 +2261,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 43.97819982841611,
+      "search_latency_ms": 41.71440005302429,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2138,7 +2274,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19301-q09",
@@ -2149,7 +2286,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 44.72329979762435,
+      "search_latency_ms": 46.820899937301874,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2162,7 +2299,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19501-q12",
@@ -2173,7 +2311,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.3333333333333333,
       "doc_p4": 1.0,
-      "search_latency_ms": 37.984900176525116,
+      "search_latency_ms": 44.18600024655461,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2186,7 +2324,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 6,
-      "ranked_rank": 3
+      "ranked_rank": 3,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19501-q14",
@@ -2197,7 +2336,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 36.78529988974333,
+      "search_latency_ms": 40.777300018817186,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2210,7 +2349,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19502-q17",
@@ -2221,7 +2361,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 47.472099773585796,
+      "search_latency_ms": 44.59210019558668,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2234,7 +2374,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19503-q20",
@@ -2245,7 +2386,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 47.11299994960427,
+      "search_latency_ms": 37.68960013985634,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2258,7 +2399,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19503-q22",
@@ -2269,7 +2411,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 36.22880019247532,
+      "search_latency_ms": 41.62199981510639,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2282,7 +2424,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19504-q24",
@@ -2293,7 +2436,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 38.380700163543224,
+      "search_latency_ms": 40.93179991468787,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2306,7 +2449,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19505-q27",
@@ -2317,7 +2461,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 37.68440010026097,
+      "search_latency_ms": 40.35140015184879,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2330,7 +2474,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 2,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19505-q29",
@@ -2341,7 +2486,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 39.61519990116358,
+      "search_latency_ms": 35.49619996920228,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2354,7 +2499,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19506-q32",
@@ -2365,7 +2511,7 @@
       "is_hit4": true,
       "mrr_contribution": 0.5,
       "doc_p4": 1.0,
-      "search_latency_ms": 45.32349994406104,
+      "search_latency_ms": 41.34900029748678,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2378,7 +2524,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 2,
       "raw_dense_rank": 1,
-      "ranked_rank": 2
+      "ranked_rank": 2,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19506-q34",
@@ -2389,7 +2536,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 38.44919987022877,
+      "search_latency_ms": 41.80039977654815,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2402,7 +2549,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19508-q38",
@@ -2413,7 +2561,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 38.63660013303161,
+      "search_latency_ms": 38.61819999292493,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2426,7 +2574,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     },
     {
       "id": "gost-19508-q40",
@@ -2437,7 +2586,7 @@
       "is_hit4": true,
       "mrr_contribution": 1.0,
       "doc_p4": 1.0,
-      "search_latency_ms": 36.57160000875592,
+      "search_latency_ms": 44.393499847501516,
       "ok": true,
       "candidate_hit": true,
       "fusion_hit_12": true,
@@ -2450,7 +2599,8 @@
       "stage_lost": null,
       "raw_lexical_rank": 1,
       "raw_dense_rank": 1,
-      "ranked_rank": 1
+      "ranked_rank": 1,
+      "overview_columns_in_slots": []
     }
   ],
   "_n_questions_search": 81,
