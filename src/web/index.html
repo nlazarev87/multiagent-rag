@@ -508,6 +508,7 @@
     let openTabs = [];
     let activeTab = "";
     let tabChunks = {};
+    let previewToken = 0;
     let menuTarget = null;
     let closedFolders = new Set();
     let treeStamp = 0;
@@ -603,17 +604,27 @@
     }
 
     function paintTabs() {
+      function tabParts(key) {
+        const text = String(key || "");
+        const mark = text.indexOf(":");
+        const head = mark > 0 ? text.slice(0, mark) : "";
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(head)) {
+          return { kbId: head, name: text.slice(mark + 1) };
+        }
+        return { kbId: "", name: text };
+      }
       tabsEl.replaceChildren();
-      openTabs.forEach((name) => {
-        const tab = element("div", name === activeTab ? "tab on" : "tab");
-        tab.append(element("span", "", name));
-        tab.addEventListener("click", () => showPreview(name));
+      openTabs.forEach((key) => {
+        const parts = tabParts(key);
+        const tab = element("div", key === activeTab ? "tab on" : "tab");
+        tab.append(element("span", "", parts.name));
+        tab.addEventListener("click", () => showPreview(parts.name, null, parts.kbId));
         const close = element("button", "x", "×");
         close.type = "button";
         close.setAttribute("aria-label", "Закрыть вкладку");
         close.addEventListener("click", (event) => {
           event.stopPropagation();
-          closeTab(name);
+          closeTab(key);
         });
         tab.append(close);
         tabsEl.append(tab);
@@ -681,33 +692,59 @@
       preview.parentNode.scrollTop = 0;
     }
 
+    async function lookupBases(name) {
+      try {
+        const response = await fetch("/documents", { signal: AbortSignal.timeout(8000) });
+        if (!response.ok) return [];
+        const data = await response.json().catch(() => ({}));
+        return (data.documents || []).filter((item) => item && item.name === name && item.kb_id);
+      } catch (error) {
+        return [];
+      }
+    }
+
     async function showPreview(name, where, kbId) {
       if (!name) return;
-      const known = (typeof fileBase === "object" && fileBase) ? (fileBase[name] || []) : [];
-      const chosen = kbId || (where && where.kb_id) || (known.length === 1 ? known[0].kb_id : "");
-      if (!chosen && known.length > 1) {
-        preview.classList.remove("idle");
-        const note = element("p", "muted", "Файл есть в нескольких базах");
-        const list = document.createElement("ul");
-        known.forEach((row) => {
-          const item = document.createElement("li");
-          const button = document.createElement("button");
-          button.type = "button";
-          button.textContent = row.kb_name + " / " + name;
-          button.addEventListener("click", () => showPreview(name, where, row.kb_id));
-          item.append(button);
-          list.append(item);
-        });
-        preview.replaceChildren(note, list);
-        return;
-      }
-      const tabKey = chosen ? chosen + ":" + name : name;
+      previewToken += 1;
+      const token = previewToken;
+      let chosen = kbId || (where && where.kb_id) || "";
+      let tabKey = chosen ? chosen + ":" + name : name;
       if (!openTabs.includes(tabKey)) openTabs.push(tabKey);
       activeTab = tabKey;
       paintTabs();
-      if (!tabChunks[name] && !tabChunks[tabKey]) {
-        preview.classList.add("idle");
-        preview.replaceChildren(element("p", "muted", "Открывается…"));
+      if (!tabChunks[tabKey] && !chosen) {
+        const known = await lookupBases(name);
+        if (token === previewToken && known.length > 1) {
+          preview.classList.remove("idle");
+          const note = element("p", "muted", "Файл есть в нескольких базах");
+          const list = document.createElement("ul");
+          known.forEach((row) => {
+            const item = document.createElement("li");
+            const button = document.createElement("button");
+            button.type = "button";
+            button.textContent = (row.kb_name || row.kb_id) + " / " + name;
+            button.addEventListener("click", () => showPreview(name, where, row.kb_id));
+            item.append(button);
+            list.append(item);
+          });
+          preview.replaceChildren(note, list);
+          return;
+        }
+        if (known.length === 1) {
+          chosen = known[0].kb_id;
+          tabKey = chosen + ":" + name;
+          if (!openTabs.includes(tabKey)) openTabs.push(tabKey);
+          if (token === previewToken) {
+            activeTab = tabKey;
+            paintTabs();
+          }
+        }
+      }
+      if (!tabChunks[tabKey]) {
+        if (token === previewToken) {
+          preview.classList.add("idle");
+          preview.replaceChildren(element("p", "muted", "Открывается…"));
+        }
         try {
           const url = chosen
             ? "/kb/" + encodeURIComponent(chosen) + "/documents/" + encodeURIComponent(name) + "/preview"
@@ -716,10 +753,8 @@
             signal: AbortSignal.timeout(15000),
           });
           const data = await response.json().catch(() => ({}));
-          if (response.ok) {
-            tabChunks[name] = data.chunks || [];
-            tabChunks[tabKey] = tabChunks[name];
-          }
+          if (response.ok) tabChunks[tabKey] = data.chunks || [];
+          if (token !== previewToken) return;
           if (!chosen) {
             if (activeTab !== name) return;
           } else if (activeTab !== tabKey) {
@@ -730,6 +765,7 @@
             return;
           }
         } catch (error) {
+          if (token !== previewToken) return;
           if (!chosen) {
             if (activeTab !== name) return;
           } else if (activeTab !== tabKey) {
@@ -739,8 +775,9 @@
           return;
         }
       }
+      if (token !== previewToken) return;
       if (activeTab !== name && activeTab !== tabKey) return;
-      const chunks = tabChunks[name] || tabChunks[tabKey] || [];
+      const chunks = tabChunks[tabKey] || [];
       if (!chunks.length) {
         preview.replaceChildren(element("p", "muted", "Нет текста"));
         return;
@@ -799,9 +836,11 @@
           payload.links[String(source.number)] = n;
           saveRate(turnIndex, payload).then(() => paintLog());
         }));
-        if (!seen.has(source.document_name)) {
-          seen.add(source.document_name);
-          const file = element("button", "chip", source.document_name);
+        const fileKey = (source.kb_id || "") + "\n" + source.document_name;
+        if (!seen.has(fileKey)) {
+          seen.add(fileKey);
+          const fileLabel = source.kb_name ? source.kb_name + " / " + source.document_name : source.document_name;
+          const file = element("button", "chip", fileLabel);
           file.type = "button";
           file.setAttribute("data-document", source.document_name);
           if (source.kb_id) file.setAttribute("data-kb", source.kb_id);
@@ -852,29 +891,43 @@
     }
 
     function ensureTreeFiles(names) {
+      function slots(node, kbId) {
+        const here = String(node && node.id || "").startsWith("kb-") ? String(node.id).slice(3) : (kbId || "");
+        const keys = [];
+        if (!node) return keys;
+        if (node.document_name) keys.push(here + "\n" + node.document_name);
+        (node.children || []).forEach((child) => keys.push(...slots(child, here)));
+        return keys;
+      }
       const have = new Set(treeFiles(tree));
+      const placed = new Set(slots(tree, ""));
       tree.children = tree.children || [];
-      (names || []).forEach((item) => {
+      const rows = names || [];
+      const kbIds = new Set(rows.map((row) => row && row.kb_id).filter(Boolean));
+      rows.forEach((item) => {
         const name = item && item.name ? item.name : item;
         const kbId = item && item.kb_id ? item.kb_id : "";
-        if (name && kbId) {
+        if (!name) return;
+        if (kbId) {
           fileBase[name] = fileBase[name] || [];
           if (!fileBase[name].some((row) => row.kb_id === kbId)) fileBase[name].push(item);
         }
-        if (name && !have.has(name)) {
-          const kbIds = new Set((names || []).map((row) => row && row.kb_id).filter(Boolean));
-          if (kbIds.size > 1 && kbId) {
-            let folder = (tree.children || []).find((child) => child.id === "kb-" + kbId);
-            if (!folder) {
-              folder = { id: "kb-" + kbId, name: item.kb_name || kbId, children: [] };
-              tree.children.push(folder);
-            }
-            folder.children.push({ document_name: name });
-          } else {
-            tree.children.push({ document_name: name });
+        if (kbIds.size > 1 && kbId) {
+          const slot = kbId + "\n" + name;
+          if (placed.has(slot)) return;
+          let folder = (tree.children || []).find((child) => child.id === "kb-" + kbId);
+          if (!folder) {
+            folder = { id: "kb-" + kbId, name: item.kb_name || kbId, children: [] };
+            tree.children.push(folder);
           }
-          have.add(name);
+          folder.children = folder.children || [];
+          folder.children.push({ document_name: name });
+          placed.add(slot);
+          return;
         }
+        if (have.has(name)) return;
+        tree.children.push({ document_name: name });
+        have.add(name);
       });
     }
 
@@ -977,7 +1030,13 @@
         const closed = Boolean(node.id && closedFolders.has(node.id) && !filter);
         btn.append(element("span", "", isFile ? "" : (closed ? "▸" : "▾")));
         btn.append(element("span", "", isFile ? node.document_name : (node.name || "Папка")));
-        if (isFile && node.document_name === activeTab) btn.classList.add("on");
+        let openName = String(activeTab || "");
+        const openMark = openName.indexOf(":");
+        const openHead = openMark > 0 ? openName.slice(0, openMark) : "";
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(openHead)) {
+          openName = openName.slice(openMark + 1);
+        }
+        if (isFile && node.document_name === openName) btn.classList.add("on");
         btn.addEventListener("click", () => {
           if (isFile) {
             const fromFolder = parent && String(parent.id || "").startsWith("kb-") ? String(parent.id).slice(3) : "";
@@ -1109,7 +1168,15 @@
         ? "/kb/" + encodeURIComponent(kbId) + "/documents/" + encodeURIComponent(name)
         : "/documents/" + encodeURIComponent(name);
       await fetch(url, { method: "DELETE" });
-      if (openTabs.includes(name)) closeTab(name);
+      openTabs.filter((key) => {
+        const text = String(key || "");
+        const mark = text.indexOf(":");
+        const head = mark > 0 ? text.slice(0, mark) : "";
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(head)) {
+          return text.slice(mark + 1) === name;
+        }
+        return text === name;
+      }).slice().forEach((key) => closeTab(key));
       await loadUi(false);
     }
 
@@ -1362,6 +1429,10 @@
       request.onload = async () => {
         let data = {};
         try { data = JSON.parse(request.responseText); } catch (error) { data = {}; }
+        if (request.status === 401) {
+          showGate();
+          return;
+        }
         if (request.status !== 200) {
           steps.append(element("p", "", data.detail || "Ошибка загрузки"));
           return;
@@ -1661,7 +1732,7 @@
           }));
         }
       }
-      adminBody.append(person, role, group, kind, after, before, adminButton("Обновить", load), list);
+      adminBody.append(person, role, group, kind, after, before, adminButton("Обновить", () => load()), list);
       await load();
     }
 
@@ -1705,14 +1776,16 @@
         }));
         block.append(adminButton("Удалить роль", async () => {
           const sent = await sendJson("/admin/roles/" + role.id, "DELETE");
-          field(adminBody, "p", sent.ok ? "Удалена" : (sent.payload.detail || "Ошибка"));
+          if (sent.ok) document.getElementById("admin-roles").click();
+          else field(adminBody, "p", sent.payload.detail || "Ошибка");
         }));
         adminBody.append(block);
       });
       const name = adminInput("Имя роли");
       adminBody.append(name, adminButton("Создать роль", async () => {
         const sent = await sendJson("/admin/roles", "POST", { name: name.value });
-        field(adminBody, "p", sent.ok ? "Создана" : (sent.payload.detail || "Ошибка"));
+        if (sent.ok) document.getElementById("admin-roles").click();
+        else field(adminBody, "p", sent.payload.detail || "Ошибка");
       }));
     });
     document.getElementById("admin-groups").addEventListener("click", async () => {
@@ -1734,14 +1807,16 @@
           field(adminBody, "p", sent.ok ? "Состав записан" : (sent.payload.detail || "Ошибка"));
         }), adminButton("Удалить группу", async () => {
           const sent = await sendJson("/admin/groups/" + group.id, "DELETE");
-          field(adminBody, "p", sent.ok ? "Удалена" : (sent.payload.detail || "Ошибка"));
+          if (sent.ok) document.getElementById("admin-groups").click();
+          else field(adminBody, "p", sent.payload.detail || "Ошибка");
         }));
         adminBody.append(block);
       });
       const name = adminInput("Имя группы");
       adminBody.append(name, adminButton("Создать группу", async () => {
         const sent = await sendJson("/admin/groups", "POST", { name: name.value });
-        field(adminBody, "p", sent.ok ? "Создана" : (sent.payload.detail || "Ошибка"));
+        if (sent.ok) document.getElementById("admin-groups").click();
+        else field(adminBody, "p", sent.payload.detail || "Ошибка");
       }));
     });
     document.getElementById("admin-access").addEventListener("click", async () => {
@@ -1753,7 +1828,8 @@
         field(block, "p", base.name);
         block.append(adminButton("Открыть себе", async () => {
           const sent = await sendJson("/admin/kb/" + base.id + "/self", "POST");
-          field(adminBody, "p", sent.ok ? "Доступ записан" : (sent.payload.detail || "Ошибка"));
+          if (sent.ok) document.getElementById("admin-access").click();
+          else field(adminBody, "p", sent.payload.detail || "Ошибка");
         }));
         if (base.personal) {
           (base.acl || []).filter((row) => row.subject_type === "user" && row.effect === "allow").forEach((row) => {
@@ -1769,7 +1845,8 @@
             person.append(adminButton("Записать личные", async () => {
               const actions = ["ask", "upload", "delete", "arrange"].filter((action) => boxes[action].checked);
               const sent = await sendJson("/admin/kb/" + base.id + "/people/" + userId + "/actions", "PUT", { actions: actions });
-              field(block, "p", sent.ok ? "Личные действия записаны" : (sent.payload.detail || "Ошибка"));
+              if (sent.ok) document.getElementById("admin-access").click();
+              else field(block, "p", sent.payload.detail || "Ошибка");
             }));
             block.append(person);
           });
@@ -1786,10 +1863,12 @@
           const subject = adminInput("id");
           block.append(kind, subject, adminButton("Открыть", async () => {
             const sent = await sendJson("/admin/kb/" + base.id + "/allow", "POST", { subject_type: kind.value, subject_id: subject.value });
-            field(adminBody, "p", sent.ok ? "Открыто" : (sent.payload.detail || "Ошибка"));
+            if (sent.ok) document.getElementById("admin-access").click();
+            else field(adminBody, "p", sent.payload.detail || "Ошибка");
           }), adminButton("Закрыть", async () => {
             const sent = await sendJson("/admin/kb/" + base.id + "/deny", "POST", { subject_type: kind.value, subject_id: subject.value });
-            field(adminBody, "p", sent.ok ? "Закрыто" : (sent.payload.detail || "Ошибка"));
+            if (sent.ok) document.getElementById("admin-access").click();
+            else field(adminBody, "p", sent.payload.detail || "Ошибка");
           }));
         }
         adminBody.append(block);

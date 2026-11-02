@@ -111,6 +111,8 @@ const tabsEl = document.createElement("div");
 let openTabs = [];
 let activeTab = "";
 let tabChunks = {};
+let previewToken = 0;
+let fileBase = {};
 let tree = { id: "root", name: "", children: [] };
 let treePending = false;
 let treeWriting = false;
@@ -126,7 +128,7 @@ if (!AbortSignal.timeout) AbortSignal.timeout = () => new AbortController().sign
 
 for (const name of [
   "tokens", "contentWords", "coverage", "blocks", "element",
-  "paintChunks", "paintTabs", "showPreview",
+  "paintChunks", "paintTabs", "lookupBases", "showPreview",
   "treeFiles", "ensureTreeFiles", "removeFolder", "persistTree",
 ]) eval(extract(name));
 
@@ -385,6 +387,67 @@ async function main() {
   if (visible(preview) !== "Нет текста") throw new Error("an empty document was " + JSON.stringify(visible(preview)));
   await showPreview("boom.txt");
   if (visible(preview) !== "Сервер не ответил") throw new Error("a dead preview was " + JSON.stringify(visible(preview)));
+
+  tabChunks = {};
+  openTabs = [];
+  activeTab = "";
+  fileBase = {};
+  const kb1 = "00000000-0000-4000-8000-000000000001";
+  const kb2 = "00000000-0000-4000-8000-000000000002";
+  let previewReads = 0;
+  global.fetch = (url) => {
+    const address = String(url);
+    if (address.includes("/kb/")) previewReads += 1;
+    if (address.startsWith("/documents")) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          documents: [
+            { name: "same.txt", kb_id: kb1, kb_name: "Документы" },
+            { name: "same.txt", kb_id: kb2, kb_name: "Вторая" },
+            { name: "only.txt", kb_id: kb1, kb_name: "Документы" },
+          ],
+        }),
+      });
+    }
+    if (address.includes(kb1)) {
+      return Promise.resolve({ ok: true, json: async () => ({ chunks: [{ text: "первая база", chunk_index: 0 }] }) });
+    }
+    if (address.includes(kb2)) {
+      return Promise.resolve({ ok: true, json: async () => ({ chunks: [{ text: "вторая база", chunk_index: 0 }] }) });
+    }
+    return Promise.resolve({ ok: false, json: async () => ({}) });
+  };
+  await showPreview("same.txt");
+  const choice = visible(preview);
+  if (!choice.includes("Документы / same.txt") || !choice.includes("Вторая / same.txt")) {
+    throw new Error("two bases did not stay on screen: " + choice);
+  }
+  if (choice.includes("первая база") || choice.includes("вторая база")) {
+    throw new Error("two bases opened a file on their own");
+  }
+  await showPreview("same.txt", null, kb1);
+  await showPreview("same.txt", null, kb2);
+  if (!visible(preview).includes("вторая база")) throw new Error("the second base showed the first text");
+  if (!tabChunks[kb1 + ":same.txt"] || tabChunks[kb1 + ":same.txt"][0].text !== "первая база") {
+    throw new Error("the first base cache was replaced");
+  }
+  await showPreview("only.txt");
+  if (!visible(preview).includes("первая база")) throw new Error("a single match did not open");
+  const cachedReads = previewReads;
+  await showPreview("only.txt");
+  if (previewReads !== cachedReads) throw new Error("a cached base was read again");
+  if (!visible(preview).includes("первая база")) throw new Error("a cached single match was not painted");
+
+  tree = { id: "root", name: "", children: [] };
+  ensureTreeFiles([
+    { name: "same.txt", kb_id: kb1, kb_name: "Документы" },
+    { name: "same.txt", kb_id: kb2, kb_name: "Вторая" },
+  ]);
+  const folders = tree.children.filter((child) => String(child.id || "").startsWith("kb-"));
+  if (folders.length !== 2 || folders.some((folder) => (folder.children || []).length !== 1)) {
+    throw new Error("same name did not stay in both bases: " + JSON.stringify(tree));
+  }
 
   console.log("ok");
 }

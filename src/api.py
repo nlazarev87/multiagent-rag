@@ -170,23 +170,26 @@ def _user(request: Request):
     return _actor(request)
 
 
+def _listed(user, item):
+    """Имена базы после повторной проверки. Без допуска индекс не открывается."""
+    permit = access.issue_see(user, item["id"])
+    if permit is None or not permit.confirm():
+        return []
+    if item["id"] == kb.LEGACY_ID or item["legacy"]:
+        return list_documents()
+    try:
+        from store import list_permit
+        return list_permit(permit)
+    except PermissionError:
+        return []
+
+
 def _rows(user):
     rows = []
     for item in kb.list_kbs():
         if not access.can_see(user, item["id"]):
             continue
-        if item["id"] == kb.LEGACY_ID or item["legacy"]:
-            names = list_documents()
-        else:
-            permit = access.issue_see(user, item["id"])
-            if permit is None:
-                continue
-            try:
-                from store import list_permit
-                names = list_permit(permit)
-            except PermissionError:
-                continue
-        for name in names:
+        for name in _listed(user, item):
             rows.append({"kb_id": item["id"], "kb_name": item["name"], "name": name})
     return rows
 
@@ -388,6 +391,9 @@ def documents_delete(kb_id: str, document_name: str = None, request: Request = N
     row = kb.get(kb_id)
     if row is None or not access.can(user, kb_id, "delete"):
         raise HTTPException(404, detail="Документ не найден")
+    permit = access.issue(user, kb_id, "delete")
+    if permit is None or not permit.confirm():
+        raise HTTPException(404, detail="Документ не найден")
     with _upload_lock:
         folder = row["inbox"]
         path = folder / name
@@ -452,12 +458,12 @@ def _rollback_upload(saved):
             continue
 
 
-def _save_uploads(payloads, folder=None, chroma=None, legacy=True):
+def _save_uploads(payloads, folder=None, chroma=None, legacy=True, user=None):
     with _upload_lock:
-        return _save_uploads_locked(payloads, folder or INBOX, chroma, legacy)
+        return _save_uploads_locked(payloads, folder or INBOX, chroma, legacy, _user_upload if user is None else user)
 
 
-def _save_uploads_locked(payloads, folder, chroma, legacy):
+def _save_uploads_locked(payloads, folder, chroma, legacy, user):
     saved = []
     try:
         folder = Path(folder)
@@ -492,7 +498,7 @@ def _save_uploads_locked(payloads, folder, chroma, legacy):
         else:
             from store import upsert_at
             upsert_at(chroma, chunks)
-        return {"documents": _rows(_user_upload), "tree": workspace.snapshot(_names(_rows(_user_upload)), _on_disk())["tree"]}
+        return {"documents": _rows(user), "tree": workspace.snapshot(_names(_rows(user)), _on_disk())["tree"]}
     except Exception as exc:
         raise HTTPException(500, detail="Не удалось записать файл") from exc
 
@@ -539,7 +545,7 @@ async def upload(request: Request = None, files: list[UploadFile] = File(None), 
         raise HTTPException(403, detail="Нет права загружать")
     try:
         payloads = [(_upload_name(item.filename), await item.read()) for item in files]
-        saved = _save_uploads(payloads, row["inbox"], row["chroma"], row["legacy"])
+        saved = _save_uploads(payloads, row["inbox"], row["chroma"], row["legacy"], user)
     except HTTPException:
         audit.write("upload", user, {"kb_id": target}, ok=False)
         raise
@@ -552,18 +558,20 @@ async def upload(request: Request = None, files: list[UploadFile] = File(None), 
 def _visible_names(user):
     names = set(_names(_rows(user)))
     if access.can_see(user, kb.LEGACY_ID):
-        names.update(_on_disk())
+        permit = access.issue_see(user, kb.LEGACY_ID)
+        if permit is not None and permit.confirm():
+            names.update(_on_disk())
     return names
 
 
 def _kb_file_names(row, user):
+    permit = access.issue_see(user, row["id"])
+    if permit is None or not permit.confirm():
+        return set()
     if row["legacy"]:
         names = set(list_documents())
         names.update(_on_disk())
         return names
-    permit = access.issue_see(user, row["id"])
-    if permit is None:
-        return set()
     try:
         from store import list_permit
         return set(list_permit(permit))
@@ -897,18 +905,21 @@ def admin_user_create(body: UserBody, request: Request):
 def admin_user_patch(user_id: str, body: UserBody, request: Request):
     user = _user(request)
     _need(user, "manage_users")
+    if body.password and len(body.password) < 8:
+        raise HTTPException(400, detail="Пароль короче 8 знаков")
     try:
+        updated = auth.update_user(user_id, role_id=body.role_id or None, blocked=body.blocked)
         if body.password:
             auth.set_password(user_id, body.password)
-            audit.write("password_set", user, {"user_id": user_id})
-            audit.write("session_drop", user, {"user_id": user_id})
-        updated = auth.update_user(user_id, role_id=body.role_id or None, blocked=body.blocked)
     except ValueError:
         raise HTTPException(400, detail="Пароль короче 8 знаков") from None
     except PermissionError:
         raise HTTPException(400, detail="Нельзя оставить систему без управляющего") from None
     except LookupError:
         raise HTTPException(404, detail="Не найдено") from None
+    if body.password:
+        audit.write("password_set", user, {"user_id": user_id})
+        audit.write("session_drop", user, {"user_id": user_id})
     if body.blocked is True:
         audit.write("user_block", user, {"user_id": user_id})
         audit.write("session_drop", user, {"user_id": user_id})

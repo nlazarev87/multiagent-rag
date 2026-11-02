@@ -171,6 +171,19 @@ def test_blocked_person_and_new_password_lose_the_session(tmp_path, monkeypatch)
     assert missing.status_code == 404
 
 
+def test_refused_block_keeps_the_old_password(tmp_path, monkeypatch):
+    client = _root(tmp_path, monkeypatch)
+    client.post("/setup", json={"login": "admin", "password": "password12"})
+    admin_id = auth.user_by_login("admin")["id"]
+    refused = client.patch(f"/admin/users/{admin_id}", json={"password": "password99", "blocked": True})
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == "Нельзя оставить систему без управляющего"
+    assert client.get("/me").status_code == 200
+    other = TestClient(app)
+    assert other.post("/login", json={"login": "admin", "password": "password12"}).status_code == 200
+    assert other.post("/login", json={"login": "admin", "password": "password99"}).status_code == 401
+
+
 def test_last_manager_refusal_is_the_server_text(tmp_path, monkeypatch):
     client = _root(tmp_path, monkeypatch)
     client.post("/setup", json={"login": "admin", "password": "password12"})
