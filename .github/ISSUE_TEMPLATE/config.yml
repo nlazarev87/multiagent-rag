@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Архитектура
+    url: https://github.com/nlazarev87/multiagent-rag/blob/main/docs/architecture.md
+    about: Схема модулей, поля state, поток данных.
+  - name: Пороги и константы
+    url: https://github.com/nlazarev87/multiagent-rag/blob/main/docs/thresholds.md
+    about: Все пороги + тест.
+  - name: AGENTS.md
+    url: https://github.com/nlazarev87/multiagent-rag/blob/main/AGENTS.md
+    about: Правила для AI-агента.
