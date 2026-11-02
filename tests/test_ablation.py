@@ -18,7 +18,7 @@ def test_features_default_all_true():
     feats = runtime().get("features", {})
     assert feats, "runtime.json must have 'features'"
     expected = {
-        "inject_rare", "focus", "scope", "cover_latin", "prefer_name",
+        "focus", "scope", "cover_latin", "prefer_name",
         "from_overview", "table_neighbors", "overview_rows",
     }
     missing = expected - set(feats.keys())
@@ -51,19 +51,6 @@ def test_cover_latin_off_does_not_refuse(monkeypatch):
     on = dict(off, cover_latin=True)
     assert agents.answer_agent("Где NPP?", "Где NPP?", chunks, [], features=on) == agents.NO_ANSWER
     assert calls["model"] == 0
-
-
-@pytest.mark.slow
-@pytest.mark.skipif(not _HAS_CORPUS, reason="no corpus in data/inbox")
-def test_disable_inject_rare_returns_slots():
-    query = "Сколько потоков"
-    baseline = search_chunks(query, 4, debug=True)
-    disabled = search_chunks(query, 4, debug=True, features={
-        "inject_rare": False, "overview_rows": True, "table_neighbors": True,
-        "scope": True, "focus": True,
-    })
-    assert isinstance(baseline["slots"], list)
-    assert isinstance(disabled["slots"], list)
 
 
 @pytest.mark.slow
