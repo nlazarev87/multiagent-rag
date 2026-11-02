@@ -473,7 +473,7 @@ def test_preview_and_tree_save_ignore_a_stale_result():
 def test_preview_ignores_a_stale_document_and_a_stale_tree_save():
     page = HTML.read_text(encoding="utf-8")
     assert "if (activeTab !== name) return;" in page
-    assert "if (!ok || treePending || treeDragging) continue;" in page
+    assert "if (treePending || treeDragging) continue;" in page
     completed = subprocess.run(
         [NODE, "-e", SCRIPT],
         check=False,

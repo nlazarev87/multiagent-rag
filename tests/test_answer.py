@@ -1947,3 +1947,85 @@ def test_check_rejects_a_long_example_word_but_not_a_shorter_one(monkeypatch):
     assert agents.check_agent(f"{base} посторонний [1].", [chunk], query)["status"] == agents.CONFIRMED
     held = {"text": chunk["text"] + " Выходной день указан отдельно.", "document_name": "pump.md", "section": ""}
     assert agents.check_agent(f"{base} выходной [1].", [held], query)["status"] == agents.CONFIRMED
+
+
+def test_check_asks_another_document_when_chunks_miss_the_question():
+    chunk = {"text": "Рабочее давление насоса равно 6 бар.", "document_name": "pump.md"}
+    verdict = agents.check_agent(
+        "Рабочее давление насоса равно 6 бар [1].",
+        [chunk],
+        "Где стоит гидроаккумулятор?",
+    )
+    assert verdict["status"] == agents.UNCONFIRMED
+    assert "документ" in (verdict["feedback"] or "").lower()
+
+
+def test_check_keeps_files_that_uniquely_match_the_question():
+    one = {
+        "text": "Колобок катится по дороге. Бабка испекла его для дома.",
+        "document_name": "one.docx",
+        "kb_name": "Один",
+        "kb_id": "o",
+        "chunk_index": 0,
+        "section": "",
+    }
+    two = {
+        "text": "Колобок лежит на окне. Дед просил испечь для дома.",
+        "document_name": "two.docx",
+        "kb_name": "Два",
+        "kb_id": "t",
+        "chunk_index": 0,
+        "section": "",
+    }
+    noise = {
+        "text": "Рабочее давление насоса равно 6 бар.",
+        "document_name": "pump.md",
+        "kb_name": "Документы",
+        "kb_id": "d",
+        "chunk_index": 0,
+        "section": "",
+    }
+    verdict = agents.check_agent(
+        "Бабка и дед испекли колобка для дома [2].",
+        [noise, one, two],
+        "Зачем бабка и дед испекли колобка?",
+    )
+    assert verdict["status"] == agents.CONFIRMED
+    names = {source["document_name"] for source in verdict["sources"]}
+    assert "pump.md" not in names
+    assert "one.docx" in names
+
+
+def test_check_allows_a_question_word_missing_from_the_index():
+    chunk = {"text": "Колобок катится и не слушает стариков.", "document_name": "one.docx", "section": ""}
+    verdict = agents.check_agent(
+        "Колобок является терпилой [1].",
+        [chunk],
+        "Кем является колобок? Отморозком или терпилой?",
+        known=lambda term: term != "терпилой",
+    )
+    assert verdict["status"] == agents.CONFIRMED
+
+
+def test_check_keeps_a_second_file_that_holds_the_same_fact():
+    pump = {
+        "text": "Рабочее давление насоса равно 6 бар в цехе.",
+        "document_name": "pump.md",
+        "section": "",
+        "chunk_index": 0,
+        "kb_id": "a",
+    }
+    stock = {
+        "text": "Рабочее давление насоса равно 6 бар на складе.",
+        "document_name": "stock.txt",
+        "section": "",
+        "chunk_index": 0,
+        "kb_id": "b",
+    }
+    verdict = agents.check_agent(
+        "Рабочее давление насоса равно 6 бар [1].",
+        [pump, stock],
+        "Какое давление у насоса?",
+    )
+    assert verdict["status"] == agents.CONFIRMED
+    assert {source["document_name"] for source in verdict["sources"]} == {"pump.md", "stock.txt"}

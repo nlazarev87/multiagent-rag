@@ -713,14 +713,43 @@ def test_code_only_followup_searches_the_latest_document(monkeypatch):
     coordinator.run("Н-12?", "code-follow")
     coordinator.run("Какое у него давление на Н-12?", "code-follow")
     assert seen == [
-        ("Сколько длится смена? Н-12? 8", ["charter.txt"]),
-        ("Сколько длится смена? Какое у него давление на Н-12? 8", ["charter.txt"]),
+        ("Сколько длится смена? Н-12? 8", None),
+        ("Сколько длится смена? Какое у него давление на Н-12? 8", None),
     ]
     shift["document_names"] = []
     dialog.set_dialog("code-follow", [pump, shift])
     coordinator.run("Н-12?", "code-follow")
     assert seen[-1] == ("Сколько длится смена? Н-12? 8", None)
     dialog.reset()
+
+
+def test_places_keeps_a_pronoun_followup_and_releases_a_new_name():
+    turn = {
+        "query": "Какой номер у цеха?",
+        "answer": "Цех имеет номер 4.",
+        "document_names": ["charter.txt"],
+        "places": [{"kb_id": "k", "document_name": "charter.txt"}],
+    }
+    assert coordinator._places([turn], "Сколько она длится?") == turn["places"]
+    assert coordinator._places([turn], "Где стоит гидроаккумулятор у него?") is None
+    assert coordinator._places([turn], "Сколько она длится?", "Возьми другой документ.") is None
+    refused = {**turn, "answer": agents.NO_ANSWER}
+    assert coordinator._places([refused], "Сколько она длится?") is None
+
+
+def test_finish_keeps_sources_without_a_citation_number(monkeypatch):
+    extra = {"number": 2, "document_name": "pump.md", "section": ""}
+    order = []
+    _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE, extra])])
+    monkeypatch.setattr(
+        coordinator,
+        "answer_agent",
+        lambda *_args: order.append("answer") or "Факт в тексте [1].",
+    )
+    result = coordinator.run("Какой номер у цеха?", "two-src")
+    assert result["answer"] == "Факт в тексте [1]."
+    assert [source["document_name"] for source in result["sources"]] == ["charter.txt", "pump.md"]
+    assert result["document_names"] == ["charter.txt", "pump.md"]
 
 
 def test_finish_drops_only_the_invalid_number_in_a_citation(monkeypatch):

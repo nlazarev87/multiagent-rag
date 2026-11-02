@@ -7,6 +7,7 @@ import access
 import auth
 import kb
 from api import app
+import coordinator
 from coordinator import run
 from agents import NO_ANSWER
 
@@ -260,6 +261,74 @@ def test_backfill_does_not_return_a_removed_action(tmp_path, monkeypatch):
     assert auth.user_content(admin["id"], kb.LEGACY_ID) == set()
 
 
+def test_access_screen_lists_people_and_roles_by_name(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    _admin, ivan, _maria = _people()
+    listed = client.get("/admin/kb").json()
+    assert "ivan" in [row["login"] for row in listed["people"]]
+    assert "Сотрудник" in [row["name"] for row in listed["roles"]]
+
+
+def test_opening_a_person_shows_the_base(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    _stub_index(monkeypatch)
+    monkeypatch.setattr("api.list_documents", lambda: ["secret.txt"])
+    _admin, ivan, maria = _people()
+    import store
+    other = kb.create("Разное")
+    store.upsert_at(other["chroma"], [{
+        "text": "личный файл",
+        "document_name": "mine.txt",
+        "chunk_index": 0,
+        "checksum": "m",
+        "section": "",
+    }])
+    sent = client.post(
+        f"/admin/kb/{other['id']}/allow",
+        json={"subject_type": "user", "subject_id": ivan["id"]},
+    )
+    assert sent.status_code == 200
+    assert auth.user_content(ivan["id"], other["id"]) == {"ask"}
+    person = TestClient(app)
+    person.post("/login", json={"login": "ivan", "password": "password12"})
+    listed = person.get("/documents").json()["documents"]
+    assert [row["kb_name"] for row in listed] == ["Разное"]
+    assert [row["name"] for row in listed] == ["mine.txt"]
+    twin = TestClient(app)
+    twin.post("/login", json={"login": "maria", "password": "password12"})
+    assert twin.get("/documents").json()["documents"] == []
+
+
+def test_opening_a_role_does_not_add_ask(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    _admin, ivan, _maria = _people()
+    other = kb.create("Разное")
+    sent = client.post(
+        f"/admin/kb/{other['id']}/allow",
+        json={"subject_type": "role", "subject_id": ivan["role_id"]},
+    )
+    assert sent.status_code == 200
+    assert auth.role_content(ivan["role_id"], other["id"]) == set()
+    assert access.opened(ivan, other["id"]) is True
+    assert access.can_see(ivan, other["id"]) is False
+
+
+def test_store_page_tree_refuses_a_folder_without_a_visible_base(tmp_path, monkeypatch):
+    from fastapi import HTTPException
+    import api
+    _client(tmp_path, monkeypatch)
+    role_id = auth.create_role("Гость")
+    auth.create_user("guest", "password12", role_id)
+    guest = auth.user_by_login("guest")
+    incoming = {"id": "root", "name": "", "children": [{"id": "f", "name": "Папка", "children": []}]}
+    try:
+        api._store_page_tree(guest, incoming)
+    except HTTPException as exc:
+        assert exc.status_code == 403
+        return
+    raise AssertionError("an empty-folder save without a base was accepted")
+
+
 def test_upload_on_a_role_needs_an_open_base(tmp_path, monkeypatch):
     _client(tmp_path, monkeypatch)
     _stub_index(monkeypatch)
@@ -332,6 +401,57 @@ def test_self_grant_opens_the_file_and_writes_two_events(tmp_path, monkeypatch):
     assert "access_allow" in kinds
     assert "personal_actions" in kinds
     assert "role_actions" not in kinds
+
+
+def test_role_upload_creates_a_personal_base_and_hides_legacy_files(tmp_path, monkeypatch):
+    _client(tmp_path, monkeypatch)
+    _stub_index(monkeypatch)
+    monkeypatch.setattr("api.ingest_dir", lambda folder: [])
+    monkeypatch.setattr("store.upsert_at", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("api.list_documents", lambda: ["secret.txt"])
+    _admin, ivan, maria = _people()
+    auth.update_role(ivan["role_id"], kb_actions={kb.LEGACY_ID: ["upload"]})
+    person = TestClient(app)
+    person.post("/login", json={"login": "ivan", "password": "password12"})
+    targets = person.get("/upload-targets").json()
+    assert targets["create"] is True
+    assert targets["bases"] == []
+    assert person.get("/documents").json()["documents"] == []
+    sent = person.post(
+        "/upload",
+        data={"new_name": "Личное"},
+        files=[("files", ("mine.txt", b"text", "text/plain"))],
+    )
+    assert sent.status_code == 200
+    names = [row["name"] for row in person.get("/upload-targets").json()["bases"]]
+    assert names == ["Личное"]
+    listed = [row["name"] for row in person.get("/documents").json()["documents"]]
+    assert "secret.txt" not in listed
+    twin = TestClient(app)
+    twin.post("/login", json={"login": "maria", "password": "password12"})
+    assert twin.get("/upload-targets").json()["bases"] == []
+    assert twin.get("/documents").json()["documents"] == []
+    refused = twin.post(
+        "/upload",
+        data={"kb_id": next(row["id"] for row in kb.list_kbs() if row["name"] == "Личное")},
+        files=[("files", ("no.txt", b"text", "text/plain"))],
+    )
+    assert refused.status_code == 403
+
+
+def test_new_base_without_upload_action_is_refused(tmp_path, monkeypatch):
+    _client(tmp_path, monkeypatch)
+    role_id = auth.create_role("Гость")
+    auth.create_user("guest", "password12", role_id)
+    person = TestClient(app)
+    person.post("/login", json={"login": "guest", "password": "password12"})
+    assert person.get("/upload-targets").json() == {"bases": [], "create": False}
+    refused = person.post(
+        "/upload",
+        data={"new_name": "Личное"},
+        files=[("files", ("mine.txt", b"text", "text/plain"))],
+    )
+    assert refused.status_code == 403
 
 
 def test_creator_sees_a_new_base_and_the_same_role_does_not(tmp_path, monkeypatch):
@@ -408,6 +528,167 @@ def test_follow_up_without_a_base_id_does_not_open_the_other_catalog(tmp_path, m
     assert other["id"] not in opened
     assert "секрет" not in " ".join(row["text"] for row in found)
     assert other["id"] in scope.skipped
+    store.reset()
+
+
+def test_rrf_keeps_bases_that_hold_a_rare_query_word():
+    docs = [
+        {"kb_id": "d", "kb_name": "Документы", "document_name": f"a{index}.docx", "chunk_index": 0, "text": f"является система {index}"}
+        for index in range(4)
+    ]
+    extra = [{"kb_id": "y", "kb_name": "Ещё", "document_name": "y.docx", "chunk_index": 0, "text": "является насос"}]
+    one = [{"kb_id": "o", "kb_name": "Один", "document_name": "one.docx", "chunk_index": 0, "text": "колобок катится по дороге"}]
+    two = [{"kb_id": "t", "kb_name": "Два", "document_name": "two.docx", "chunk_index": 0, "text": "колобок лежит на окне"}]
+    found = access._rrf_merge([docs, extra, one, two], 4, "Кем является колобок?")
+    keys = {(row["kb_id"], row["document_name"]) for row in found}
+    assert ("o", "one.docx") in keys
+    assert ("t", "two.docx") in keys
+
+
+def test_rrf_drops_a_file_that_only_matches_the_base_name():
+    docs = [{
+        "kb_id": "d",
+        "kb_name": "Документы",
+        "document_name": "impus.docx",
+        "chunk_index": 0,
+        "text": "Целью настоящего документа является описание решения.",
+    }]
+    tale = [
+        {
+            "kb_id": "o",
+            "kb_name": "Отморозок",
+            "document_name": "one.docx",
+            "chunk_index": 5,
+            "text": "Бабка с дедом стояли у ворот и звали.",
+        },
+        {
+            "kb_id": "o",
+            "kb_name": "Отморозок",
+            "document_name": "one.docx",
+            "chunk_index": 0,
+            "text": "Испеки, старуха, колобка. Не для еды — для дома.",
+        },
+    ]
+    other = [{
+        "kb_id": "r",
+        "kb_name": "Разное отморозка",
+        "document_name": "fin.docx",
+        "chunk_index": 0,
+        "text": "Чистый денежный поток уменьшился.",
+    }]
+    found = access._rrf_merge(
+        [docs, tale, other],
+        4,
+        "Кем является колобок? Отморозком или терпилой?",
+    )
+    names = {row["document_name"] for row in found}
+    assert "one.docx" in names
+    assert "fin.docx" not in names
+    assert "impus.docx" not in names
+
+
+def test_rrf_picks_the_chunk_that_holds_the_question_words():
+    ideas = [{
+        "kb_id": "d",
+        "kb_name": "Документы",
+        "document_name": "ideas.docx",
+        "chunk_index": 20,
+        "text": "отвечает на главные вопросы: «Зачем мне это?»",
+    }]
+    tale = [
+        {
+            "kb_id": "o",
+            "kb_name": "Один",
+            "document_name": "one.docx",
+            "chunk_index": 5,
+            "text": "чтоб он сам отвязался, довольный. Бабка с дедом пусть путь держат.",
+        },
+        {
+            "kb_id": "o",
+            "kb_name": "Один",
+            "document_name": "one.docx",
+            "chunk_index": 0,
+            "text": "Испеки, старуха, колобка. Не для еды — для дома.",
+        },
+    ]
+    two = [
+        {
+            "kb_id": "t",
+            "kb_name": "Два",
+            "document_name": "two.docx",
+            "chunk_index": 7,
+            "text": "Они же меня испекли. Бабка рассердится.",
+        },
+        {
+            "kb_id": "t",
+            "kb_name": "Два",
+            "document_name": "two.docx",
+            "chunk_index": 0,
+            "text": "Испеки колобка, чтоб было кому сказку на ночь.",
+        },
+    ]
+    found = access._rrf_merge(
+        [ideas, tale, two],
+        4,
+        "Зачем бабка и дед испекли колобка?",
+    )
+    names = {row["document_name"] for row in found}
+    assert "ideas.docx" not in names
+    assert names <= {"one.docx", "two.docx"}
+    assert any(row["document_name"] == "one.docx" and row["chunk_index"] == 0 for row in found)
+
+
+def test_rrf_keeps_hits_from_a_second_base():
+    left = [
+        {"kb_id": "a", "document_name": f"a{index}.txt", "chunk_index": 0, "text": f"насос {index}"}
+        for index in range(4)
+    ]
+    right = left + [{"kb_id": "b", "document_name": "b.txt", "chunk_index": 0, "text": "уникальное слово"}]
+    found = access._rrf_merge([left, right], 4)
+    assert found[0]["kb_id"] == "a"
+    assert {row["kb_id"] for row in found} == {"a", "b"}
+    assert sum(1 for row in found if row["document_name"].startswith("a")) <= 3
+
+
+def test_follow_up_with_a_new_name_searches_the_other_base(tmp_path, monkeypatch):
+    import store
+    monkeypatch.setattr(store, "CHROMA", tmp_path / "chroma")
+    _stub_index(monkeypatch)
+    store.reset()
+    _client(tmp_path, monkeypatch)
+    other = kb.create("Вторая")
+    admin = auth.user_by_login("admin")
+    auth.acl_add(other["id"], "user", admin["id"], "allow")
+    auth.set_user_content(admin["id"], other["id"], ["ask"])
+    store.upsert_chunks([{
+        "text": "насос альфа стоит в цехе",
+        "document_name": "a.txt",
+        "chunk_index": 0,
+        "checksum": "a",
+        "section": "",
+    }])
+    store.upsert_at(other["chroma"], [{
+        "text": "уникальное слово только здесь",
+        "document_name": "b.txt",
+        "chunk_index": 0,
+        "checksum": "b",
+        "section": "",
+    }])
+    scope = access.build_scope(admin)
+    previous = {
+        "query": "что сказано про насос",
+        "answer": "насос альфа стоит в цехе",
+        "document_names": ["a.txt"],
+        "places": [{"kb_id": kb.LEGACY_ID, "document_name": "a.txt"}],
+    }
+    pinned = coordinator._places([previous], "сколько он стоит?")
+    assert pinned == previous["places"]
+    held = scope.search("насос", 4, pinned)
+    assert {row["document_name"] for row in held} == {"a.txt"}
+    released = coordinator._places([previous], "где оно и уникальное слово?")
+    assert released is None
+    found = scope.search("уникальное слово", 4, released)
+    assert any(row["document_name"] == "b.txt" for row in found)
     store.reset()
 
 

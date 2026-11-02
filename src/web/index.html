@@ -402,6 +402,27 @@
     }
     .admin-body { flex: 1; overflow: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
     .admin-head { display: flex; gap: 8px; padding: 8px; border-bottom: 1px solid var(--line); }
+    .access-block { border: 1px solid var(--line2); border-radius: 8px; background: var(--editor); }
+    .access-block > summary {
+      cursor: pointer;
+      font-weight: 500;
+      padding: 8px 12px;
+      position: sticky;
+      top: 0;
+      background: var(--editor);
+      z-index: 1;
+    }
+    .access-tools { padding: 0 12px 8px; }
+    .access-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 8px;
+      padding: 6px 12px;
+      border-top: 1px solid var(--line);
+    }
+    .access-row .access-state { margin: 0; min-width: 12rem; flex: 1 1 10rem; }
+    .access-row label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -942,7 +963,6 @@
       docsTools.classList.toggle("hidden", agentOn);
       if (agentOn) return;
       paintTree();
-      if (treeFiles(tree).length) return;
       try {
         const data = await (await fetch("/documents", { signal: AbortSignal.timeout(8000) })).json();
         ensureTreeFiles(data.documents || []);
@@ -998,7 +1018,11 @@
             } catch (error) {
               return;
             }
-            if (!ok || treePending || treeDragging) continue;
+            if (!ok) {
+              if (data.detail) steps.append(element("p", "", data.detail));
+              continue;
+            }
+            if (treePending || treeDragging) continue;
             if (data.tree) tree = data.tree;
             paintTree();
           }
@@ -1141,6 +1165,7 @@
       folder.children = folder.children || [];
       folder.children.unshift({ id: crypto.randomUUID(), name: "Папка", children: [] });
       if (folder.id) closedFolders.delete(folder.id);
+      paintTree();
       persistTree();
     }
 
@@ -1821,58 +1846,110 @@
     });
     document.getElementById("admin-access").addEventListener("click", async () => {
       adminBody.replaceChildren();
-      field(adminBody, "p", "Остальные с вашей ролью эту базу не получат, пока им отдельно не откроют доступ и не включат действия.");
+      field(adminBody, "p", "«Открыть» человека показывает ему эту базу. Загружать, удалять и раскладывать — отдельные галочки. Роль сама базу не открывает.");
       const data = await (await fetch("/admin/kb")).json();
+      const people = data.people || [];
+      const roles = data.roles || [];
+      const groups = data.groups || [];
+      const contentLabel = { ask: "Спрашивать", upload: "Загружать", delete: "Удалять", arrange: "Раскладывать" };
+      const stateOf = (acl, type, id) => {
+        const rows = (acl || []).filter((row) => row.subject_type === type && row.subject_id === id);
+        if (rows.some((row) => row.effect === "deny")) return "закрыт";
+        if (rows.some((row) => row.effect === "allow")) return "открыт";
+        return "нет входа";
+      };
+      const filter = adminInput("База или человек");
+      adminBody.append(filter);
+      const mark = (label, title, state, boxes, openedUser) => {
+        label.textContent = title + " — " + state;
+        if (openedUser && boxes && boxes.ask) boxes.ask.checked = true;
+        loadUi(false);
+      };
+      const openSubject = (baseId, type, id, label, title, boxes) => async () => {
+        await sendJson("/admin/kb/" + baseId + "/deny", "DELETE", { subject_type: type, subject_id: id });
+        const sent = await sendJson("/admin/kb/" + baseId + "/allow", "POST", { subject_type: type, subject_id: id });
+        if (sent.ok) mark(label, title, "открыт", boxes, type === "user");
+        else field(adminBody, "p", sent.payload.detail || "Ошибка");
+      };
+      const closeSubject = (baseId, type, id, label, title) => async () => {
+        const sent = await sendJson("/admin/kb/" + baseId + "/deny", "POST", { subject_type: type, subject_id: id });
+        if (sent.ok) mark(label, title, "закрыт");
+        else field(adminBody, "p", sent.payload.detail || "Ошибка");
+      };
       (data.bases || []).forEach((base) => {
-        const block = document.createElement("div");
-        field(block, "p", base.name);
-        block.append(adminButton("Открыть себе", async () => {
+        const block = document.createElement("details");
+        block.className = "access-block";
+        block.setAttribute("data-search", (base.name || "").toLowerCase());
+        const head = document.createElement("summary");
+        head.textContent = base.name;
+        block.append(head);
+        const tools = document.createElement("div");
+        tools.className = "access-tools";
+        tools.append(adminButton("Открыть себе", async () => {
           const sent = await sendJson("/admin/kb/" + base.id + "/self", "POST");
-          if (sent.ok) document.getElementById("admin-access").click();
-          else field(adminBody, "p", sent.payload.detail || "Ошибка");
+          if (!sent.ok) {
+            field(block, "p", sent.payload.detail || "Ошибка");
+            return;
+          }
+          const mine = me && block.querySelector('[data-subject="user:' + me.id + '"]');
+          if (mine) {
+            const label = mine.querySelector(".access-state");
+            if (label) label.textContent = (me.login || "") + " — открыт";
+            mine.querySelectorAll("input[type=checkbox]").forEach((box) => { box.checked = true; });
+          }
+          loadUi(false);
         }));
-        if (base.personal) {
-          (base.acl || []).filter((row) => row.subject_type === "user" && row.effect === "allow").forEach((row) => {
-            const userId = row.subject_id;
-            const person = document.createElement("div");
-            field(person, "p", "Личные действия " + userId);
-            const boxes = {};
-            ["ask", "upload", "delete", "arrange"].forEach((action) => {
-              const item = checkboxLine(action, (base.personal[userId] || []).includes(action));
-              boxes[action] = item.box;
-              person.append(item.line);
-            });
-            person.append(adminButton("Записать личные", async () => {
-              const actions = ["ask", "upload", "delete", "arrange"].filter((action) => boxes[action].checked);
-              const sent = await sendJson("/admin/kb/" + base.id + "/people/" + userId + "/actions", "PUT", { actions: actions });
-              if (sent.ok) document.getElementById("admin-access").click();
-              else field(block, "p", sent.payload.detail || "Ошибка");
-            }));
-            block.append(person);
-          });
-        }
+        block.append(tools);
         if (base.acl) {
-          (base.acl || []).forEach((row) => field(block, "p", row.effect + " " + row.subject_type + " " + row.subject_id));
-          const kind = document.createElement("select");
-          ["user", "role", "group"].forEach((value) => {
-            const option = document.createElement("option");
-            option.value = value;
-            option.textContent = value;
-            kind.append(option);
+          const addLine = (kind, id, title, boxes) => {
+            const line = document.createElement("div");
+            line.className = "access-row";
+            line.setAttribute("data-subject", kind + ":" + id);
+            const label = field(line, "p", title + " — " + stateOf(base.acl, kind, id), "access-state");
+            line.append(adminButton("Открыть", openSubject(base.id, kind, id, label, title, boxes)));
+            line.append(adminButton("Закрыть", closeSubject(base.id, kind, id, label, title)));
+            return line;
+          };
+          roles.forEach((role) => block.append(addLine("role", role.id, "Роль " + role.name)));
+          groups.forEach((group) => block.append(addLine("group", group.id, "Группа " + group.name)));
+          people.forEach((person) => {
+            const boxes = {};
+            const line = addLine("user", person.id, person.login, boxes);
+            if (base.personal) {
+              ["ask", "upload", "delete", "arrange"].forEach((action) => {
+                const item = checkboxLine(contentLabel[action], (base.personal[person.id] || []).includes(action));
+                boxes[action] = item.box;
+                line.append(item.line);
+              });
+              line.append(adminButton("Записать личные", async () => {
+                const actions = ["ask", "upload", "delete", "arrange"].filter((action) => boxes[action].checked);
+                const sent = await sendJson("/admin/kb/" + base.id + "/people/" + person.id + "/actions", "PUT", { actions: actions });
+                if (!sent.ok) field(block, "p", sent.payload.detail || "Ошибка");
+                else loadUi(false);
+              }));
+            }
+            block.append(line);
           });
-          const subject = adminInput("id");
-          block.append(kind, subject, adminButton("Открыть", async () => {
-            const sent = await sendJson("/admin/kb/" + base.id + "/allow", "POST", { subject_type: kind.value, subject_id: subject.value });
-            if (sent.ok) document.getElementById("admin-access").click();
-            else field(adminBody, "p", sent.payload.detail || "Ошибка");
-          }), adminButton("Закрыть", async () => {
-            const sent = await sendJson("/admin/kb/" + base.id + "/deny", "POST", { subject_type: kind.value, subject_id: subject.value });
-            if (sent.ok) document.getElementById("admin-access").click();
-            else field(adminBody, "p", sent.payload.detail || "Ошибка");
-          }));
         }
         adminBody.append(block);
       });
+      const applyFilter = () => {
+        const query = filter.value.trim().toLowerCase();
+        adminBody.querySelectorAll("details.access-block").forEach((block) => {
+          const baseHit = !query || (block.getAttribute("data-search") || "").includes(query);
+          let rowHit = false;
+          block.querySelectorAll(".access-row").forEach((row) => {
+            const text = ((row.querySelector(".access-state") || {}).textContent || "").toLowerCase();
+            const hit = !query || baseHit || text.includes(query);
+            row.classList.toggle("hidden", Boolean(query) && !hit);
+            if (hit) rowHit = true;
+          });
+          const show = !query || baseHit || rowHit;
+          block.classList.toggle("hidden", !show);
+          if (query && show) block.open = true;
+        });
+      };
+      filter.addEventListener("input", applyFilter);
     });
 
     async function boot() {

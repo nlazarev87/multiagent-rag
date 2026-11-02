@@ -492,38 +492,112 @@ def _render(index, numbers):
     return "\n".join(lines)
 
 
-def _contexts(index, ranked, limit):
+def _slot_of(meta, key):
+    return (meta["document_name"], meta["group"]) if meta.get("group") else key
+
+
+def _context_row(index, numbers):
+    meta = index["metas"][numbers[0]]
+    kind = meta.get("kind", "text")
+    if meta.get("group"):
+        members = index["groups"].get((meta["document_name"], meta["group"]), [])
+        if any(index["metas"][number].get("kind") == "overview" for number in members):
+            kind = "overview"
+    return {
+        "id": index["ids"][numbers[0]],
+        "text": _render(index, numbers),
+        "document_name": meta["document_name"],
+        "chunk_index": meta["chunk_index"],
+        "section": meta.get("section", ""),
+        "kind": kind,
+    }
+
+
+def _rare_docs(index, query):
+    """Файлы, где слово вопроса встречается в одном-двух местах индекса."""
+    documents = list(index.get("vocabulary") or [])
+    if len(documents) < 2:
+        return []
+    frequency = index.get("frequency") or {}
+    found, seen = [], set()
+    for word in _words(query):
+        if len(word) < 5 or word in _STOP:
+            continue
+        stem = "s:" + _stem(word)
+        prefix = "p:" + word[:5]
+        holders = [
+            doc for doc in documents
+            if frequency.get(doc, {}).get(stem)
+            or frequency.get(doc, {}).get(prefix)
+            or word in (index["vocabulary"].get(doc) or ())
+        ]
+        if not holders or len(holders) > 2 or len(holders) >= len(documents):
+            continue
+        for doc in holders:
+            if doc not in seen:
+                seen.add(doc)
+                found.append(doc)
+    return found
+
+
+def _inject_rare(index, ranked, found, limit, query):
+    if not query or not found or not ranked:
+        return found
+    have = {item["document_name"] for item in found}
+    for doc in _rare_docs(index, query):
+        if doc in have:
+            continue
+        numbers, slot = [], None
+        for key in ranked:
+            number = index["position"].get(key)
+            if number is None:
+                continue
+            meta = index["metas"][number]
+            if meta.get("document_name") != doc:
+                continue
+            current = _slot_of(meta, key)
+            if slot is None:
+                slot = current
+            if current != slot:
+                continue
+            numbers.append(number)
+            if len(numbers) >= 3:
+                break
+        if not numbers:
+            continue
+        extra = _context_row(index, numbers)
+        names = [item["document_name"] for item in found]
+        replaced = False
+        for index_at in range(len(found) - 1, 0, -1):
+            if names.count(found[index_at]["document_name"]) > 1:
+                found[index_at] = extra
+                replaced = True
+                break
+        if not replaced:
+            if len(found) < limit:
+                found.append(extra)
+            else:
+                found[-1] = extra
+        have.add(doc)
+    return found
+
+
+def _contexts(index, ranked, limit, query=None):
     slots, order = {}, []
     for place, key in enumerate(ranked):
         if place >= limit * 3 and len(order) >= limit:
             break
         number = index["position"][key]
         meta = index["metas"][number]
-        slot = (meta["document_name"], meta["group"]) if meta.get("group") else key
+        slot = _slot_of(meta, key)
         if slot in slots:
             if place < limit * 3:
                 slots[slot].append(number)
         elif len(order) < limit:
             slots[slot] = [number]
             order.append(slot)
-    found = []
-    for slot in order:
-        numbers = slots[slot]
-        meta = index["metas"][numbers[0]]
-        kind = meta.get("kind", "text")
-        if meta.get("group"):
-            members = index["groups"].get((meta["document_name"], meta["group"]), [])
-            if any(index["metas"][number].get("kind") == "overview" for number in members):
-                kind = "overview"
-        found.append({
-            "id": index["ids"][numbers[0]],
-            "text": _render(index, numbers),
-            "document_name": meta["document_name"],
-            "chunk_index": meta["chunk_index"],
-            "section": meta.get("section", ""),
-            "kind": kind,
-        })
-    return found
+    found = [_context_row(index, slots[slot]) for slot in order]
+    return _inject_rare(index, ranked, found, limit, query)
 
 
 def _same_path(left, right):
@@ -636,4 +710,4 @@ def search_chunks(clear_query, limit=4, document_names=None):
         for key in _fuse(_lexical(index, clear_query, allowed), dense)
         if key in index["position"] and _meta_ok(index["metas"][index["position"][key]])
     ]
-    return _contexts(index, ranked, limit)
+    return _contexts(index, ranked, limit, clear_query)

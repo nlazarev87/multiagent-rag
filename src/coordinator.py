@@ -10,7 +10,7 @@ import re
 
 from langgraph.graph import END, StateGraph
 
-from agents import CONFIRMED, MISSING, NO_ANSWER, UNCONFIRMED, _count_ask, _dependent, _extra_rows, _from_overview, _trace, answer_agent, check_agent, clarify_agent, search_agent, select_agent
+from agents import CONFIRMED, MISSING, NO_ANSWER, UNCONFIRMED, _codes, _count_ask, _dependent, _extra_rows, _from_overview, _trace, _words, answer_agent, check_agent, clarify_agent, search_agent, select_agent
 from dialog import add_turn, get_dialog
 from settings import routing, runtime
 from store import known, list_documents
@@ -136,13 +136,60 @@ def _catalog_result(query, dialog_id, scope=None):
     return {"answer": answer, "status": CONFIRMED, "document_names": [], "sources": []}
 
 
-def _places(work, query):
+def _refused(answer):
+    mark = " ".join((NO_ANSWER or "").lower().replace("ё", "е").split()).rstrip(".")
+    return mark in " ".join((answer or "").lower().replace("ё", "е").split())
+
+
+def _place_tokens(text):
+    tokens = []
+    for word in _words(text or ""):
+        if word not in tokens:
+            tokens.append(word)
+    for code in _codes(text or ""):
+        if code not in tokens:
+            tokens.append(code)
+    return tokens
+
+
+def _token_in(blob, token):
+    key = (token or "").lower().replace("ё", "е")
+    if not key:
+        return False
+    if key in blob:
+        return True
+    parts = re.findall(r"[0-9a-zа-яё]{3,}", blob)
+    if len(key) >= 5:
+        stem = key[:5]
+        return any(part.startswith(stem) for part in parts)
+    return any(part == key or part.startswith(key) for part in parts)
+
+
+def _previous_blob(turn):
+    names = list(turn.get("document_names") or [])
+    places = " ".join(item.get("document_name") or "" for item in turn.get("places") or [])
+    texts = " ".join(
+        " ".join([source.get("text") or "", source.get("document_name") or ""])
+        for source in turn.get("sources") or []
+    )
+    return " ".join([turn.get("query") or "", turn.get("answer") or "", " ".join(names), places, texts]).lower().replace("ё", "е")
+
+
+def _places(work, query, feedback=""):
+    if "документ" in (feedback or "").lower():
+        return None
     if not work or not _dependent(query):
         return None
-    places = work[-1].get("places") or None
+    last = work[-1]
+    if _refused(last.get("answer") or ""):
+        return None
+    leftover = [token for token in _place_tokens(query) if not _token_in(_previous_blob(last), token)]
+    if leftover and (_codes(query) or len(leftover) > 1):
+        return None
+    places = last.get("places") or None
     if places:
         return places
-    names = work[-1].get("document_names") or None
+    names = last.get("document_names") or None
     if not names:
         return None
     return [{"kb_id": "", "document_name": name} for name in names]
@@ -191,14 +238,13 @@ def _run(query, dialog_id, scope):
         return state
 
     def search(state):
+        places = _places(state["work"], state["query"], state.get("feedback") or "")
         if scope is not None:
             limit = runtime().get("search_limit", 4)
-            state["chunks"] = scope.search(state["clear"], limit, _places(state["work"], state["query"]))
+            state["chunks"] = scope.search(state["clear"], limit, places)
             scope.found = list(state["chunks"])
             return state
-        names = None
-        if state["work"] and _dependent(state["query"]):
-            names = state["work"][-1].get("document_names") or None
+        names = [item.get("document_name") for item in places if item.get("document_name")] if places else None
         state["chunks"] = search_agent(state["clear"], names)
         return state
 
@@ -256,7 +302,12 @@ def _run(query, dialog_id, scope):
             if kb_id and name and (kb_id, name) not in seen:
                 places.append({"kb_id": kb_id, "document_name": name})
                 seen.add((kb_id, name))
-        turn = {"query": state["query"], "answer": state["answer"], "document_names": names}
+        turn = {
+            "query": state["query"],
+            "answer": state["answer"],
+            "document_names": names,
+            "sources": state["sources"],
+        }
         if places:
             turn["places"] = places
         add_turn(state["dialog_id"], turn)

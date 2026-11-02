@@ -323,7 +323,7 @@ def upload_targets(request: Request):
     rows = [row for row in kb.list_kbs() if access.can(user, row["id"], "upload")]
     return {
         "bases": [{"id": row["id"], "name": row["name"]} for row in rows],
-        "create": access.has_global(user, "create_kb"),
+        "create": access.can_create_on_upload(user),
     }
 
 
@@ -521,7 +521,7 @@ async def upload(request: Request = None, files: list[UploadFile] = File(None), 
     _user_upload = user
     target = kb_id
     if new_name:
-        if not access.has_global(user, "create_kb"):
+        if not access.can_create_on_upload(user):
             raise HTTPException(403, detail="Нет права создать базу")
         try:
             row = kb.create(new_name)
@@ -680,6 +680,8 @@ def _store_page_tree(user, incoming):
             targets.append((visible[0], node))
     else:
         targets.extend(_split_flat(visible, node, user))
+    if not targets and children:
+        raise HTTPException(403, detail="Нет права раскладывать папки")
     pending = []
     for row, tree in targets:
         names = _kb_file_names(row, user)
@@ -1048,7 +1050,12 @@ def admin_kb(request: Request):
                     for person in auth.list_users()
                 },
             })
-        return {"bases": bases}
+        return {
+            "bases": bases,
+            "people": [{"id": person["id"], "login": person["login"]} for person in auth.list_users()],
+            "roles": [{"id": role["id"], "name": role["name"]} for role in auth.list_roles()],
+            "groups": [{"id": group["id"], "name": group["name"]} for group in auth.list_groups()],
+        }
     if access.has_global(user, "manage_roles"):
         return {"bases": names}
     raise HTTPException(403, detail="Нет права")
@@ -1060,6 +1067,10 @@ def admin_allow(kb_id: str, body: AclBody, request: Request):
     _need(user, "manage_access")
     auth.acl_add(kb_id, body.subject_type, body.subject_id, "allow")
     audit.write("access_allow", user, {"kb_id": kb_id, "subject_type": body.subject_type, "subject_id": body.subject_id})
+    person = auth.user_by_id(body.subject_id) if body.subject_type == "user" else None
+    if person is not None and not (access.actions_for(person, kb_id) & set(auth.CONTENT_ACTIONS)):
+        auth.set_user_content(person["id"], kb_id, ["ask"])
+        audit.write("personal_actions", user, {"kb_id": kb_id, "user_id": person["id"], "actions": ["ask"]})
     return {"ok": True}
 
 
