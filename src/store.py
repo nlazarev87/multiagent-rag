@@ -15,9 +15,6 @@ from settings import runtime, where as route_where
 
 CHROMA = Path(os.environ.get("CHROMA_PATH", "data/chroma"))
 MODEL = Path(os.environ.get("EMBED_PATH", "data/models/multilingual-e5-small"))
-# Слоты, которые собирает _inject_rare, идут в _context_row без аргумента.
-# Переменная видна только на время _contexts и не меняет сигнатуру _inject_rare.
-_row_features = contextvars.ContextVar("store_row_features", default=None)
 CANDIDATES = 30
 CONTEXT = 260
 RRF = 5
@@ -508,7 +505,7 @@ def _slot_of(meta, key):
 
 def _context_row(index, numbers, features=None):
     if features is None:
-        features = _row_features.get()
+        features = runtime().get("features", {})
     meta = index["metas"][numbers[0]]
     kind = meta.get("kind", "text")
     if meta.get("group"):
@@ -525,102 +522,26 @@ def _context_row(index, numbers, features=None):
     }
 
 
-def _rare_docs(index, query):
-    """Файлы, где слово вопроса встречается в одном-двух местах индекса."""
-    documents = list(index.get("vocabulary") or [])
-    if len(documents) < 2:
-        return []
-    frequency = index.get("frequency") or {}
-    found, seen = [], set()
-    for word in _words(query):
-        if len(word) < 5 or word in _STOP:
-            continue
-        stem = "s:" + _stem(word)
-        prefix = "p:" + word[:5]
-        holders = [
-            doc for doc in documents
-            if frequency.get(doc, {}).get(stem)
-            or frequency.get(doc, {}).get(prefix)
-            or word in (index["vocabulary"].get(doc) or ())
-        ]
-        if not holders or len(holders) > 2 or len(holders) >= len(documents):
-            continue
-        for doc in holders:
-            if doc not in seen:
-                seen.add(doc)
-                found.append(doc)
-    return found
-
-
-def _inject_rare(index, ranked, found, limit, query):
-    if not query or not found or not ranked:
-        return found
-    have = {item["document_name"] for item in found}
-    for doc in _rare_docs(index, query):
-        if doc in have:
-            continue
-        numbers, slot = [], None
-        for key in ranked:
-            number = index["position"].get(key)
-            if number is None:
-                continue
-            meta = index["metas"][number]
-            if meta.get("document_name") != doc:
-                continue
-            current = _slot_of(meta, key)
-            if slot is None:
-                slot = current
-            if current != slot:
-                continue
-            numbers.append(number)
-            if len(numbers) >= 3:
-                break
-        if not numbers:
-            continue
-        extra = _context_row(index, numbers)
-        names = [item["document_name"] for item in found]
-        replaced = False
-        for index_at in range(len(found) - 1, 0, -1):
-            if names.count(found[index_at]["document_name"]) > 1:
-                found[index_at] = extra
-                replaced = True
-                break
-        if not replaced:
-            if len(found) < limit:
-                found.append(extra)
-            else:
-                found[-1] = extra
-        have.add(doc)
-    return found
-
-
-def _contexts(index, ranked, limit, query=None, features=None):
+def _contexts(index, ranked, limit, features=None):
     if features and not features.get("overview_rows", True):
         ranked = [
             key for key in ranked
             if index["metas"][index["position"][key]].get("kind") != "overview"
         ]
-    token = _row_features.set(features)
-    try:
-        slots, order = {}, []
-        for place, key in enumerate(ranked):
-            if place >= limit * 3 and len(order) >= limit:
-                break
-            number = index["position"][key]
-            meta = index["metas"][number]
-            slot = _slot_of(meta, key)
-            if slot in slots:
-                if place < limit * 3:
-                    slots[slot].append(number)
-            elif len(order) < limit:
-                slots[slot] = [number]
-                order.append(slot)
-        found = [_context_row(index, slots[slot], features=features) for slot in order]
-        if features is None or features.get("inject_rare", True):
-            found = _inject_rare(index, ranked, found, limit, query)
-        return found
-    finally:
-        _row_features.reset(token)
+    slots, order = {}, []
+    for place, key in enumerate(ranked):
+        if place >= limit * 3 and len(order) >= limit:
+            break
+        number = index["position"][key]
+        meta = index["metas"][number]
+        slot = _slot_of(meta, key)
+        if slot in slots:
+            if place < limit * 3:
+                slots[slot].append(number)
+        elif len(order) < limit:
+            slots[slot] = [number]
+            order.append(slot)
+    return [_context_row(index, slots[slot], features=features) for slot in order]
 
 
 def _same_path(left, right):
@@ -754,7 +675,7 @@ def search_chunks(clear_query, limit=4, document_names=None, debug=False, featur
         for key in fused_ids
         if key in index["position"] and _meta_ok(index["metas"][index["position"][key]])
     ]
-    slots = _contexts(index, ranked_ids, limit, clear_query, features=features)
+    slots = _contexts(index, ranked_ids, limit, features=features)
     if not debug:
         return slots
 

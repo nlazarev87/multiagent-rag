@@ -585,35 +585,6 @@ def test_contexts_collapse_one_table_into_a_single_slot(monkeypatch):
     assert found[1]["text"] == "B0"
 
 
-def test_contexts_keep_a_file_with_a_rare_query_word(monkeypatch):
-    monkeypatch.setattr(ingest, "count_tokens", lambda text: 1)
-    monkeypatch.setattr(store, "_context", lambda: 100)
-    stem = store._stem("гидроаккумулятор")
-    index = {
-        "ids": ["p0", "p1", "p2", "p3", "t0"],
-        "texts": ["насос в цехе", "насос на складе", "насос у входа", "насос в смене", "гидроаккумулятор на складе"],
-        "metas": [
-            {"document_name": "pump.md", "group": "", "kind": "text", "chunk_index": index, "section": "", "head": ""}
-            for index in range(4)
-        ] + [{"document_name": "tank.md", "group": "", "kind": "text", "chunk_index": 0, "section": "", "head": ""}],
-        "groups": {},
-        "position": {"p0": 0, "p1": 1, "p2": 2, "p3": 3, "t0": 4},
-        "vocabulary": {
-            "pump.md": {"насос", "цехе", "складе", "входа", "смене"},
-            "tank.md": {"гидроаккумулятор", "складе"},
-        },
-        "frequency": {
-            "pump.md": Counter({"s:насос": 4, "p:насос": 4}),
-            "tank.md": Counter({f"s:{stem}": 1, "p:гидро": 1}),
-        },
-    }
-    found = store._contexts(index, ["p0", "p1", "p2", "p3", "t0"], 4, "где стоит гидроаккумулятор")
-    assert found[0]["document_name"] == "pump.md"
-    assert any(row["document_name"] == "tank.md" for row in found)
-    packed = store._contexts(index, ["p0", "p1", "p2", "p3", "t0"], 4)
-    assert [row["document_name"] for row in packed] == ["pump.md"] * 4
-
-
 def test_fuse_ranks_a_shared_hit_above_a_single_list(monkeypatch):
     monkeypatch.setattr(store, "_rrf", lambda: 5)
     assert store._fuse(["b", "a"], ["a"]) == ["a", "b"]

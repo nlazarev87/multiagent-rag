@@ -13,7 +13,6 @@
   "span": 30,
   "search_limit": 4,
   "features": {
-    "inject_rare": true,
     "focus": true,
     "scope": true,
     "cover_latin": true,
