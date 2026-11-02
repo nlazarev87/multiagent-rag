@@ -15,6 +15,9 @@ from settings import runtime, where as route_where
 
 CHROMA = Path(os.environ.get("CHROMA_PATH", "data/chroma"))
 MODEL = Path(os.environ.get("EMBED_PATH", "data/models/multilingual-e5-small"))
+# Слоты, которые собирает _inject_rare, идут в _context_row без аргумента.
+# Переменная видна только на время _contexts и не меняет сигнатуру _inject_rare.
+_row_features = contextvars.ContextVar("store_row_features", default=None)
 CANDIDATES = 30
 CONTEXT = 260
 RRF = 5
@@ -461,25 +464,32 @@ def _body(index, number):
     return text[len(head) + 1:] if head and text.startswith(head) else text
 
 
-def _render(index, numbers):
+def _render(index, numbers, features=None):
     from ingest import count_tokens
     first = index["metas"][numbers[0]]
     if not first.get("group"):
         return "\n".join(index["texts"][number] for number in numbers)
     members = index["groups"][(first["document_name"], first["group"])]
     head = next((index["metas"][number].get("head") for number in members if index["metas"][number].get("head")), "")
-    always = {number for number in members if index["metas"][number].get("kind") in ("overview", "intro")}
+    _show_overview = features is None or features.get("overview_rows", True)
+    _kinds = ("overview", "intro") if _show_overview else ("intro",)
+    always = {number for number in members if index["metas"][number].get("kind") in _kinds}
     chosen = set(numbers) | always
     size = (count_tokens(head) if head else 0) + sum(count_tokens(_body(index, number)) for number in chosen)
     places = [members.index(number) for number in numbers if number in members]
-    for distance in range(1, len(members)):
-        for place in places:
-            for neighbour in (place - distance, place + distance):
-                if 0 <= neighbour < len(members) and members[neighbour] not in chosen:
-                    cost = count_tokens(_body(index, members[neighbour]))
-                    if size + cost <= _context():
-                        chosen.add(members[neighbour])
-                        size += cost
+    _show_neighbors = features is None or features.get("table_neighbors", True)
+    if _show_neighbors:
+        for distance in range(1, len(members)):
+            for place in places:
+                for neighbour in (place - distance, place + distance):
+                    if 0 <= neighbour < len(members) and members[neighbour] not in chosen:
+                        # Сосед-обзор иначе возвращает строку «Разных значений» в слот.
+                        if not _show_overview and index["metas"][members[neighbour]].get("kind") == "overview":
+                            continue
+                        cost = count_tokens(_body(index, members[neighbour]))
+                        if size + cost <= _context():
+                            chosen.add(members[neighbour])
+                            size += cost
     kinds = {number: index["metas"][number].get("kind") for number in members}
     ordered = []
     for kind in ("table", "intro", "overview"):
@@ -496,7 +506,9 @@ def _slot_of(meta, key):
     return (meta["document_name"], meta["group"]) if meta.get("group") else key
 
 
-def _context_row(index, numbers):
+def _context_row(index, numbers, features=None):
+    if features is None:
+        features = _row_features.get()
     meta = index["metas"][numbers[0]]
     kind = meta.get("kind", "text")
     if meta.get("group"):
@@ -505,7 +517,7 @@ def _context_row(index, numbers):
             kind = "overview"
     return {
         "id": index["ids"][numbers[0]],
-        "text": _render(index, numbers),
+        "text": _render(index, numbers, features=features),
         "document_name": meta["document_name"],
         "chunk_index": meta["chunk_index"],
         "section": meta.get("section", ""),
@@ -582,22 +594,33 @@ def _inject_rare(index, ranked, found, limit, query):
     return found
 
 
-def _contexts(index, ranked, limit, query=None):
-    slots, order = {}, []
-    for place, key in enumerate(ranked):
-        if place >= limit * 3 and len(order) >= limit:
-            break
-        number = index["position"][key]
-        meta = index["metas"][number]
-        slot = _slot_of(meta, key)
-        if slot in slots:
-            if place < limit * 3:
-                slots[slot].append(number)
-        elif len(order) < limit:
-            slots[slot] = [number]
-            order.append(slot)
-    found = [_context_row(index, slots[slot]) for slot in order]
-    return _inject_rare(index, ranked, found, limit, query)
+def _contexts(index, ranked, limit, query=None, features=None):
+    if features and not features.get("overview_rows", True):
+        ranked = [
+            key for key in ranked
+            if index["metas"][index["position"][key]].get("kind") != "overview"
+        ]
+    token = _row_features.set(features)
+    try:
+        slots, order = {}, []
+        for place, key in enumerate(ranked):
+            if place >= limit * 3 and len(order) >= limit:
+                break
+            number = index["position"][key]
+            meta = index["metas"][number]
+            slot = _slot_of(meta, key)
+            if slot in slots:
+                if place < limit * 3:
+                    slots[slot].append(number)
+            elif len(order) < limit:
+                slots[slot] = [number]
+                order.append(slot)
+        found = [_context_row(index, slots[slot], features=features) for slot in order]
+        if features is None or features.get("inject_rare", True):
+            found = _inject_rare(index, ranked, found, limit, query)
+        return found
+    finally:
+        _row_features.reset(token)
 
 
 def _same_path(left, right):
@@ -689,12 +712,15 @@ def known_permit(permit, term):
     return _read_permit(permit, lambda: known_at(permit.chroma, term))
 
 
-def search_chunks(clear_query, limit=4, document_names=None, debug=False):
+def search_chunks(clear_query, limit=4, document_names=None, debug=False, features=None):
     """Вернуть не больше limit кусков. Имена ограничивают поиск уже выбранными файлами.
 
     Пустой список означает весь индекс: третьим аргументом его не передают.
     debug=True отдаёт сырые списки id и слоты. Без него ответ — прежний список слотов.
+    features=None берёт флаги из config/runtime.json. Пропущенный ключ остаётся включённым.
     """
+    if features is None:
+        features = runtime().get("features", {})
     global calls
     calls += 1
     col, total, index = _open_index()
@@ -708,20 +734,27 @@ def search_chunks(clear_query, limit=4, document_names=None, debug=False):
                 "scope_used": None,
             }
         return []
-    allowed = scope(index, clear_query)
+    if features.get("scope", True):
+        allowed = scope(index, clear_query)
+    else:
+        allowed = None
     if document_names:
         present = [name for name in document_names if name in index["vocabulary"]]
         if present:
             allowed = present
     raw_lexical_ids = _lexical(index, clear_query, allowed)
-    raw_dense_ids = _dense(col, _focus(clear_query, allowed), allowed, total)
+    if features.get("focus", True):
+        focus_query = _focus(clear_query, allowed)
+    else:
+        focus_query = clear_query
+    raw_dense_ids = _dense(col, focus_query, allowed, total)
     fused_ids = _fuse(raw_lexical_ids, raw_dense_ids)
     ranked_ids = [
         key
         for key in fused_ids
         if key in index["position"] and _meta_ok(index["metas"][index["position"][key]])
     ]
-    slots = _contexts(index, ranked_ids, limit, clear_query)
+    slots = _contexts(index, ranked_ids, limit, clear_query, features=features)
     if not debug:
         return slots
 
