@@ -81,12 +81,12 @@ def visible_documents(user):
     for item in kb.list_kbs():
         if not can_see(user, item["id"]):
             continue
+        permit = issue_see(user, item["id"])
+        if permit is None or not permit.confirm():
+            continue
         if item["legacy"]:
             names = store.list_documents()
         else:
-            permit = issue_see(user, item["id"])
-            if permit is None:
-                continue
             try:
                 names = store.list_permit(permit)
             except PermissionError:

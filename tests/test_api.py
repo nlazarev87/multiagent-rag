@@ -111,6 +111,20 @@ def test_upload_lists_document(tmp_path, monkeypatch):
     assert "before_id" in page.text
     assert 'id="status" class="hidden"' in page.text and "z-index: 6" in page.text
     assert "response.status === 401" in page.text
+    assert 'adminButton("Обновить", () => load())' in page.text
+    assert "request.status === 401" in page.text
+    assert "showGate();" in page.text
+
+
+def test_list_and_preview_stop_when_the_second_check_fails(monkeypatch):
+    monkeypatch.setattr("api.list_documents", lambda: ["secret.txt"])
+    monkeypatch.setattr("api.chunks_for_document", lambda name: [{"text": "секрет", "chunk_index": 0, "section": ""}])
+    monkeypatch.setattr("permit.Permit.confirm", lambda self: False)
+    client = TestClient(app)
+    assert client.get("/documents").json()["documents"] == []
+    refused = client.get("/kb/00000000-0000-4000-8000-000000000001/documents/secret.txt/preview")
+    assert refused.status_code == 404
+    assert "секрет" not in refused.text
 
 
 def _token_count(monkeypatch):
