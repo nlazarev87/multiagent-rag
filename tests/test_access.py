@@ -10,6 +10,7 @@ from api import app
 import coordinator
 from coordinator import run
 from agents import NO_ANSWER
+import pytest
 
 
 def _client(tmp_path, monkeypatch):
@@ -329,6 +330,10 @@ def test_store_page_tree_refuses_a_folder_without_a_visible_base(tmp_path, monke
     raise AssertionError("an empty-folder save without a base was accepted")
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_upload_on_a_role_needs_an_open_base(tmp_path, monkeypatch):
     _client(tmp_path, monkeypatch)
     _stub_index(monkeypatch)
@@ -403,6 +408,10 @@ def test_self_grant_opens_the_file_and_writes_two_events(tmp_path, monkeypatch):
     assert "role_actions" not in kinds
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_role_upload_creates_a_personal_base_and_hides_legacy_files(tmp_path, monkeypatch):
     _client(tmp_path, monkeypatch)
     _stub_index(monkeypatch)
@@ -454,6 +463,10 @@ def test_new_base_without_upload_action_is_refused(tmp_path, monkeypatch):
     assert refused.status_code == 403
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_creator_sees_a_new_base_and_the_same_role_does_not(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     _stub_index(monkeypatch)

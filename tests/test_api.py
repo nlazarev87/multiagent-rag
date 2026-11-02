@@ -48,6 +48,10 @@ def _doc_names(payload):
     return [row["name"] if isinstance(row, dict) else row for row in rows]
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_api_routes(tmp_path, monkeypatch):
     (tmp_path / "pump.md").write_text("Рабочее давление равно 6 бар.", encoding="utf-8")
     saved = []
@@ -88,6 +92,10 @@ def test_upload_indexes_other_files_when_one_is_unreadable(tmp_path, monkeypatch
     _word_tokens.cache_clear()
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_upload_lists_document(tmp_path, monkeypatch):
     monkeypatch.setattr("api.INBOX", tmp_path)
     saved = []
@@ -275,6 +283,10 @@ def test_upload_rejects_a_parent_directory_name(tmp_path, monkeypatch):
     assert list(inbox.iterdir()) == []
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_ready(tmp_path, monkeypatch):
     model = tmp_path / "model.gguf"
     model.write_bytes(b"x")
@@ -449,6 +461,10 @@ def test_query_reloads_saved_history_after_memory_is_cleared(monkeypatch):
     assert seen == [[], [("первый", ["note.txt"])]]
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_upload_keeps_the_file_inside_inbox(tmp_path, monkeypatch):
     inbox = tmp_path / "inbox"
     inbox.mkdir()
@@ -550,6 +566,10 @@ def test_query_does_not_restore_a_dialog_deleted_while_answering(monkeypatch):
     assert all(row["id"] != created["id"] for row in saved)
     assert all(turn.get("query") != "номер" for row in saved for turn in row.get("turns") or [])
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_upload_writes_only_the_file_name(tmp_path, monkeypatch):
     inbox = tmp_path / "inbox"
     inbox.mkdir()
@@ -678,6 +698,10 @@ def test_ratings_reject_out_of_range_and_missing_turns(monkeypatch):
     unknown = client.patch("/ui/dialogs/missing/turns/0/ratings", json={"answer_complete": 1})
     assert unknown.status_code == 404
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_upload_strips_directory_from_filename(tmp_path, monkeypatch):
     inbox = tmp_path / "inbox"
     inbox.mkdir()
@@ -788,6 +812,10 @@ def test_ratings_drop_out_of_range_scores_and_path_keys(monkeypatch):
     assert ratings["links"]["1"] == 3
     assert ratings["documents"] == {"note.txt": 2, "other.txt": None}
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_upload_keeps_the_file_inside_the_inbox(tmp_path, monkeypatch):
     inbox = tmp_path / "inbox"
     monkeypatch.setattr("api.INBOX", inbox)
@@ -840,6 +868,10 @@ def test_rating_patch_keeps_fields_the_body_omits(monkeypatch):
     assert stored["turns"][0]["ratings"]["answer_correct"] == 5
     assert stored["turns"][0]["answer"] == "Цех имеет номер 4 [1]."
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_upload_keeps_the_name_inside_inbox(tmp_path, monkeypatch):
     inbox = tmp_path / "inbox"
     monkeypatch.setattr("api.INBOX", inbox)

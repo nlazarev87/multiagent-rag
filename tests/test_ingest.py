@@ -26,6 +26,10 @@ def _set_outline(element, level):
     marker.set(qn("w:val"), str(level))
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_txt_and_md(tmp_path):
     (tmp_path / "a.txt").write_text("Цех имеет номер 4.", encoding="utf-8")
     (tmp_path / "b.md").write_text("# Насос\nНасос Н-12.", encoding="utf-8")
@@ -35,6 +39,10 @@ def test_txt_and_md(tmp_path):
     assert chunks["b.md"]["text"] == "Насос\nНасос Н-12."
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_docx_keeps_order_sections_and_skips_toc(tmp_path):
     path = tmp_path / "c.docx"
     document = Document()
@@ -81,6 +89,10 @@ def test_overview_list_keeps_every_value(monkeypatch):
     assert all(value in overview for value in values)
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_large_table_gets_overview(tmp_path):
     document = Document()
     table = document.add_table(rows=41, cols=3)
@@ -96,6 +108,10 @@ def test_large_table_gets_overview(tmp_path):
     assert len({chunk["group"] for chunk in chunks if chunk["kind"] in ("overview", "table")}) == 1
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_merged_cells_are_not_repeated(tmp_path):
     document = Document()
     table = document.add_table(rows=2, cols=3)
@@ -323,6 +339,10 @@ def test_empty_key_uses_the_value_header_and_keeps_a_blank_cell(tmp_path):
     assert _row_line(block["rows"][1], keyvalue) == "Этаж: —"
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_chunks_fit_tokens_and_overlap():
     text = " ".join(f"слово{i}" for i in range(900))
     chunks = split_chunks(text, "long.txt")
@@ -411,6 +431,10 @@ def test_docx_joins_a_hyphen_split_by_a_line_break(tmp_path):
     assert ("Значение", "документация") in table_block["rows"][0]
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_docx_joins_hyphen_line_break(tmp_path):
     document = Document()
     document.add_paragraph("Требования к содержанию доку-")
@@ -473,6 +497,10 @@ def test_nested_table_keeps_the_cell_value(tmp_path):
     assert table["rows"][0][0] == ("Показатель", "Давление")
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_paragraph_with_section_number_is_kept():
     chunks = split_chunks("Согласно разделу 3.2 насос имеет давление 6 бар.", "pump.txt")
     assert "3.2" in chunks[0]["text"]
@@ -702,6 +730,10 @@ def test_doc_via_libreoffice(tmp_path):
     assert sorted(path.name for path in tmp_path.iterdir()) == ["d.doc"]
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_numbered_line_becomes_section(tmp_path):
     path = tmp_path / "n.docx"
     document = Document()

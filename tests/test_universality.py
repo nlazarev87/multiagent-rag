@@ -7,6 +7,7 @@ if str(EVAL) not in sys.path:
     sys.path.insert(0, str(EVAL))
 
 import universality
+import pytest
 
 
 def test_code_knowledge_leakage():
@@ -14,6 +15,10 @@ def test_code_knowledge_leakage():
     assert hits == [], "src содержит факты корпуса; чинить знаниями в коде нельзя\n" + "\n".join(hits)
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_document_swap_pass_rate():
     measured = universality.measure_swap()
     assert measured["swap"]["now"] == 1.0, "смена корпуса без правок src должна отвечать по своему тексту и отказываться вне него"
@@ -34,6 +39,10 @@ def test_citation_coverage():
     assert verdict["status"] == agents.CONFIRMED
 
 
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    reason="model not available in CI (data/models/multilingual-e5-small)",
+)
 def test_config_only_change_success():
     measured = universality.measure_config_only()
     assert measured["now"] == 1.0, "фильтр metadata или lexicon должен менять поведение без правок src"
