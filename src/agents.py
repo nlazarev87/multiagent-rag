@@ -17,6 +17,7 @@ NO_ANSWER = "В документах нет ответа."
 CONFIRMED = "подтверждён"
 UNCONFIRMED = "не подтверждён"
 MISSING = "нет ответа"
+WRONG_DOC = "Возьми другой документ: в найденном тексте нет слов вопроса."
 SYSTEM = TASK = YES_NO = RETRY = COPIED = INVERT = LIST_GAP = DEFINE = ""
 PROMPT_TOKENS = 1500
 SPAN = 30
@@ -617,11 +618,13 @@ def _facts(answer):
 
 def _specific(query):
     found = []
-    for position, match in enumerate(_TOKEN.finditer(query)):
+    for position, match in enumerate(_TOKEN.finditer(query or "")):
         token = match.group(0)
         latin = any("a" <= ch.lower() <= "z" for ch in token)
         upper = sum(ch.isupper() for ch in token) >= 2
-        named = position > 0 and token[:1].isupper()
+        before = (query or "")[:match.start()].rstrip()
+        sentence_start = position == 0 or not before or before[-1] in ".?!…:"
+        named = (not sentence_start) and token[:1].isupper()
         if latin or upper or named or any(ch.isdigit() for ch in token):
             found.append(token)
     return found
@@ -2029,7 +2032,18 @@ def _section_code_conflict(chunk, wanted):
     return bool(section_codes) and not (section_codes & wanted)
 
 
-def _keep_cited(used, scores, facts, bodies):
+def _file_key(chunk):
+    return (chunk.get("kb_id"), chunk.get("document_name"))
+
+
+def _other_file(chunks, number, kept):
+    if not chunks or not kept:
+        return False
+    key = _file_key(chunks[number - 1])
+    return all(_file_key(chunks[item - 1]) != key for item in kept)
+
+
+def _keep_cited(used, scores, facts, bodies, chunks=None):
     if len(used) < 2:
         return used
     best = max(scores[number - 1] for number in used)
@@ -2037,7 +2051,12 @@ def _keep_cited(used, scores, facts, bodies):
     covered = set()
     kept = []
     for number in ranked:
-        if best and scores[number - 1] * 2 < best:
+        if len(kept) >= 4:
+            break
+        weak = best and scores[number - 1] * 2 < best
+        other = _other_file(chunks, number, kept)
+        grounds = any(_grounded(fact, bodies[number - 1]) for fact in facts) if facts else bool(scores[number - 1])
+        if weak and not (other and grounds):
             continue
         owned = []
         for fact in facts:
@@ -2045,19 +2064,61 @@ def _keep_cited(used, scores, facts, bodies):
                 continue
             owned.append(fact[1])
         if facts and not owned and scores[number - 1] != best:
-            continue
+            if not (other and grounds):
+                continue
         if not facts and kept and scores[number - 1] != best:
-            continue
+            if not other:
+                continue
         kept.append(number)
         covered.update(owned)
     return kept or [ranked[0]]
+
+
+def _asked_marks(query):
+    marks = []
+    for word in _words(query):
+        if word not in marks:
+            marks.append(word)
+    for code in _codes(query):
+        if code not in marks:
+            marks.append(code)
+    return marks
+
+
+def _mark_in(blob, parts, mark):
+    key = _case(mark)
+    if not key:
+        return False
+    if key in blob:
+        return True
+    if len(key) >= 5:
+        stem = key[:5]
+        return any(part.startswith(stem) for part in parts)
+    return any(part == key or part.startswith(key) for part in parts)
+
+
+def _query_in_found(query, chunks):
+    marks = [mark for mark in _asked_marks(query) if not any(ch.isdigit() for ch in mark)]
+    if not marks:
+        return True
+    blob = _case(" ".join(
+        " ".join([
+            chunk.get("text") or "",
+            chunk.get("document_name") or "",
+            (chunk.get("document_name") or "").rsplit(".", 1)[0],
+        ])
+        for chunk in chunks or []
+    ))
+    parts = re.findall(r"[0-9a-zа-яё]{3,}", blob)
+    return any(_mark_in(blob, parts, mark) for mark in marks)
 
 
 def check_agent(answer, chunks, query="", known=None):
     """Подтвердить ответ по найденному тексту или вернуть отзыв. Модель не вызывается."""
     text = answer.strip()
     known = known or (lambda _term: True)
-    absent = [token for token in _specific(query) if not known(_flat(token))]
+    specific = _specific(query)
+    absent = [token for token in specific if not known(_flat(token))]
     if not chunks or not text or absent or _flat(NO_ANSWER).rstrip(".") in _flat(text):
         return _verdict(MISSING)
     flats = [_flat(chunk["text"]) for chunk in chunks]
@@ -2097,6 +2158,7 @@ def check_agent(answer, chunks, query="", known=None):
         return _verdict(UNCONFIRMED, missing, feedback)
     words = [("stem", word) for word in _words(re.sub(r"\[[\d,\s]+\]", " ", text)) if len(word) >= 5]
     asked_stems = {word[:5] for word in _words(asked) if len(word) >= 5}
+    asked_stems.update(word[:5] for word in _words(query) if len(word) >= 5)
     extra = [word for word in words if word[1][:5] not in asked_stems]
     example_stems = {
         word[:5]
@@ -2130,5 +2192,24 @@ def check_agent(answer, chunks, query="", known=None):
         coded = [number for number in used if not _section_code_conflict(chunks[number - 1], wanted)]
         if coded:
             used = coded
-    used = _keep_cited(used, scores, facts, bodies)
-    return _verdict(CONFIRMED, sources=[_source(number, chunks[number - 1]) for number in sorted(used)])
+    used_files = {_file_key(chunks[number - 1]) for number in used} if used else set()
+    best = max(scores) if scores else 0
+    for number, score in enumerate(scores, 1):
+        if number in used or len(used) >= 4:
+            continue
+        key = _file_key(chunks[number - 1])
+        if key in used_files:
+            continue
+        if facts:
+            if not any(_grounded(fact, bodies[number - 1]) for fact in facts):
+                continue
+        elif not score or (best and score * 2 < best):
+            continue
+        used.append(number)
+        used_files.add(key)
+    used = _keep_cited(used, scores, facts, bodies, chunks)
+    held = [chunks[number - 1] for number in used] or chunks
+    if not _query_in_found(query, held):
+        return _verdict(UNCONFIRMED, feedback=WRONG_DOC)
+    sources = [_source(number, chunks[number - 1]) for number in sorted(used)]
+    return _verdict(CONFIRMED, sources=sources)

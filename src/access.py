@@ -6,6 +6,7 @@ from permit import Permit, sign
 CONTENT = auth.CONTENT_ACTIONS
 
 
+
 def _subjects(user):
     pairs = [("user", user["id"]), ("role", user["role_id"])]
     for group_id in auth.group_ids_for(user):
@@ -53,7 +54,7 @@ def can_create_on_upload(user):
 
 
 def issue_see(user, kb_id):
-    """Допуск на чтение списка или текста: хватает любого из четырёх действий."""
+    """Допуск на чтение списка или текста: хватает любого из ask, upload, delete, arrange."""
     for action in CONTENT:
         permit = issue(user, kb_id, action)
         if permit is not None:
@@ -124,7 +125,162 @@ def denied_by_role_or_group(user, kb_id):
     return any((row["subject_type"], row["subject_id"]) in subjects and row["effect"] == "deny" for row in rows)
 
 
-def _rrf_merge(rankings, limit):
+def _file_key(chunk):
+    return (chunk.get("kb_id") or "", chunk.get("document_name") or "")
+
+
+def _content_blob(chunk):
+    return " ".join([
+        chunk.get("text") or "",
+        chunk.get("document_name") or "",
+    ]).lower().replace("ё", "е")
+
+
+def _query_marks(query):
+    import re
+    return re.findall(r"[0-9a-zа-яё]{5,}", (query or "").lower().replace("ё", "е"))
+
+
+def _binding_marks(query):
+    import store
+    skip = store._STOP | {
+        "является", "являться", "являясь", "являются", "являлся", "являлась",
+        "зачем", "почему", "отчего", "поэтому", "затем", "значит",
+    }
+    return [mark for mark in _query_marks(query) if mark not in skip]
+
+
+def _mark_in_blob(blob, mark):
+    if not mark:
+        return False
+    if mark in blob:
+        return True
+    return len(mark) >= 5 and mark[:5] in blob
+
+
+def _mark_weight(chunk, marks):
+    blob = (chunk.get("text") or "").lower().replace("ё", "е")
+    return sum(len(mark) for mark in marks or [] if _mark_in_blob(blob, mark))
+
+
+def _file_chunks(rankings, key):
+    found, seen = [], set()
+    for ranking in rankings or []:
+        for chunk in ranking:
+            if _file_key(chunk) != key:
+                continue
+            ident = chunk.get("chunk_index") or 0
+            if ident in seen:
+                continue
+            seen.add(ident)
+            found.append(chunk)
+    return found
+
+
+def _binding_chunks(rankings, query):
+    """Файлы, где слово вопроса есть только в одном-двух найденных файлах."""
+    marks = _binding_marks(query)
+    if not marks or not rankings:
+        return []
+    picked, seen = [], set()
+    for mark in marks:
+        holders, holder_files = [], set()
+        for ranking in rankings:
+            for chunk in ranking:
+                key = _file_key(chunk)
+                if key in holder_files:
+                    continue
+                if not _mark_in_blob(_content_blob(chunk), mark):
+                    continue
+                holder_files.add(key)
+                holders.append(chunk)
+        if not (1 <= len(holders) <= 2):
+            continue
+        for hit in holders:
+            key = _file_key(hit)
+            if key in seen:
+                continue
+            seen.add(key)
+            picked.append(hit)
+    return picked
+
+
+def _spread_hits(chunks, limit, kbs=None, bound=None, rankings=None, marks=None):
+    """Не больше двух кусков на файл. Файл с редким словом вопроса не вытесняется."""
+    if limit <= 0 or not chunks:
+        return []
+    per_file = {}
+    chosen = []
+    taken = set()
+    place = {}
+    for index, chunk in enumerate(chunks):
+        ident = (*_file_key(chunk), chunk.get("chunk_index") or 0)
+        place.setdefault(ident, index)
+
+    def add(chunk):
+        if len(chosen) >= limit:
+            return False
+        ident = (*_file_key(chunk), chunk.get("chunk_index") or 0)
+        if ident in taken:
+            return False
+        key = _file_key(chunk)
+        if per_file.get(key, 0) >= 2:
+            return False
+        chosen.append(chunk)
+        taken.add(ident)
+        per_file[key] = per_file.get(key, 0) + 1
+        return True
+
+    for seed in bound or []:
+        key = _file_key(seed)
+        pool = _file_chunks(rankings, key) or [seed]
+        pool.sort(key=lambda chunk: (
+            -_mark_weight(chunk, marks),
+            place.get((*_file_key(chunk), chunk.get("chunk_index") or 0), 10 ** 9),
+        ))
+        for chunk in pool:
+            if per_file.get(key, 0) >= 2:
+                break
+            add(chunk)
+    rare = {_file_key(chunk) for chunk in bound or []}
+    for chunk in chunks:
+        if len(chosen) >= limit:
+            break
+        if rare and _file_key(chunk) not in rare and _mark_weight(chunk, marks) <= 0:
+            continue
+        add(chunk)
+    wanted = []
+    if bound:
+        for chunk in bound:
+            kb_id = chunk.get("kb_id") or ""
+            if kb_id and kb_id not in wanted:
+                wanted.append(kb_id)
+    else:
+        for kb_id in kbs or []:
+            if kb_id and kb_id not in wanted:
+                wanted.append(kb_id)
+    present = {chunk.get("kb_id") or "" for chunk in chosen}
+    for kb_id in wanted:
+        if kb_id in present:
+            continue
+        extra = next((chunk for chunk in chunks if (chunk.get("kb_id") or "") == kb_id), None)
+        if extra is None:
+            continue
+        swapped = False
+        for index in range(len(chosen) - 1, 0, -1):
+            other = chosen[index].get("kb_id") or ""
+            if sum(1 for item in chosen if (item.get("kb_id") or "") == other) > 1:
+                chosen[index] = extra
+                present.add(kb_id)
+                swapped = True
+                break
+        if not swapped and len(chosen) < limit:
+            chosen.append(extra)
+            present.add(kb_id)
+    return chosen[:limit]
+
+
+def _rrf_merge(rankings, limit, query=""):
     import store
     from settings import runtime
     width = runtime().get("rrf", store._rrf())
@@ -140,8 +296,15 @@ def _rrf_merge(rankings, limit):
             )
             score[key] = score.get(key, 0) + 1 / (width + place)
             meta[key] = chunk
-    ordered = sorted(score, key=lambda key: (-score[key], key[0], key[1], key[2]))
-    return [meta[key] for key in ordered[:limit]]
+    ordered = [meta[key] for key in sorted(score, key=lambda key: (-score[key], key[0], key[1], key[2]))]
+    kbs = []
+    for ranking in rankings:
+        for chunk in ranking:
+            kb_id = chunk.get("kb_id") or ""
+            if kb_id and kb_id not in kbs:
+                kbs.append(kb_id)
+    bound = _binding_chunks(rankings, query)
+    return _spread_hits(ordered, limit, kbs, bound, rankings, _binding_marks(query))
 
 
 def build_scope(user):
@@ -228,7 +391,8 @@ def build_scope(user):
         if not kbs:
             return []
         if len(kbs) == 1:
-            return _one(kbs[0], clear, limit, places)
+            chosen = _one(kbs[0], clear, limit, places)
+            return chosen
         depth = runtime().get("candidates", 30)
         rankings = []
         for kb_id in kbs:
@@ -238,8 +402,10 @@ def build_scope(user):
         if not rankings:
             return []
         if len(rankings) == 1:
-            return rankings[0][:limit]
-        return _rrf_merge(rankings, limit)
+            chosen = rankings[0][:limit]
+            return chosen
+        merged = _rrf_merge(rankings, limit, clear)
+        return merged
 
     def word(term):
         for kb_id in list(used):
