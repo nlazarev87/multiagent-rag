@@ -689,25 +689,63 @@ def known_permit(permit, term):
     return _read_permit(permit, lambda: known_at(permit.chroma, term))
 
 
-def search_chunks(clear_query, limit=4, document_names=None):
+def search_chunks(clear_query, limit=4, document_names=None, debug=False):
     """Вернуть не больше limit кусков. Имена ограничивают поиск уже выбранными файлами.
 
     Пустой список означает весь индекс: третьим аргументом его не передают.
+    debug=True отдаёт сырые списки id и слоты. Без него ответ — прежний список слотов.
     """
     global calls
     calls += 1
     col, total, index = _open_index()
     if index is None:
+        if debug:
+            return {
+                "slots": [],
+                "raw_lexical": [],
+                "raw_dense": [],
+                "ranked": [],
+                "scope_used": None,
+            }
         return []
     allowed = scope(index, clear_query)
     if document_names:
         present = [name for name in document_names if name in index["vocabulary"]]
         if present:
             allowed = present
-    dense = _dense(col, _focus(clear_query, allowed), allowed, total)
-    ranked = [
+    raw_lexical_ids = _lexical(index, clear_query, allowed)
+    raw_dense_ids = _dense(col, _focus(clear_query, allowed), allowed, total)
+    fused_ids = _fuse(raw_lexical_ids, raw_dense_ids)
+    ranked_ids = [
         key
-        for key in _fuse(_lexical(index, clear_query, allowed), dense)
+        for key in fused_ids
         if key in index["position"] and _meta_ok(index["metas"][index["position"][key]])
     ]
-    return _contexts(index, ranked, limit, clear_query)
+    slots = _contexts(index, ranked_ids, limit, clear_query)
+    if not debug:
+        return slots
+
+    def _materialize(ids):
+        out = []
+        for key in ids:
+            pos = index["position"].get(key)
+            if pos is None:
+                continue
+            meta = index["metas"][pos]
+            out.append({
+                "id": key,
+                "text": index["texts"][pos],
+                "document_name": meta.get("document_name"),
+                "chunk_index": meta.get("chunk_index"),
+                "section": meta.get("section"),
+                "kind": meta.get("kind"),
+            })
+        return out
+
+    return {
+        "slots": slots,
+        "raw_lexical": _materialize(raw_lexical_ids),
+        "raw_dense": _materialize(raw_dense_ids),
+        "ranked": _materialize(ranked_ids),
+        "scope_used": allowed,
+    }

@@ -56,6 +56,26 @@ def test_per_question_present(fresh_run):
     assert not missing, f"per_question missing fields: {missing}"
 
 
+def test_per_question_has_staged_fields(fresh_run):
+    pq = fresh_run.get("_per_question", [])
+    assert pq, "no per_question entries"
+    required = {
+        "candidate_hit", "fusion_hit_12", "fusion_hit_4",
+        "stage_lost", "raw_lexical_rank", "raw_dense_rank", "ranked_rank",
+    }
+    missing = required - set(pq[0].keys())
+    assert not missing, f"per_question missing staged fields: {missing}"
+
+
+def test_stage_lost_values(fresh_run):
+    pq = fresh_run.get("_per_question", [])
+    valid = {None, "retrieval", "filter", "contexts"}
+    for q in pq:
+        assert q["stage_lost"] in valid, (
+            f"invalid stage_lost {q['stage_lost']!r} for {q['id']}"
+        )
+
+
 def test_n_questions_matches_floors(fresh_run, floors):
     pq = fresh_run["_per_question"]
     n_dev = sum(1 for q in pq if q["split"] == "dev")
@@ -90,3 +110,42 @@ def test_metric_above_floor(fresh_run, floors, metric):
         f"Промахи hit1 (первые 10): {detail}. "
         f"Подробности: tests/eval/last.json → _per_question"
     )
+
+
+@pytest.mark.parametrize("metric", [
+    "search_retrieval_recall",
+    "search_fusion_recall_at_30",
+    "search_fusion_recall_at_12",
+    "search_fusion_recall_at_4",
+])
+def test_staged_metric_above_floor(fresh_run, floors, metric):
+    card = fresh_run.get(metric)
+    assert card is not None, f"metric {metric} not in output"
+    assert card["now"] >= floors[metric]["floor"], (
+        f"{metric} = {card['now']:.4f} < floor {floors[metric]['floor']:.4f}"
+    )
+
+
+def test_per_question_has_five_boolean_levels(fresh_run):
+    pq = fresh_run.get("_per_question", [])
+    assert pq, "no per_question entries"
+    required = {"in_retrieval", "in_ranked_30", "in_ranked_12", "in_ranked_4", "in_slots"}
+    missing = required - set(pq[0].keys())
+    assert not missing, f"per_question missing boolean levels: {missing}"
+
+
+def test_invariants(fresh_run):
+    pq = fresh_run.get("_per_question", [])
+    for q in pq:
+        assert q["in_slots"] or not q["in_ranked_4"], (
+            f"{q['id']}: in_ranked_4={q['in_ranked_4']} but in_slots={q['in_slots']} — impossible"
+        )
+        assert (not q["in_ranked_30"]) or q["in_retrieval"], (
+            f"{q['id']}: in_ranked_30 but not in_retrieval — fuse/meta lost it"
+        )
+        assert (not q["in_ranked_12"]) or q["in_ranked_30"], (
+            f"{q['id']}: in_ranked_12 but not in_ranked_30"
+        )
+        assert (not q["in_ranked_4"]) or q["in_ranked_12"], (
+            f"{q['id']}: in_ranked_4 but not in_ranked_12"
+        )
