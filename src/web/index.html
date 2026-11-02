@@ -998,7 +998,11 @@
             } catch (error) {
               return;
             }
-            if (!ok || treePending || treeDragging) continue;
+            if (!ok) {
+              if (data.detail) steps.append(element("p", "", data.detail));
+              continue;
+            }
+            if (treePending || treeDragging) continue;
             if (data.tree) tree = data.tree;
             paintTree();
           }
@@ -1141,6 +1145,7 @@
       folder.children = folder.children || [];
       folder.children.unshift({ id: crypto.randomUUID(), name: "Папка", children: [] });
       if (folder.id) closedFolders.delete(folder.id);
+      paintTree();
       persistTree();
     }
 
@@ -1823,53 +1828,71 @@
       adminBody.replaceChildren();
       field(adminBody, "p", "Остальные с вашей ролью эту базу не получат, пока им отдельно не откроют доступ и не включат действия.");
       const data = await (await fetch("/admin/kb")).json();
+      const people = data.people || [];
+      const roles = data.roles || [];
+      const groups = data.groups || [];
+      const stateOf = (acl, type, id) => {
+        const rows = (acl || []).filter((row) => row.subject_type === type && row.subject_id === id);
+        if (rows.some((row) => row.effect === "deny")) return "закрыт";
+        if (rows.some((row) => row.effect === "allow")) return "открыт";
+        return "нет входа";
+      };
+      const reload = () => document.getElementById("admin-access").click();
+      const openSubject = (baseId, type, id) => async () => {
+        await sendJson("/admin/kb/" + baseId + "/deny", "DELETE", { subject_type: type, subject_id: id });
+        const sent = await sendJson("/admin/kb/" + baseId + "/allow", "POST", { subject_type: type, subject_id: id });
+        if (sent.ok) reload();
+        else field(adminBody, "p", sent.payload.detail || "Ошибка");
+      };
+      const closeSubject = (baseId, type, id) => async () => {
+        const sent = await sendJson("/admin/kb/" + baseId + "/deny", "POST", { subject_type: type, subject_id: id });
+        if (sent.ok) reload();
+        else field(adminBody, "p", sent.payload.detail || "Ошибка");
+      };
       (data.bases || []).forEach((base) => {
         const block = document.createElement("div");
         field(block, "p", base.name);
         block.append(adminButton("Открыть себе", async () => {
           const sent = await sendJson("/admin/kb/" + base.id + "/self", "POST");
-          if (sent.ok) document.getElementById("admin-access").click();
+          if (sent.ok) reload();
           else field(adminBody, "p", sent.payload.detail || "Ошибка");
         }));
-        if (base.personal) {
-          (base.acl || []).filter((row) => row.subject_type === "user" && row.effect === "allow").forEach((row) => {
-            const userId = row.subject_id;
-            const person = document.createElement("div");
-            field(person, "p", "Личные действия " + userId);
-            const boxes = {};
-            ["ask", "upload", "delete", "arrange"].forEach((action) => {
-              const item = checkboxLine(action, (base.personal[userId] || []).includes(action));
-              boxes[action] = item.box;
-              person.append(item.line);
-            });
-            person.append(adminButton("Записать личные", async () => {
-              const actions = ["ask", "upload", "delete", "arrange"].filter((action) => boxes[action].checked);
-              const sent = await sendJson("/admin/kb/" + base.id + "/people/" + userId + "/actions", "PUT", { actions: actions });
-              if (sent.ok) document.getElementById("admin-access").click();
-              else field(block, "p", sent.payload.detail || "Ошибка");
-            }));
-            block.append(person);
-          });
-        }
         if (base.acl) {
-          (base.acl || []).forEach((row) => field(block, "p", row.effect + " " + row.subject_type + " " + row.subject_id));
-          const kind = document.createElement("select");
-          ["user", "role", "group"].forEach((value) => {
-            const option = document.createElement("option");
-            option.value = value;
-            option.textContent = value;
-            kind.append(option);
+          roles.forEach((role) => {
+            const line = document.createElement("div");
+            field(line, "p", "Роль " + role.name + " — " + stateOf(base.acl, "role", role.id));
+            line.append(adminButton("Открыть", openSubject(base.id, "role", role.id)));
+            line.append(adminButton("Закрыть", closeSubject(base.id, "role", role.id)));
+            block.append(line);
           });
-          const subject = adminInput("id");
-          block.append(kind, subject, adminButton("Открыть", async () => {
-            const sent = await sendJson("/admin/kb/" + base.id + "/allow", "POST", { subject_type: kind.value, subject_id: subject.value });
-            if (sent.ok) document.getElementById("admin-access").click();
-            else field(adminBody, "p", sent.payload.detail || "Ошибка");
-          }), adminButton("Закрыть", async () => {
-            const sent = await sendJson("/admin/kb/" + base.id + "/deny", "POST", { subject_type: kind.value, subject_id: subject.value });
-            if (sent.ok) document.getElementById("admin-access").click();
-            else field(adminBody, "p", sent.payload.detail || "Ошибка");
-          }));
+          groups.forEach((group) => {
+            const line = document.createElement("div");
+            field(line, "p", "Группа " + group.name + " — " + stateOf(base.acl, "group", group.id));
+            line.append(adminButton("Открыть", openSubject(base.id, "group", group.id)));
+            line.append(adminButton("Закрыть", closeSubject(base.id, "group", group.id)));
+            block.append(line);
+          });
+          people.forEach((person) => {
+            const line = document.createElement("div");
+            field(line, "p", person.login + " — " + stateOf(base.acl, "user", person.id));
+            line.append(adminButton("Открыть", openSubject(base.id, "user", person.id)));
+            line.append(adminButton("Закрыть", closeSubject(base.id, "user", person.id)));
+            if (base.personal) {
+              const boxes = {};
+              ["ask", "upload", "delete", "arrange"].forEach((action) => {
+                const item = checkboxLine(action, (base.personal[person.id] || []).includes(action));
+                boxes[action] = item.box;
+                line.append(item.line);
+              });
+              line.append(adminButton("Записать личные", async () => {
+                const actions = ["ask", "upload", "delete", "arrange"].filter((action) => boxes[action].checked);
+                const sent = await sendJson("/admin/kb/" + base.id + "/people/" + person.id + "/actions", "PUT", { actions: actions });
+                if (sent.ok) reload();
+                else field(block, "p", sent.payload.detail || "Ошибка");
+              }));
+            }
+            block.append(line);
+          });
         }
         adminBody.append(block);
       });

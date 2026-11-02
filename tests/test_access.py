@@ -260,6 +260,30 @@ def test_backfill_does_not_return_a_removed_action(tmp_path, monkeypatch):
     assert auth.user_content(admin["id"], kb.LEGACY_ID) == set()
 
 
+def test_access_screen_lists_people_and_roles_by_name(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    _admin, ivan, _maria = _people()
+    listed = client.get("/admin/kb").json()
+    assert "ivan" in [row["login"] for row in listed["people"]]
+    assert "Сотрудник" in [row["name"] for row in listed["roles"]]
+
+
+def test_store_page_tree_refuses_a_folder_without_a_visible_base(tmp_path, monkeypatch):
+    from fastapi import HTTPException
+    import api
+    _client(tmp_path, monkeypatch)
+    role_id = auth.create_role("Гость")
+    auth.create_user("guest", "password12", role_id)
+    guest = auth.user_by_login("guest")
+    incoming = {"id": "root", "name": "", "children": [{"id": "f", "name": "Папка", "children": []}]}
+    try:
+        api._store_page_tree(guest, incoming)
+    except HTTPException as exc:
+        assert exc.status_code == 403
+        return
+    raise AssertionError("an empty-folder save without a base was accepted")
+
+
 def test_upload_on_a_role_needs_an_open_base(tmp_path, monkeypatch):
     _client(tmp_path, monkeypatch)
     _stub_index(monkeypatch)
@@ -332,6 +356,57 @@ def test_self_grant_opens_the_file_and_writes_two_events(tmp_path, monkeypatch):
     assert "access_allow" in kinds
     assert "personal_actions" in kinds
     assert "role_actions" not in kinds
+
+
+def test_role_upload_creates_a_personal_base_and_hides_legacy_files(tmp_path, monkeypatch):
+    _client(tmp_path, monkeypatch)
+    _stub_index(monkeypatch)
+    monkeypatch.setattr("api.ingest_dir", lambda folder: [])
+    monkeypatch.setattr("store.upsert_at", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("api.list_documents", lambda: ["secret.txt"])
+    _admin, ivan, maria = _people()
+    auth.update_role(ivan["role_id"], kb_actions={kb.LEGACY_ID: ["upload"]})
+    person = TestClient(app)
+    person.post("/login", json={"login": "ivan", "password": "password12"})
+    targets = person.get("/upload-targets").json()
+    assert targets["create"] is True
+    assert targets["bases"] == []
+    assert person.get("/documents").json()["documents"] == []
+    sent = person.post(
+        "/upload",
+        data={"new_name": "Личное"},
+        files=[("files", ("mine.txt", b"text", "text/plain"))],
+    )
+    assert sent.status_code == 200
+    names = [row["name"] for row in person.get("/upload-targets").json()["bases"]]
+    assert names == ["Личное"]
+    listed = [row["name"] for row in person.get("/documents").json()["documents"]]
+    assert "secret.txt" not in listed
+    twin = TestClient(app)
+    twin.post("/login", json={"login": "maria", "password": "password12"})
+    assert twin.get("/upload-targets").json()["bases"] == []
+    assert twin.get("/documents").json()["documents"] == []
+    refused = twin.post(
+        "/upload",
+        data={"kb_id": next(row["id"] for row in kb.list_kbs() if row["name"] == "Личное")},
+        files=[("files", ("no.txt", b"text", "text/plain"))],
+    )
+    assert refused.status_code == 403
+
+
+def test_new_base_without_upload_action_is_refused(tmp_path, monkeypatch):
+    _client(tmp_path, monkeypatch)
+    role_id = auth.create_role("Гость")
+    auth.create_user("guest", "password12", role_id)
+    person = TestClient(app)
+    person.post("/login", json={"login": "guest", "password": "password12"})
+    assert person.get("/upload-targets").json() == {"bases": [], "create": False}
+    refused = person.post(
+        "/upload",
+        data={"new_name": "Личное"},
+        files=[("files", ("mine.txt", b"text", "text/plain"))],
+    )
+    assert refused.status_code == 403
 
 
 def test_creator_sees_a_new_base_and_the_same_role_does_not(tmp_path, monkeypatch):

@@ -41,6 +41,17 @@ def has_global(user, action):
     return user is not None and action in (user.get("actions") or [])
 
 
+def has_content(user, action):
+    """Действие на любой базе, без проверки входа. Нужно, чтобы создать свою базу при загрузке."""
+    if user is None or action not in CONTENT:
+        return False
+    return any(action in actions_for(user, row["id"]) for row in kb.list_kbs())
+
+
+def can_create_on_upload(user):
+    return has_global(user, "create_kb") or has_content(user, "upload")
+
+
 def issue_see(user, kb_id):
     """Допуск на чтение списка или текста: хватает любого из четырёх действий."""
     for action in CONTENT:
