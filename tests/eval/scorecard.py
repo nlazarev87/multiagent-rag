@@ -311,6 +311,7 @@ def measure_search(holdout=True, existing=None):
     try:
         items = _questions()
         cards = {}
+        per_question = []
         for split, suffix in (("dev", "dev"), ("holdout", "holdout")):
             if split == "holdout" and not holdout:
                 continue
@@ -321,9 +322,10 @@ def measure_search(holdout=True, existing=None):
             overview_hits = overview_n = 0
             times = []
             for item in rows:
-                start = time.perf_counter()
+                _start = time.perf_counter()
                 chunks = store.search_chunks(item["query"], 4)
-                times.append((time.perf_counter() - start) * 1000)
+                _latency = (time.perf_counter() - _start) * 1000
+                times.append(_latency)
                 rank = _first_needed_rank(item, chunks)
                 if rank is not None and rank <= 4:
                     hit4 += 1
@@ -334,15 +336,31 @@ def measure_search(holdout=True, existing=None):
                         print(f"search miss hit1 {item['id']} rank={rank}", flush=True)
                 elif split == "dev":
                     print(f"search miss hit4 {item['id']} rank={rank}", flush=True)
+                _doc_hit = None
                 if item.get("document") not in (None, "*"):
                     if chunks:
-                        doc_scores.append(sum(chunk["document_name"] == item["document"] for chunk in chunks) / len(chunks))
+                        _doc_hit = sum(chunk["document_name"] == item["document"] for chunk in chunks) / len(chunks)
+                        doc_scores.append(_doc_hit)
+                    else:
+                        _doc_hit = 0.0
                 if item.get("together"):
                     together_n += 1
                     together_hits += int(any(all(_flat(phrase) in _flat(chunk["text"]) for phrase in item["together"]) for chunk in chunks))
                 if split == "dev" and _is_overview_query(item["query"]):
                     overview_n += 1
                     overview_hits += int(any(chunk.get("kind") == "overview" for chunk in chunks))
+                per_question.append({
+                    "id": item["id"],
+                    "split": split,
+                    "document": item.get("document"),
+                    "best_rank": rank,
+                    "is_hit1": rank == 1,
+                    "is_hit4": rank is not None and rank <= 4,
+                    "mrr_contribution": (1.0 / rank) if (rank and rank <= 4) else 0.0,
+                    "doc_p4": _doc_hit,
+                    "search_latency_ms": _latency,
+                    "ok": rank is not None and rank <= 4,
+                })
             cards.update(card(f"search_hit4_{suffix}", _rate(hit4, len(rows)), len(rows), hits=int(hit4)))
             if split == "dev":
                 cards.update(card("search_hit1_dev", _rate(hit1, len(rows)), len(rows), hits=int(hit1)))
@@ -355,6 +373,9 @@ def measure_search(holdout=True, existing=None):
                 if FLOORS.exists() and "search_latency_ms" in _load(FLOORS):
                     best = min(latency, _load(FLOORS)["search_latency_ms"]["best"])
                 cards.update(card("search_latency_ms", latency, len(rows), best=best))
+        cards["_per_question"] = per_question
+        cards["_n_questions_search"] = len(per_question)
+        cards["_n_questions_total"] = len(items)
         return cards
     finally:
         if saved is not None:
@@ -865,19 +886,10 @@ def measure(nodes, holdout=False):
     return cards
 
 
-def _merge_last(cards):
-    current = _load(LAST) if LAST.exists() else {}
-    for key, item in cards.items():
-        prev = current.get(key)
-        direction = item.get("direction") or _direction(key)
-        if prev:
-            if direction == "higher" and item["now"] + 1e-12 < prev["now"]:
-                continue
-            if direction == "lower" and item["now"] > prev["now"] + 1e-12:
-                continue
-        current[key] = item
-    _dump(LAST, current)
-    return current
+def _persist_measurement(cards):
+    """Всегда записывает текущий прогон в last.json."""
+    _dump(LAST, cards)
+    return cards
 
 
 def write_floors(cards, raise_only=False):
@@ -913,6 +925,8 @@ def write_floors(cards, raise_only=False):
 def compare(floors, latest, keys=None):
     violations = []
     for key, item in floors.items():
+        if key.startswith("_") or not isinstance(item, dict):
+            continue
         if keys is not None and key not in keys:
             continue
         if item.get("n") == 0:
@@ -942,6 +956,7 @@ def compare(floors, latest, keys=None):
 
 
 def print_report(cards):
+    cards = {key: item for key, item in cards.items() if isinstance(item, dict) and "now" in item}
     groups = []
     seen = set()
     for key in list(cards):
@@ -1002,6 +1017,7 @@ def main(argv=None):
     previous = _load(LAST) if LAST.exists() else {}
     run = dict(previous)
     run.update(cards)
+    _persist_measurement(run)
     floors = _load(FLOORS) if FLOORS.exists() else {}
     bad = compare(floors, run) if floors else []
     quality_bad = [line for line in bad if line.split(":")[0] not in TIME_KEYS]
@@ -1010,7 +1026,6 @@ def main(argv=None):
         for line in quality_bad:
             print(line, flush=True)
     if not quality_bad:
-        _merge_last(cards)
         if args.write_floors or args.raise_floors:
             write_floors(cards, raise_only=args.raise_floors)
     elif args.write_floors:
