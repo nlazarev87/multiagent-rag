@@ -298,23 +298,36 @@ def _run(query, dialog_id, scope, features=None):
         names = None
         if places:
             names = [item.get("document_name") for item in places if item.get("document_name")] or None
-        # Один проход поиска. Второй search_chunks(debug=True) открыл бы другой
-        # индекс при допуске и удвоил время. Заметки пишет сам search_chunks.
+        # Заметки пишет сам поиск. Второй вызов с debug=True здесь не нужен:
+        # при допуске он открыл бы другой индекс. Если имена прошлого хода
+        # ничего не дали, один повтор без имён идёт тем же вызовом, что и первый.
         token = search_notes_begin()
+        fallback_used = False
         try:
             if scope is not None:
                 limit = runtime().get("search_limit", 4)
                 state["chunks"] = scope.search(state["clear"], limit, places)
-                scope.found = list(state["chunks"])
+                if not state["chunks"] and names:
+                    fallback_used = True
+                    state["chunks"] = scope.search(state["clear"], limit, None)
+                scope.found = list(state["chunks"] or [])
             else:
                 state["chunks"] = search_agent(state["clear"], names)
+                if not state["chunks"] and names:
+                    fallback_used = True
+                    state["chunks"] = search_agent(state["clear"], None)
             notes = search_notes_end(token)
             token = None
         except Exception:
             if token is not None:
                 search_notes_end(token)
-            _step("search", started, output_summary={"error": True})
+            _step(
+                "search", started,
+                output_summary={"error": True, "fallback_used": fallback_used},
+                extra={"search_fallback_used": fallback_used},
+            )
             raise
+        state["search_fallback_used"] = fallback_used
         chunks = [item for item in (state.get("chunks") or []) if isinstance(item, dict)]
         docs = []
         for item in chunks:
@@ -341,6 +354,7 @@ def _run(query, dialog_id, scope, features=None):
                 "chunks_returned": len(chunks),
                 "top_ids": [item.get("id") for item in chunks if item.get("id")],
                 "top_docs": docs,
+                "fallback_used": fallback_used,
             },
             extra={
                 "clear_query": state.get("clear"),
@@ -348,6 +362,7 @@ def _run(query, dialog_id, scope, features=None):
                 "allowed": allowed,
                 "ranked_count": ranked_count,
                 "bases_queried": bases,
+                "search_fallback_used": fallback_used,
             },
         )
         return state
