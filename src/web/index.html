@@ -28,6 +28,12 @@
       --wash: rgba(20,20,28,.055);
       --focus: rgba(20,20,28,.10);
       --focus-ring: rgba(79,70,229,.28);
+      /* Алиасы (мокап-нейминг) */
+      --bg: #ECECEF;
+      --paper: #FFFFFF;
+      --paper-2: #FAFAFC;
+      --line-2: #ECECF0;
+      --line-3: #D4D4DB;
       /* Акцент и семантика */
       --link: #2B59C3;
       --btn: #4F46E5;
@@ -58,6 +64,44 @@
       font-size: 13px;
       font-weight: 400;
       line-height: 1.4;
+    }
+    body[data-theme="dark"] {
+      --chrome: #101014;
+      --panel: #17171C;
+      --editor: #1C1C22;
+      --sink: #141419;
+      --bg: #101014;
+      --paper: #1C1C22;
+      --paper-2: #22222A;
+      --fg: #E7E7EC;
+      --fg2: #B4B4C0;
+      --fg3: #85858F;
+      --fg4: #5C5C66;
+      --line: #2A2A33;
+      --line2: #23232B;
+      --line3: #33333E;
+      --line-2: #23232B;
+      --line-3: #33333E;
+      --wash: rgba(255,255,255,.05);
+      --focus: rgba(255,255,255,.09);
+      --focus-ring: rgba(129,122,255,.38);
+      --link: #7FA0E8;
+      --btn: #7B74F5;
+      --btn-hover: #8F89F7;
+      --accent: #7B74F5;
+      --accent-hover: #8F89F7;
+      --accent-soft: #26204A;
+      --accent-soft-2: #2E2757;
+      --ready: #35C069;
+      --ready-soft: #12301F;
+      --hit: rgba(255,200,60,.20);
+      --danger: #F0635A;
+      --danger-soft: #3A1615;
+      --warn: #E0A23B;
+      --warn-soft: #33270F;
+      --shadow-1: 0 1px 2px rgba(0,0,0,.35);
+      --shadow-2: 0 2px 12px rgba(0,0,0,.35);
+      --shadow-3: 0 14px 40px rgba(0,0,0,.5);
     }
     .shell {
       display: grid;
@@ -940,7 +984,7 @@
       </div>
     </section>
   </main>
-  <footer id="status" class="hidden"><span class="dot" id="ready-dot"></span><span id="readiness">Модель загружается…</span><span class="sb-spacer"></span><span id="status-login"></span><span id="status-role"></span></footer>
+  <footer id="status" class="hidden"><span class="dot" id="ready-dot"></span><span id="readiness">Модель загружается…</span><span class="sb-spacer"></span><span id="status-login"></span><span id="status-role"></span><button type="button" id="theme-toggle" title="Переключить тему" aria-label="Переключить тему">☾</button></footer>
   <script>
     const shell = document.getElementById("shell");
     const chatsEl = document.getElementById("chats");
@@ -2655,6 +2699,21 @@
       showReady();
       loadUi(true);
     }
+    function applyTheme(theme) {
+      if (theme === "dark") document.body.setAttribute("data-theme", "dark");
+      else document.body.removeAttribute("data-theme");
+      const btn = document.getElementById("theme-toggle");
+      if (btn) btn.textContent = theme === "dark" ? "☀" : "☾";
+    }
+    let savedTheme = "light";
+    try { savedTheme = localStorage.getItem("theme") || "light"; } catch (error) {}
+    applyTheme(savedTheme === "dark" ? "dark" : "light");
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+      const next = document.body.hasAttribute("data-theme") ? "light" : "dark";
+      try { localStorage.setItem("theme", next); } catch (error) {}
+      applyTheme(next);
+    });
+
     boot();
   </script>
 </body>
