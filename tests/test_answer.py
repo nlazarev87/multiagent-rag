@@ -13,6 +13,7 @@ def test_answer_refuses_empty_chunks():
 
 
 def test_answer_keeps_chunks_when_latin_is_missing(monkeypatch):
+    monkeypatch.setattr(agents, "count_tokens", lambda text: len(text.split()))
     monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: "Версия в тексте не названа.")
     answer = agents.answer_agent("Какая версия Python у насоса?", "Какая версия Python у насоса?", [PUMP], [])
     assert answer != agents.NO_ANSWER
