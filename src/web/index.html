@@ -457,14 +457,17 @@
       align-items: center;
       gap: 8px;
       max-width: 16rem;
-      padding: 0 10px 0 12px;
-      color: var(--fg2);
+      padding: 0 9px 0 12px;
+      height: 34px;
+      color: var(--fg3);
       background: var(--chrome);
       flex-shrink: 0;
       border-radius: 0;
       cursor: pointer;
+      border-top: 2px solid transparent;
+      border-right: 1px solid var(--line-2);
     }
-    .tab.on { background: var(--editor); color: var(--fg); }
+    .tab.on { background: var(--editor); color: var(--fg); border-top-color: var(--accent); }
     .tab span {
       overflow: hidden;
       white-space: nowrap;
@@ -477,16 +480,35 @@
       color: var(--fg3);
     }
     .tab .x:hover { background: var(--focus); color: var(--fg); }
-    .canvas { flex: 1; overflow: auto; padding: 18px 28px 32px; background: var(--editor); }
+    .preview-head {
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 12px 22px 10px;
+      border-bottom: 1px solid var(--line-2);
+      background: var(--editor);
+    }
+    .preview-title {
+      font-size: 15px;
+      font-weight: 600;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .preview-sub { font-size: 12px; color: var(--fg3); }
+    .canvas { flex: 1; overflow: auto; padding: 16px 26px 40px; background: var(--editor); }
     .paper.idle { color: var(--fg3); }
     .muted { margin: 24px 0 0; color: var(--fg3); font-size: 12px; }
-    .chunk { margin: 0; }
+    .chunk { margin: 0; max-width: 760px; }
     .chunk p {
       margin: 0 0 12px;
-      font-size: 13px;
-      line-height: 1.55;
+      font-size: 13.5px;
+      line-height: 1.65;
+      padding: 3px 6px;
+      border-radius: var(--r-2);
     }
-    .chunk p.hit { background: var(--hit); padding: 2px 4px; }
+    .chunk p.hit { background: var(--hit); box-shadow: inset 2px 0 0 var(--warn); }
     .file { margin: 4px 0; }
     #gate, #admin, #pick {
       position: fixed;
@@ -649,6 +671,10 @@
     <div class="sash" id="sash-right" role="separator" aria-orientation="vertical" aria-label="Граница документа"></div>
     <section class="pane editor" aria-label="Документ">
       <div class="tabs" id="tabs"></div>
+      <div class="preview-head" id="preview-head">
+        <div class="preview-title" id="preview-title"></div>
+        <div class="preview-sub" id="preview-sub"></div>
+      </div>
       <div class="canvas">
         <div id="preview" class="paper idle"></div>
       </div>
@@ -780,6 +806,12 @@
     function idlePreview() {
       preview.classList.add("idle");
       preview.replaceChildren(element("p", "muted", "Откройте документ из чата или из дерева."));
+      if (document.getElementById) {
+        const headTitle = document.getElementById("preview-title");
+        const headSub = document.getElementById("preview-sub");
+        if (headTitle) headTitle.textContent = "";
+        if (headSub) headSub.textContent = "";
+      }
     }
 
     function paintTabs() {
@@ -824,6 +856,12 @@
 
     function paintChunks(chunks, where) {
       where = where || {};
+      if (document.getElementById) {
+        const headTitle = document.getElementById("preview-title");
+        const headSub = document.getElementById("preview-sub");
+        if (headTitle) headTitle.textContent = (chunks.length && chunks[0].document_name) || "";
+        if (headSub) headSub.textContent = chunks.length ? chunks.length + " фрагментов" : "";
+      }
       let target = -1;
       if (where.chunkIndex !== undefined && where.chunkIndex !== "") {
         const want = Number(where.chunkIndex);
