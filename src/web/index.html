@@ -10,28 +10,51 @@
     body { display: flex; flex-direction: column; }
     #shell { flex: 1; min-height: 0; height: auto; }
     body {
+      /* Раскладка */
       --left: 260px;
       --mid: 380px;
-      --chrome: #F3F3F3;
-      --editor: #FCFCFC;
-      --fg: #141414;
-      --fg2: #141414BD;
-      --fg3: #14141499;
-      --fg4: #1414145C;
-      --line: #14141414;
-      --line2: #1414141F;
-      --line3: #14141433;
-      --wash: #14141414;
-      --focus: #14141424;
-      --link: #0064B0;
-      --btn: #2778C1;
-      --btn-hover: #246AAB;
-      --ready: #007041;
-      --hit: #3B7E8424;
-      --danger: #BE1744;
+      /* Нейтральная шкала */
+      --chrome: #ECECEF;
+      --panel: #F6F6F8;
+      --editor: #FFFFFF;
+      --sink: #F0F0F3;
+      --fg: #1B1B1F;
+      --fg2: #5B5B66;
+      --fg3: #8A8A96;
+      --fg4: #B6B6C0;
+      --line: #E1E1E6;
+      --line2: #ECECF0;
+      --line3: #D4D4DB;
+      --wash: rgba(20,20,28,.055);
+      --focus: rgba(20,20,28,.10);
+      --focus-ring: rgba(79,70,229,.28);
+      /* Акцент и семантика */
+      --link: #2B59C3;
+      --btn: #4F46E5;
+      --btn-hover: #4338CA;
+      --accent: #4F46E5;
+      --accent-hover: #4338CA;
+      --accent-soft: #EEF1FF;
+      --accent-soft-2: #E0E6FF;
+      --ready: #159A4D;
+      --ready-soft: #EAF7EF;
+      --hit: rgba(255,214,90,.38);
+      --danger: #D9392F;
+      --danger-soft: #FBEDEB;
+      --warn: #B9780C;
+      --warn-soft: #FBF3E2;
+      /* Радиусы */
+      --r-1: 4px;
+      --r-2: 6px;
+      --r-3: 8px;
+      --r-4: 12px;
+      /* Тени */
+      --shadow-1: 0 1px 2px rgba(20,20,28,.05);
+      --shadow-2: 0 2px 10px rgba(20,20,28,.07);
+      --shadow-3: 0 12px 36px rgba(20,20,28,.16);
       background: var(--chrome);
       color: var(--fg);
-      font-family: "Segoe UI", "Segoe WPC", system-ui, sans-serif;
+      font-family: "Segoe UI Variable Text", "Segoe UI", "Segoe WPC", system-ui, sans-serif;
       font-size: 13px;
       font-weight: 400;
       line-height: 1.4;
