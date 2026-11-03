@@ -347,6 +347,57 @@ def _latin_missing_from_chunks(query, chunks):
     return any(token not in blob for token in _latin_tokens(query))
 
 
+_CONTRADICTION_PHRASES = (
+    "противоречат",
+    "разные данные",
+    "в одном фрагменте",
+)
+
+
+def _contradiction(answer, chunks):
+    """Поймать спор кусков: фразу в ответе или два числа одной величины из разных кусков.
+
+    Числа ловятся, только если основа величины названа у каждого числа
+    («Давление 6 бар. Давление 8 бар»). «Давление 6 бар, но также 8 бар» не ловится:
+    разбор относит ко второму числу основу «также». `_facts` и `_grounded` здесь не меняются.
+    """
+    if not answer or not chunks:
+        return False
+    flat = _flat(answer)
+    for phrase in _CONTRADICTION_PHRASES:
+        if phrase == "в одном фрагменте":
+            if "в одном фрагменте" in flat and "в другом" in flat:
+                return True
+            continue
+        if phrase in flat:
+            return True
+    groups = {}
+    for fact in _facts(answer):
+        stems = fact[2] if len(fact) > 2 and isinstance(fact[2], tuple) else ()
+        if not stems:
+            continue
+        groups.setdefault(tuple(sorted(stems)), []).append(fact)
+    for group in groups.values():
+        values = []
+        for fact in group:
+            if fact[1] not in values:
+                values.append(fact[1])
+        if len(values) < 2:
+            continue
+        grounded_in = {}
+        for fact in group:
+            value = fact[1]
+            if value in grounded_in:
+                continue
+            for idx, chunk in enumerate(chunks):
+                if _grounded(fact, _case(chunk.get("text") or "")):
+                    grounded_in[value] = idx
+                    break
+        if len(grounded_in) >= 2 and len(set(grounded_in.values())) >= 2:
+            return True
+    return False
+
+
 def _document_names(chunks):
     names = []
     for chunk in chunks or []:
@@ -2148,6 +2199,8 @@ def check_agent(answer, chunks, query="", known=None):
         return _verdict(MISSING)
     if latin_not_found and _answer_latin_missing(text, chunks):
         return _verdict(UNCONFIRMED, feedback="latin_not_found: true")
+    if _contradiction(text, chunks):
+        return _verdict(UNCONFIRMED, feedback="contradiction_detected: true")
     flats = [_flat(chunk["text"]) for chunk in chunks]
     bodies = [_case(chunk["text"]) for chunk in chunks]
     asked = " ".join(word for word in _flat(query).replace("?", " ").split() if known(word.strip(".,:;«»()")))
