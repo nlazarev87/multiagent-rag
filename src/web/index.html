@@ -258,6 +258,7 @@
       color: var(--fg2);
       display: grid;
       place-items: center;
+      border-radius: var(--r-2);
     }
     #find-toggle:hover, #upload:hover { background: var(--wash); color: var(--fg); }
     #find {
@@ -265,11 +266,13 @@
       height: 26px;
       padding: 0 8px;
       border: 1px solid var(--line3);
-      border-radius: 8px;
+      border-radius: var(--r-2);
       background: var(--editor);
       color: var(--fg);
       font: inherit;
+      outline: none;
     }
+    #find:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus-ring); }
     #find::placeholder { color: var(--fg4); }
     #files { display: none; }
     .mid-body {
@@ -401,6 +404,19 @@
     }
     .node:hover, .node.on { background: var(--wash); color: var(--fg); }
     .node.drop { background: var(--focus); }
+    .node .chev { width: 12px; color: var(--fg4); flex: 0 0 auto; display: grid; place-items: center; font-size: 11px; }
+    .node .fico { width: 14px; height: 14px; flex: 0 0 auto; color: var(--fg3); }
+    .node.folder .fico { color: var(--warn); }
+    .node .fname {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-size: 12.5px;
+    }
+    .node.folder .fname { font-weight: 500; color: var(--fg); }
+    .node mark { background: var(--hit); color: inherit; border-radius: 2px; padding: 0 1px; }
     .node input {
       flex: 1;
       min-width: 0;
@@ -1190,6 +1206,48 @@
       treeEl.append(item);
     }
 
+    function svgIcon(paths) {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 24 24");
+      svg.setAttribute("fill", "none");
+      svg.setAttribute("stroke", "currentColor");
+      svg.setAttribute("stroke-width", "1.8");
+      svg.setAttribute("stroke-linecap", "round");
+      svg.setAttribute("stroke-linejoin", "round");
+      svg.classList.add("fico");
+      paths.forEach((d) => {
+        const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        p.setAttribute("d", d);
+        svg.append(p);
+      });
+      return svg;
+    }
+
+    function icon(kind) {
+      if (kind === "folder") {
+        return svgIcon(["M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"]);
+      }
+      return svgIcon(["M7 3h7l5 5v13H7z", "M14 3v5h5"]);
+    }
+
+    function nameWithHighlight(name) {
+      const text = String(name || "");
+      const span = element("span", "fname");
+      if (!filter) {
+        span.textContent = text;
+        return span;
+      }
+      const idx = text.toLowerCase().indexOf(filter);
+      if (idx < 0) {
+        span.textContent = text;
+        return span;
+      }
+      span.append(document.createTextNode(text.slice(0, idx)));
+      span.append(element("mark", "", text.slice(idx, idx + filter.length)));
+      span.append(document.createTextNode(text.slice(idx + filter.length)));
+      return span;
+    }
+
     function fillTree(list, nodes, parent) {
       nodes.forEach((node) => {
         if (!nodeMatches(node)) return;
@@ -1199,8 +1257,16 @@
         btn.draggable = true;
         const isFile = Boolean(node.document_name);
         const closed = Boolean(node.id && closedFolders.has(node.id) && !filter);
-        btn.append(element("span", "", isFile ? "" : (closed ? "▸" : "▾")));
-        btn.append(element("span", "", isFile ? node.document_name : (node.name || "Папка")));
+        if (isFile) {
+          btn.classList.add("file");
+          btn.append(icon("file"));
+          btn.append(nameWithHighlight(node.document_name));
+        } else {
+          btn.classList.add("folder");
+          btn.append(element("span", "chev", closed ? "▸" : "▾"));
+          btn.append(icon("folder"));
+          btn.append(nameWithHighlight(node.name || "Папка"));
+        }
         let openName = String(activeTab || "");
         const openMark = openName.indexOf(":");
         const openHead = openMark > 0 ? openName.slice(0, openMark) : "";
