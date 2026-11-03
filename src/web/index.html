@@ -2447,7 +2447,7 @@
           }));
         }
       }
-      toolbar.append(kindSel, person, element("span", "spacer"), adminGhost("Обновить", () => load()));
+      toolbar.append(kindSel, person, element("span", "spacer"), adminButton("Обновить", () => load()));
       adminBody.append(toolbar, list);
       await load();
     }
