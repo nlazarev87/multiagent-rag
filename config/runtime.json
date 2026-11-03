@@ -20,5 +20,12 @@
     "from_overview": true,
     "table_neighbors": true,
     "overview_rows": true
+  },
+  "timeouts": {
+    "graph_ms": 120000,
+    "node_ms": 60000,
+    "llm_ms": 90000,
+    "chroma_ms": 10000,
+    "retries": 1
   }
 }

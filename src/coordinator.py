@@ -6,6 +6,7 @@
 from pathlib import Path
 from datetime import datetime, timezone
 
+import concurrent.futures
 import contextvars
 import re
 import time
@@ -20,6 +21,7 @@ from store import known, list_documents, search_notes_begin, search_notes_end
 
 ATTEMPTS = runtime().get("attempts", 2)
 _scope = contextvars.ContextVar("rag_scope", default=None)
+_graph_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="graph-timeout")
 
 
 def _attempts():
@@ -219,7 +221,15 @@ def run(query, dialog_id, scope=None, features=None):
     row_token = _extra_rows.set(active.chunks) if active is not None else None
     trace_token = _trace.set(active.trace) if active is not None else None
     try:
-        return _run(query, dialog_id, active, features)
+        timeout_s = (runtime().get("timeouts") or {}).get("graph_ms", 120000) / 1000
+        ctx = contextvars.copy_context()
+        future = _graph_executor.submit(ctx.run, _run, query, dialog_id, active, features)
+        try:
+            return future.result(timeout=timeout_s)
+        except TimeoutError:
+            if future.done():
+                raise
+            raise TimeoutError(f"graph timeout after {timeout_s}s")
     finally:
         if row_token is not None:
             _extra_rows.reset(row_token)
@@ -236,7 +246,7 @@ def _run(query, dialog_id, scope, features=None):
         features = runtime().get("features", {})
     trace_steps = []
 
-    def _step(node, started, input_summary=None, output_summary=None, extra=None):
+    def _step(node, started, input_summary=None, output_summary=None, extra=None, timed_out=False):
         mark, stamp = started
         entry = {
             "node": node,
@@ -245,6 +255,8 @@ def _run(query, dialog_id, scope, features=None):
             "input_summary": input_summary,
             "output_summary": output_summary,
         }
+        if timed_out:
+            entry["timed_out"] = True
         if extra:
             entry.update(extra)
         trace_steps.append(entry)

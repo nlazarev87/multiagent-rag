@@ -838,6 +838,29 @@ def query(body: Query, request: Request):
         result = dict(result)
         result["request_id"] = request_id
         return JSONResponse(content=result, headers={"X-Request-ID": request_id})
+    except TimeoutError:
+        audit.write("query", user, _record(
+            query=body.query,
+            answer="Обработка заняла слишком много времени. Попробуйте позже.",
+            status="нет ответа",
+            dialog_id=body.dialog_id,
+            sources=[],
+            attempts=getattr(scope, "attempts", 0) or 0,
+            feedback="timeout",
+            error="timeout",
+        ), ok=False)
+        return JSONResponse(
+            content={
+                "answer": "Обработка заняла слишком много времени. Попробуйте позже.",
+                "status": "нет ответа",
+                "document_names": [],
+                "sources": [],
+                "feedback": "timeout",
+                "request_id": request_id,
+            },
+            status_code=200,
+            headers={"X-Request-ID": request_id},
+        )
     except Exception as exc:
         audit.write("query", user, _record(
             query=body.query,

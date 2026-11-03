@@ -17,6 +17,7 @@
 | scope words count | 2 | test_store::test_scope | ❌ |
 | contexts scan | limit*3=12 | test_store::test_contexts | ❌ Wave 4 |
 | context tokens | 260 | test_store::test_render | ✅ |
+| chroma_ms | 10000 | test_timeouts | ✅ |
 
 ## agents.py
 | Порог | Значение | Тест | Config |
@@ -32,6 +33,8 @@
 | Порог | Значение | Тест | Config |
 |---|---|---|---|
 | attempts max | 2 | test_coordinator | ✅ |
+| graph_ms | 120000 | test_timeouts | ✅ |
+| node_ms | 60000 | ключ в конфиге, на узел не надет | ✅ |
 | retry keyword | «документ» | test_coordinator | ❌ |
 
 ## ingest.py
@@ -47,6 +50,8 @@
 | prompt_tokens | 1500 | ✅ |
 | max_tokens | 200 | ✅ |
 | n_ctx | 4096 | ✅ |
+| llm_ms | 90000 | ✅ |
+| retries | 1 | ✅ |
 
 ## Дубли (Wave 6)
 - «код»: store._names, agents._codes, agents._anchors.
