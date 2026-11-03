@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Семантика — документы (мокап)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="window">
+  <header class="titlebar">
+    <div class="brand">
+      <span class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 13h5"/><path d="M10 16h3"/></svg>
+      </span>
+      <span>Семантика</span>
+    </div>
+    <span class="titlebar-sep"></span>
+    <span class="titlebar-context">Рабочая область · Документы</span>
+    <span class="titlebar-spacer"></span>
+    <div class="win-controls">
+      <button class="win-btn"><svg viewBox="0 0 12 12"><line x1="1" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1.4"/></svg></button>
+      <button class="win-btn"><svg viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
+      <button class="win-btn close"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.4"/></svg></button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="pane">
+      <div class="side-head">
+        <div class="side-title"><span>Диалоги</span></div>
+        <button class="btn btn-primary" style="width:100%">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Новый диалог
+        </button>
+      </div>
+      <ul class="dialog-list">
+        <li class="dialog"><span class="dialog-dot"></span><span class="dialog-title">Сколько насосов в цехе №2</span><button class="dialog-x">×</button></li>
+        <li class="dialog"><span class="dialog-dot"></span><span class="dialog-title">Регламент ТО компрессоров</span><button class="dialog-x">×</button></li>
+        <li class="dialog"><span class="dialog-dot"></span><span class="dialog-title">Аварийные остановки за март</span><button class="dialog-x">×</button></li>
+      </ul>
+      <div class="side-foot">
+        <div class="model-status"><span class="model-dot on"></span><span>Модель готова · Qwen2.5 7B</span></div>
+        <div class="user-chip">
+          <span class="user-avatar">АЛ</span>
+          <span class="user-meta"><span class="user-name">Алексей Лазарев</span><br><span class="user-role">Администратор</span></span>
+        </div>
+      </div>
+    </aside>
+
+    <div class="sash"></div>
+
+    <section class="pane paper">
+      <div class="mid-head">
+        <div class="seg">
+          <button>Агент</button>
+          <button class="on">Документы</button>
+        </div>
+        <div class="mid-tools">
+          <input class="input" style="height:26px;width:150px" placeholder="Поиск документа">
+          <button class="btn-icon" title="Поиск"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
+          <button class="btn-icon" title="Загрузить файлы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg></button>
+        </div>
+      </div>
+
+      <ul class="tree">
+        <li>
+          <button class="node folder">
+            <span class="chev">▾</span>
+            <svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+            <span class="fname">Техдокументация</span>
+          </button>
+          <ul>
+            <li>
+              <button class="node folder">
+                <span class="chev">▾</span>
+                <svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                <span class="fname">Насосное оборудование</span>
+              </button>
+              <ul>
+                <li>
+                  <button class="node on">
+                    <span class="chev" style="visibility:hidden">▸</span>
+                    <svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></svg>
+                    <span class="fname">pump.md</span>
+                  </button>
+                </li>
+                <li>
+                  <button class="node">
+                    <span class="chev" style="visibility:hidden">▸</span>
+                    <svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></svg>
+                    <span class="fname">Техпаспорт_цех2.docx</span>
+                  </button>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <button class="node folder">
+                <span class="chev">▸</span>
+                <svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                <span class="fname">Электродвигатели</span>
+              </button>
+            </li>
+            <li>
+              <button class="node">
+                <span class="chev" style="visibility:hidden">▸</span>
+                <svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></svg>
+                <span class="fname">Регламент_ТО.pdf</span>
+              </button>
+            </li>
+          </ul>
+        </li>
+        <li>
+          <button class="node folder">
+            <span class="chev">▸</span>
+            <svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+            <span class="fname">Архив</span>
+          </button>
+        </li>
+      </ul>
+    </section>
+
+    <div class="sash"></div>
+
+    <section class="pane paper">
+      <div class="preview-tabs">
+        <div class="ptab on">
+          <svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></svg>
+          <span>pump.md</span>
+          <button class="px">×</button>
+        </div>
+      </div>
+      <div class="preview-head">
+        <div style="min-width:0">
+          <div class="preview-title">pump.md</div>
+          <div class="preview-sub">База «Техдокументация» · 4 фрагмента</div>
+        </div>
+      </div>
+      <div class="preview-canvas">
+        <article class="chunk">
+          <p>Насосная станция цеха №2 включает три агрегата, установленных на общем фундаменте с виброизоляцией. Разводка коллекторов выполнена по схеме «рабочий–рабочий–резервный».</p>
+          <p>Рабочие насосы ЦНС 180-190 обеспечивают подачу 190 м³/ч при напоре 190 м. Резервный насос ЦНС 105-98 рассчитан на 98 м³/ч и включается автоматически при падении давления ниже 0,4 МПа.</p>
+          <p>Всасывающие линии оборудованы фильтрами грубой очистки и обратными клапанами.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <span class="sb-item"><span class="sb-dot on"></span>Готово</span>
+    <span class="sb-sep"></span>
+    <span class="sb-item">База: Техдокументация</span>
+    <span class="sb-spacer"></span>
+    <span class="sb-item">Алексей Лазарев · Администратор</span>
+    <span class="sb-sep"></span>
+    <button>Управление</button>
+  </footer>
+</div>
+</body>
+</html>
