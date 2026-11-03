@@ -336,6 +336,7 @@ def measure_search(holdout=True, existing=None, features=None):
             together_hits = together_n = 0
             times = []
             for item in rows:
+                _iter_start = time.perf_counter()
                 _start = time.perf_counter()
                 _result = store.search_chunks(item["query"], 4, debug=True, features=features)
                 chunks = _result["slots"]
@@ -419,6 +420,7 @@ def measure_search(holdout=True, existing=None, features=None):
                 per_question[-1]["features_active"] = sorted(
                     name for name, on in _active.items() if on
                 )
+                per_question[-1]["total_duration_ms"] = round((time.perf_counter() - _iter_start) * 1000, 2)
             cards.update(card(f"search_hit4_{suffix}", _rate(hit4, len(rows)), len(rows), hits=int(hit4)))
             cards.update(card(
                 f"search_hit1_{suffix}",
