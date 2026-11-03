@@ -101,16 +101,44 @@
     }
     button:disabled { opacity: 0.5; cursor: default; }
     .hidden { display: none !important; }
-    .side-head { padding: 6px 8px 4px; }
+    .side-head { padding: 10px 10px 8px; display: flex; flex-direction: column; gap: 8px; }
+    .side-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 4px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--fg3);
+    }
+    #manage {
+      font: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      background: transparent;
+      border: 0;
+      cursor: pointer;
+      padding: 2px 7px;
+      border-radius: var(--r-1);
+    }
+    #manage:hover { background: var(--accent-soft); }
     #fresh {
       display: flex;
       align-items: center;
+      justify-content: center;
       width: 100%;
-      height: 28px;
-      padding: 0 8px;
-      font-weight: 500;
+      height: 30px;
+      padding: 0 13px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: var(--r-2);
+      font-weight: 600;
+      font-size: 12.5px;
     }
-    #fresh:hover { background: var(--wash); }
+    #fresh:hover { background: var(--accent-hover); }
     #chats {
       list-style: none;
       margin: 4px 6px 0;
@@ -121,14 +149,22 @@
     #chats li {
       display: flex;
       align-items: center;
-      gap: 4px;
-      min-height: 28px;
-      padding: 0 8px;
-      border-radius: 8px;
+      gap: 8px;
+      min-height: 30px;
+      padding: 0 9px;
+      border-radius: var(--r-2);
       color: var(--fg2);
     }
     #chats li:hover { background: var(--wash); color: var(--fg); }
-    #chats li.on { background: var(--wash); color: var(--fg); font-weight: 500; }
+    #chats li.on { background: var(--accent-soft); color: var(--fg); }
+    #chats li.on::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex: 0 0 auto;
+    }
     #chats .title {
       flex: 1;
       text-align: left;
@@ -159,6 +195,52 @@
     }
     .dot.on { background: #3FBF6F; }
     #readiness { margin: 0; }
+    .side-foot {
+      flex: 0 0 auto;
+      border-top: 1px solid var(--line-2);
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+    .user-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 8px;
+      border-radius: var(--r-2);
+      background: var(--paper);
+      border: 1px solid var(--line-2);
+    }
+    .user-avatar {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #8B5CF6);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+    }
+    .user-meta { min-width: 0; line-height: 1.2; display: flex; flex-direction: column; }
+    .user-name { font-size: 12px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .user-role { font-size: 11px; color: var(--fg3); }
+    .user-actions { margin-left: auto; display: flex; gap: 2px; }
+    .ui-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: var(--r-2);
+      display: grid;
+      place-items: center;
+      color: var(--fg3);
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+    }
+    .ui-icon:hover { background: var(--wash); color: var(--fg); }
+    .ui-icon svg { width: 15px; height: 15px; }
     .mid-head {
       display: flex;
       align-items: center;
@@ -477,10 +559,20 @@
   <main class="shell" id="shell">
     <aside class="pane" aria-label="Диалоги">
       <div class="side-head">
+        <div class="side-title"><span>Диалоги</span><button id="manage" type="button" class="hidden">Управление</button></div>
         <button id="fresh" type="button">Новый диалог</button>
-        <button id="manage" type="button" class="hidden">Управление</button>
       </div>
       <ul id="chats"></ul>
+      <div class="side-foot">
+        <div class="user-chip">
+          <span class="user-avatar" id="user-avatar"></span>
+          <span class="user-meta"><span class="user-name" id="user-name"></span><span class="user-role" id="user-role-label"></span></span>
+          <span class="user-actions">
+            <button class="ui-icon" id="status-password" title="Сменить пароль" aria-label="Сменить пароль"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></button>
+            <button class="ui-icon" id="status-out" title="Выйти" aria-label="Выйти"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></button>
+          </span>
+        </div>
+      </div>
     </aside>
     <div class="sash" id="sash-left" role="separator" aria-orientation="vertical" aria-label="Граница диалогов"></div>
     <section class="pane" aria-label="Агент">
@@ -520,7 +612,7 @@
       </div>
     </section>
   </main>
-  <footer id="status" class="hidden"><span class="dot" id="ready-dot"></span><span id="readiness">Модель загружается…</span><span class="sb-spacer"></span><span id="status-login"></span><span id="status-role"></span><span class="sb-sep"></span><button type="button" id="status-password">Сменить пароль</button><button type="button" id="status-out">Выйти</button></footer>
+  <footer id="status" class="hidden"><span class="dot" id="ready-dot"></span><span id="readiness">Модель загружается…</span><span class="sb-spacer"></span><span id="status-login"></span><span id="status-role"></span></footer>
   <script>
     const shell = document.getElementById("shell");
     const chatsEl = document.getElementById("chats");
@@ -1571,6 +1663,12 @@
       document.getElementById("status").classList.remove("hidden");
       document.getElementById("status-login").textContent = data.login || "";
       document.getElementById("status-role").textContent = data.role || "";
+      const avatar = document.getElementById("user-avatar");
+      if (avatar) avatar.textContent = String(data.login || "?").slice(0, 2).toUpperCase();
+      const uname = document.getElementById("user-name");
+      if (uname) uname.textContent = data.login || "";
+      const urole = document.getElementById("user-role-label");
+      if (urole) urole.textContent = data.role || "";
       const actions = data.actions || [];
       document.getElementById("manage").classList.toggle("hidden", !actions.length);
       paintUpload();
