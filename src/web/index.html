@@ -859,6 +859,31 @@
     .audit-who { width: 140px; flex: 0 0 auto; color: var(--fg2); }
     .audit-msg { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--fg3); }
     .group-members { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+    .empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 32px 16px;
+      color: var(--fg3);
+      text-align: center;
+    }
+    .empty .eicon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--paper-2);
+      border: 1px solid var(--line-2);
+      display: grid;
+      place-items: center;
+      font-size: 18px;
+      color: var(--fg4);
+    }
+    .empty .etext { font-size: 13px; max-width: 280px; }
+    .composer-hint { align-self: center; font-size: 11px; color: var(--fg4); white-space: nowrap; }
+    button, .tab { transition: background-color .12s, color .12s, border-color .12s, box-shadow .12s; }
+    button:focus-visible, .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     .access-block { border: 1px solid var(--line2); border-radius: 8px; background: var(--editor); }
     .access-block > summary {
       cursor: pointer;
@@ -961,6 +986,7 @@
           <div id="log"></div>
           <form id="ask">
             <textarea id="query" required placeholder="Спросить по документам"></textarea>
+            <span class="composer-hint">Shift+Enter — перенос</span>
             <button id="send" type="submit" aria-label="Спросить">→</button>
           </form>
         </div>
@@ -1107,9 +1133,16 @@
       });
     }
 
+    function emptyState(icon, text) {
+      const wrap = element("div", "empty");
+      wrap.append(element("span", "eicon", icon));
+      wrap.append(element("span", "etext", text));
+      return wrap;
+    }
+
     function idlePreview() {
       preview.classList.add("idle");
-      preview.replaceChildren(element("p", "muted", "Откройте документ из чата или из дерева."));
+      preview.replaceChildren(emptyState("▤", "Откройте документ из чата или из дерева."));
       if (document.getElementById) {
         const headTitle = document.getElementById("preview-title");
         const headSub = document.getElementById("preview-sub");
@@ -1401,7 +1434,7 @@
       const row = current();
       const turns = (row && row.turns) || [];
       if (!turns.length) {
-        log.replaceChildren(element("p", "muted", "Задайте вопрос по документам"));
+        log.replaceChildren(emptyState("✦", "Задайте вопрос по документам"));
         return;
       }
       log.replaceChildren(...turns.map((turn, index) => paintTurn(turn, index)));
@@ -1544,7 +1577,7 @@
       fillTree(treeEl, tree.children || [], tree);
       if (treeEl.children.length) return;
       const item = element("li");
-      item.append(element("p", "muted", "Нет документов"));
+      item.append(emptyState("▤", "Нет документов"));
       treeEl.append(item);
     }
 
