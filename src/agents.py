@@ -12,6 +12,7 @@ from store import chunks_for_document, search_chunks
 
 _extra_rows = contextvars.ContextVar("extra_rows", default=None)
 _trace = contextvars.ContextVar("answer_trace", default=None)
+_latin_not_found_var = contextvars.ContextVar("latin_not_found", default=False)
 
 NO_ANSWER = "В документах нет ответа."
 CONFIRMED = "подтверждён"
@@ -451,13 +452,18 @@ def _drop_repeat_cite(answer):
 def answer_agent(query, clear_query, chunks, work_turns, feedback=None, features=None, usage_sink=None):
     """Текст ответа. Пустые куски дают отказ, обзор таблицы может обойтись без модели."""
     if not chunks:
+        _latin_not_found_var.set(False)
         return NO_ANSWER
     if features is None:
         features = runtime().get("features", {})
+    latin_missing = False
     if features.get("cover_latin", True):
-        chunks = _cover_latin(query, chunks)
-        if not chunks:
-            return NO_ANSWER
+        covered = _cover_latin(query, chunks)
+        if covered is None:
+            latin_missing = True
+        else:
+            chunks = covered
+    _latin_not_found_var.set(latin_missing)
     if features.get("prefer_name", True):
         chunks = _prefer_name(query, chunks)
     if not feedback and features.get("from_overview", True):
@@ -2105,8 +2111,11 @@ def _mark_in(blob, parts, mark):
     return any(part == key or part.startswith(key) for part in parts)
 
 
-def _query_in_found(query, chunks):
+def _query_in_found(query, chunks, skip_latin=False):
     marks = [mark for mark in _asked_marks(query) if not any(ch.isdigit() for ch in mark)]
+    if skip_latin:
+        latin = set(_latin_tokens(query))
+        marks = [mark for mark in marks if mark not in latin]
     if not marks:
         return True
     blob = _case(" ".join(
@@ -2121,14 +2130,23 @@ def _query_in_found(query, chunks):
     return any(_mark_in(blob, parts, mark) for mark in marks)
 
 
+def _answer_latin_missing(answer, chunks):
+    blob = _flat(" ".join(chunk.get("text") or "" for chunk in chunks or []))
+    return any(token not in blob for token in _latin_tokens(answer))
+
+
 def check_agent(answer, chunks, query="", known=None):
     """Подтвердить ответ по найденному тексту или вернуть отзыв. Модель не вызывается."""
+    latin_not_found = _latin_not_found_var.get()
+    _latin_not_found_var.set(False)
     text = answer.strip()
     known = known or (lambda _term: True)
     specific = _specific(query)
     absent = [token for token in specific if not known(_flat(token))]
     if not chunks or not text or absent or _flat(NO_ANSWER).rstrip(".") in _flat(text):
         return _verdict(MISSING)
+    if latin_not_found and _answer_latin_missing(text, chunks):
+        return _verdict(UNCONFIRMED, feedback="latin_not_found: true")
     flats = [_flat(chunk["text"]) for chunk in chunks]
     bodies = [_case(chunk["text"]) for chunk in chunks]
     asked = " ".join(word for word in _flat(query).replace("?", " ").split() if known(word.strip(".,:;«»()")))
@@ -2217,7 +2235,8 @@ def check_agent(answer, chunks, query="", known=None):
         used_files.add(key)
     used = _keep_cited(used, scores, facts, bodies, chunks)
     held = [chunks[number - 1] for number in used] or chunks
-    if not _query_in_found(query, held):
+    if not _query_in_found(query, held, skip_latin=latin_not_found):
         return _verdict(UNCONFIRMED, feedback=WRONG_DOC)
     sources = [_source(number, chunks[number - 1]) for number in sorted(used)]
-    return _verdict(CONFIRMED, sources=sources)
+    note = "latin_not_found: true" if latin_not_found else ""
+    return _verdict(CONFIRMED, feedback=note, sources=sources)
