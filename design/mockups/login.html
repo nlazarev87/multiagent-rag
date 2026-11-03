@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Семантика — вход (мокап)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="gate">
+  <div class="gate-card">
+    <div class="gate-logo">
+      <span class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 13h5"/><path d="M10 16h3"/></svg>
+      </span>
+      <span>Семантика</span>
+    </div>
+    <p class="gate-sub">Локальный поиск по вашим документам · без интернета</p>
+
+    <div class="field">
+      <label for="login">Логин</label>
+      <input id="login" class="input" autocomplete="username" placeholder="например, alazarev">
+    </div>
+    <div class="field">
+      <label for="password">Пароль</label>
+      <input id="password" class="input" type="password" autocomplete="current-password" placeholder="••••••••">
+    </div>
+
+    <button class="btn btn-primary" style="height:34px">Войти</button>
+    <p class="gate-error"></p>
+    <p class="gate-sub" style="margin:0;text-align:center">Данные обрабатываются только на этом компьютере</p>
+  </div>
+</div>
+</body>
+</html>

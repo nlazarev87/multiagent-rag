@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Семантика — управление (мокап)</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .view { display: none; }
+  .view.on { display: flex; flex-direction: column; gap: 14px; }
+  .sel-role { height: 28px; min-width: 150px; }
+</style>
+</head>
+<body>
+<div class="admin">
+  <!-- Навигация -->
+  <nav class="admin-nav">
+    <div class="an-head">
+      <span class="brand">
+        <span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 13h5"/><path d="M10 16h3"/></svg></span>
+      </span>
+      <span>Управление</span>
+    </div>
+    <button class="an-item on" data-view="users">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Пользователи <span class="an-count">4</span>
+    </button>
+    <button class="an-item" data-view="roles">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Роли <span class="an-count">3</span>
+    </button>
+    <button class="an-item" data-view="groups">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M13 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Группы <span class="an-count">2</span>
+    </button>
+    <button class="an-item" data-view="access">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Доступы <span class="an-count">2</span>
+    </button>
+    <button class="an-item" data-view="audit">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>
+      Журнал
+    </button>
+    <button class="an-back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Назад к документам
+    </button>
+  </nav>
+
+  <!-- Контент -->
+  <main class="admin-main">
+
+    <!-- ===== Пользователи ===== -->
+    <section class="view on" id="view-users">
+      <header class="admin-header">
+        <div>
+          <h1>Пользователи</h1>
+          <div class="ah-sub">Учётные записи, роли и статусы доступа</div>
+        </div>
+        <div class="ah-actions">
+          <button class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Создать пользователя</button>
+        </div>
+      </header>
+      <div class="admin-body">
+        <div class="toolbar">
+          <input class="input" placeholder="Поиск по логину…">
+          <span class="spacer"></span>
+          <span class="kbd">⌘K</span>
+        </div>
+        <div class="card">
+          <table class="table">
+            <thead><tr><th>Пользователь</th><th>Роль</th><th>Статус</th><th style="width:120px;text-align:right">Действия</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><div style="display:flex;align-items:center;gap:9px"><span class="user-avatar">АЛ</span><div><div style="font-weight:600">Алексей Лазарев</div><div style="color:var(--fg-3);font-size:11.5px">alazarev</div></div></div></td>
+                <td><select class="select sel-role"><option>Администратор</option><option>Аналитик</option><option>Гость</option></select></td>
+                <td><span class="badge badge-ok">активен</span></td>
+                <td><div class="row-actions"><button class="btn-icon" title="Задать пароль"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></button><button class="btn-icon" title="Заблокировать"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M7 12h10" stroke-linecap="round"/></svg></button><button class="btn-icon" title="Удалить" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div></td>
+              </tr>
+              <tr>
+                <td><div style="display:flex;align-items:center;gap:9px"><span class="user-avatar" style="background:linear-gradient(135deg,#0891B2,#06B6D4)">МС</span><div><div style="font-weight:600">Мария Соколова</div><div style="color:var(--fg-3);font-size:11.5px">msokolova</div></div></div></td>
+                <td><select class="select sel-role"><option>Администратор</option><option selected>Аналитик</option><option>Гость</option></select></td>
+                <td><span class="badge badge-ok">активен</span></td>
+                <td><div class="row-actions"><button class="btn-icon" title="Задать пароль"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></button><button class="btn-icon" title="Заблокировать"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M7 12h10" stroke-linecap="round"/></svg></button><button class="btn-icon" title="Удалить" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div></td>
+              </tr>
+              <tr>
+                <td><div style="display:flex;align-items:center;gap:9px"><span class="user-avatar" style="background:linear-gradient(135deg,#64748B,#94A3B8)">ИП</span><div><div style="font-weight:600">Иван Петров</div><div style="color:var(--fg-3);font-size:11.5px">ipetrov</div></div></div></td>
+                <td><select class="select sel-role"><option>Администратор</option><option>Аналитик</option><option selected>Гость</option></select></td>
+                <td><span class="badge badge-off">заблокирован</span></td>
+                <td><div class="row-actions"><button class="btn-icon" title="Задать пароль"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></button><button class="btn-icon" title="Разблокировать"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 9 0v3"/></svg></button><button class="btn-icon" title="Удалить" style="color:var(--danger)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Роли ===== -->
+    <section class="view" id="view-roles">
+      <header class="admin-header">
+        <div>
+          <h1>Роли</h1>
+          <div class="ah-sub">Общие права и права по каждой базе документов</div>
+        </div>
+        <div class="ah-actions"><button class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Создать роль</button></div>
+      </header>
+      <div class="admin-body">
+        <div class="card role-card">
+          <div class="rc-head">
+            <div><div class="rc-name">Администратор</div><div class="rc-desc">Полный контроль над системой и базами</div></div>
+            <div class="rc-actions"><button class="btn btn-ghost btn-sm">Удалить</button><button class="btn btn-primary btn-sm">Сохранить</button></div>
+          </div>
+          <div class="rc-body">
+            <div class="admin-section-title">Общие права</div>
+            <div class="perm-grid">
+              <label class="perm-row"><button class="toggle on"></button> Управлять пользователями</label>
+              <label class="perm-row"><button class="toggle on"></button> Управлять ролями</label>
+              <label class="perm-row"><button class="toggle on"></button> Управлять группами</label>
+              <label class="perm-row"><button class="toggle on"></button> Управлять доступами</label>
+              <label class="perm-row"><button class="toggle on"></button> Создавать базы</label>
+              <label class="perm-row"><button class="toggle on"></button> Смотреть журнал</label>
+            </div>
+            <div class="admin-section-title" style="margin-top:14px">Права по базам</div>
+            <table class="kb-matrix">
+              <thead><tr><th>База</th><th>Спрашивать</th><th>Загружать</th><th>Удалять</th><th>Раскладывать</th></tr></thead>
+              <tbody>
+                <tr><td>Техдокументация</td><td><input type="checkbox" class="check" checked></td><td><input type="checkbox" class="check" checked></td><td><input type="checkbox" class="check" checked></td><td><input type="checkbox" class="check" checked></td></tr>
+                <tr><td>Архив</td><td><input type="checkbox" class="check" checked></td><td><input type="checkbox" class="check" checked></td><td><input type="checkbox" class="check" checked></td><td><input type="checkbox" class="check" checked></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card role-card">
+          <div class="rc-head">
+            <div><div class="rc-name">Аналитик</div><div class="rc-desc">Спрашивает по документам, не меняет их</div></div>
+            <div class="rc-actions"><button class="btn btn-ghost btn-sm">Удалить</button><button class="btn btn-primary btn-sm">Сохранить</button></div>
+          </div>
+          <div class="rc-body">
+            <div class="admin-section-title">Общие права</div>
+            <div class="perm-grid">
+              <label class="perm-row"><button class="toggle"></button> Управлять пользователями</label>
+              <label class="perm-row"><button class="toggle"></button> Управлять ролями</label>
+              <label class="perm-row"><button class="toggle"></button> Управлять группами</label>
+              <label class="perm-row"><button class="toggle"></button> Управлять доступами</label>
+              <label class="perm-row"><button class="toggle"></button> Создавать базы</label>
+              <label class="perm-row"><button class="toggle"></button> Смотреть журнал</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Группы ===== -->
+    <section class="view" id="view-groups">
+      <header class="admin-header">
+        <div><h1>Группы</h1><div class="ah-sub">Роль в группе — все, у кого она есть сейчас и будет потом</div></div>
+        <div class="ah-actions"><button class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Создать группу</button></div>
+      </header>
+      <div class="admin-body">
+        <div class="card role-card">
+          <div class="rc-head">
+            <div><div class="rc-name">Цех №2</div><div class="rc-desc">Оперативный персонал цеха</div></div>
+            <div class="rc-actions"><button class="btn btn-ghost btn-sm">Удалить</button></div>
+          </div>
+          <div class="rc-body">
+            <div class="admin-section-title">Пользователи</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <span class="chip">Мария Соколова</span>
+              <span class="chip">Иван Петров</span>
+              <span class="chip" style="color:var(--accent);border-style:dashed">+ Добавить</span>
+            </div>
+            <div class="admin-section-title" style="margin-top:14px">Роли</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <span class="chip">Аналитик</span>
+              <span class="chip" style="color:var(--accent);border-style:dashed">+ Добавить</span>
+            </div>
+          </div>
+        </div>
+        <div class="card role-card">
+          <div class="rc-head">
+            <div><div class="rc-name">Руководство</div><div class="rc-desc">Полный доступ к архиву</div></div>
+            <div class="rc-actions"><button class="btn btn-ghost btn-sm">Удалить</button></div>
+          </div>
+          <div class="rc-body">
+            <div class="admin-section-title">Пользователи</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip">Алексей Лазарев</span><span class="chip" style="color:var(--accent);border-style:dashed">+ Добавить</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Доступы ===== -->
+    <section class="view" id="view-access">
+      <header class="admin-header">
+        <div><h1>Доступы</h1><div class="ah-sub">Кому открыта каждая база и какие действия доступны</div></div>
+        <div class="ah-actions"><button class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Создать базу</button></div>
+      </header>
+      <div class="admin-body">
+        <div class="toolbar"><input class="input" placeholder="База или пользователь…"></div>
+
+        <details class="card access-block" open>
+          <summary>Техдокументация <span class="badge badge-ok" style="margin-left:6px">открыта</span><span class="chev">▾</span></summary>
+          <div>
+            <div class="access-row">
+              <span class="ar-subject"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Роль Администратор</span>
+              <span class="badge badge-ok ar-state">открыт</span>
+              <span class="ar-perms"><button class="btn btn-ghost btn-sm">Закрыть</button></span>
+            </div>
+            <div class="access-row">
+              <span class="ar-subject"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/></svg>Группа Цех №2</span>
+              <span class="badge badge-ok ar-state">открыт</span>
+              <span class="ar-perms"><button class="btn btn-ghost btn-sm">Закрыть</button></span>
+            </div>
+            <div class="access-row">
+              <span class="ar-subject"><span class="user-avatar" style="width:18px;height:18px;font-size:9px">МС</span>Мария Соколова</span>
+              <span class="badge badge-ok ar-state">открыт</span>
+              <span class="ar-perms">
+                <label><input type="checkbox" class="check" checked> Спрашивать</label>
+                <label><input type="checkbox" class="check" checked> Загружать</label>
+                <label><input type="checkbox" class="check"> Удалять</label>
+                <label><input type="checkbox" class="check"> Раскладывать</label>
+                <button class="btn btn-ghost btn-sm">Сохранить</button>
+              </span>
+            </div>
+          </div>
+        </details>
+
+        <details class="card access-block" open>
+          <summary>Архив <span class="badge badge-mute" style="margin-left:6px">закрыта</span><span class="chev">▾</span></summary>
+          <div>
+            <div class="access-row">
+              <span class="ar-subject"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Роль Администратор</span>
+              <span class="badge badge-off ar-state">закрыт</span>
+              <span class="ar-perms"><button class="btn btn-soft btn-sm">Открыть</button></span>
+            </div>
+            <div class="access-row">
+              <span class="ar-subject"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/></svg>Группа Руководство</span>
+              <span class="badge badge-mute ar-state">нет входа</span>
+              <span class="ar-perms"><button class="btn btn-soft btn-sm">Открыть</button></span>
+            </div>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- ===== Журнал ===== -->
+    <section class="view" id="view-audit">
+      <header class="admin-header">
+        <div><h1>Журнал действий</h1><div class="ah-sub">Только чтение · последние события</div></div>
+      </header>
+      <div class="admin-body">
+        <div class="toolbar">
+          <select class="select" style="width:150px"><option>Все типы</option><option>Вход</option><option>Загрузка</option><option>Удаление</option><option>Доступ</option></select>
+          <input class="input" placeholder="Пользователь…">
+          <span class="spacer"></span>
+          <button class="btn btn-ghost btn-sm">Обновить</button>
+        </div>
+        <div class="card">
+          <div class="audit-row">
+            <span class="audit-time">12:41:07</span>
+            <span class="badge badge-ok audit-kind">вход</span>
+            <span class="audit-who">alazarev</span>
+            <span class="audit-msg">Успешный вход с 127.0.0.1</span>
+            <button class="btn-icon audit-open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></button>
+          </div>
+          <div class="audit-row">
+            <span class="audit-time">12:38:22</span>
+            <span class="badge badge-warn audit-kind">загрузка</span>
+            <span class="audit-who">msokolova</span>
+            <span class="audit-msg">Загружено 3 файла в базу «Техдокументация»</span>
+            <button class="btn-icon audit-open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></button>
+          </div>
+          <div class="audit-row">
+            <span class="audit-time">12:35:50</span>
+            <span class="badge badge-warn audit-kind">доступ</span>
+            <span class="audit-who">alazarev</span>
+            <span class="audit-msg">Группе «Цех №2» открыта база «Техдокументация»</span>
+            <button class="btn-icon audit-open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></button>
+          </div>
+          <div class="audit-row">
+            <span class="audit-time">12:31:04</span>
+            <span class="badge badge-off audit-kind">удаление</span>
+            <span class="audit-who">alazarev</span>
+            <span class="audit-msg">Удалён документ «старый_отчёт.txt» из базы «Архив»</span>
+            <button class="btn-icon audit-open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  const items = document.querySelectorAll('.an-item');
+  const views = document.querySelectorAll('.view');
+  items.forEach((item) => {
+    item.addEventListener('click', () => {
+      items.forEach((i) => i.classList.remove('on'));
+      views.forEach((v) => v.classList.remove('on'));
+      item.classList.add('on');
+      const target = document.getElementById('view-' + item.dataset.view);
+      if (target) target.classList.add('on');
+    });
+  });
+</script>
+</body>
+</html>

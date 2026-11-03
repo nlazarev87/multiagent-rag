@@ -1,0 +1,186 @@
+﻿<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>РЎРµРјР°РЅС‚РёРєР° вЂ” РіР»Р°РІРЅС‹Р№ СЌРєСЂР°РЅ (РјРѕРєР°Рї)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="window">
+  <!-- Р¤Р°Р»СЊС€-С‚Р°Р№С‚Р»Р±Р°СЂ Windows -->
+  <header class="titlebar">
+    <div class="brand">
+      <span class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 13h5"/><path d="M10 16h3"/>
+        </svg>
+      </span>
+      <span>РЎРµРјР°РЅС‚РёРєР°</span>
+    </div>
+    <span class="titlebar-sep"></span>
+    <span class="titlebar-context">Р Р°Р±РѕС‡Р°СЏ РѕР±Р»Р°СЃС‚СЊ В· Р”РѕРєСѓРјРµРЅС‚С‹</span>
+    <span class="titlebar-spacer"></span>
+    <div class="win-controls">
+      <button class="win-btn"><svg viewBox="0 0 12 12"><line x1="1" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1.4"/></svg></button>
+      <button class="win-btn"><svg viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
+      <button class="win-btn close"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.4"/></svg></button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <!-- Р›РµРІР°СЏ РєРѕР»РѕРЅРєР°: РґРёР°Р»РѕРіРё -->
+    <aside class="pane">
+      <div class="side-head">
+        <div class="side-title">
+          <span>Р”РёР°Р»РѕРіРё</span>
+          <button class="btn-icon" title="РќР°СЃС‚СЂРѕР№РєРё">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.09a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>
+          </button>
+        </div>
+        <button class="btn btn-primary" style="width:100%">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          РќРѕРІС‹Р№ РґРёР°Р»РѕРі
+        </button>
+      </div>
+
+      <ul class="dialog-list">
+        <li class="dialog on"><span class="dialog-dot"></span><span class="dialog-title">РЎРєРѕР»СЊРєРѕ РЅР°СЃРѕСЃРѕРІ РІ С†РµС…Рµ в„–2</span><button class="dialog-x">Г—</button></li>
+        <li class="dialog"><span class="dialog-dot"></span><span class="dialog-title">Р РµРіР»Р°РјРµРЅС‚ РўРћ РєРѕРјРїСЂРµСЃСЃРѕСЂРѕРІ</span><button class="dialog-x">Г—</button></li>
+        <li class="dialog"><span class="dialog-dot"></span><span class="dialog-title">РџР°СЃРїРѕСЂС‚РЅС‹Рµ РґР°РЅРЅС‹Рµ СЌР»РµРєС‚СЂРѕРґРІРёРіР°С‚РµР»РµР№</span><button class="dialog-x">Г—</button></li>
+        <li class="dialog"><span class="dialog-dot"></span><span class="dialog-title">РђРІР°СЂРёР№РЅС‹Рµ РѕСЃС‚Р°РЅРѕРІРєРё Р·Р° РјР°СЂС‚</span><button class="dialog-x">Г—</button></li>
+        <li class="dialog"><span class="dialog-dot"></span><span class="dialog-title">РЎС…РµРјР° РІРѕРґРѕСЃРЅР°Р±Р¶РµРЅРёСЏ РєРѕСЂРїСѓСЃР° Рђ</span><button class="dialog-x">Г—</button></li>
+      </ul>
+
+      <div class="side-foot">
+        <div class="model-status">
+          <span class="model-dot on"></span>
+          <span>РњРѕРґРµР»СЊ РіРѕС‚РѕРІР° В· Qwen2.5 7B</span>
+        </div>
+        <div class="user-chip">
+          <span class="user-avatar">РђР›</span>
+          <span class="user-meta">
+            <span class="user-name">РђР»РµРєСЃРµР№ Р›Р°Р·Р°СЂРµРІ</span><br>
+            <span class="user-role">РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ</span>
+          </span>
+          <span class="user-actions">
+            <button class="btn-icon" title="РЎРјРµРЅРёС‚СЊ РїР°СЂРѕР»СЊ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></button>
+            <button class="btn-icon" title="Р’С‹Р№С‚Рё"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></button>
+          </span>
+        </div>
+      </div>
+    </aside>
+
+    <div class="sash"></div>
+
+    <!-- РЎСЂРµРґРЅСЏСЏ РєРѕР»РѕРЅРєР°: Р°РіРµРЅС‚ -->
+    <section class="pane paper">
+      <div class="mid-head">
+        <div class="seg">
+          <button class="on">РђРіРµРЅС‚</button>
+          <button>Р”РѕРєСѓРјРµРЅС‚С‹</button>
+        </div>
+        <div class="mid-tools">
+          <span class="kbd">Enter</span>
+        </div>
+      </div>
+
+      <div class="chat-scroll">
+        <div class="turn">
+          <div class="q">РЎРєРѕР»СЊРєРѕ РЅР°СЃРѕСЃРѕРІ СѓСЃС‚Р°РЅРѕРІР»РµРЅРѕ РІ С†РµС…Рµ в„–2 Рё РєР°РєР°СЏ Сѓ РЅРёС… РїСЂРѕРёР·РІРѕРґРёС‚РµР»СЊРЅРѕСЃС‚СЊ?</div>
+          <div class="a">
+            <span class="a-avatar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7z"/><path d="M19 15l.7 1.8 1.8.7-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7z"/></svg>
+            </span>
+            <div class="a-body">
+              <div class="a-text">Р’ С†РµС…Рµ в„–2 СѓСЃС‚Р°РЅРѕРІР»РµРЅРѕ <b>С‚СЂРё РЅР°СЃРѕСЃР°</b>: РґРІР° СЂР°Р±РѕС‡РёС… Р°РіСЂРµРіР°С‚Р° Р¦РќРЎ 180-190 (РїРѕ 190 РјВі/С‡ РїСЂРё РЅР°РїРѕСЂРµ 190 Рј) Рё РѕРґРёРЅ СЂРµР·РµСЂРІРЅС‹Р№ Р¦РќРЎ 105-98. РЎСѓРјРјР°СЂРЅР°СЏ РїСЂРѕРёР·РІРѕРґРёС‚РµР»СЊРЅРѕСЃС‚СЊ СЂР°Р±РѕС‡РµР№ РіСЂСѓРїРїС‹ вЂ” 380 РјВі/С‡.</div>
+              <div class="a-sources">
+                <span class="chip"><span class="cnum">[1]</span> pump.md</span>
+                <span class="chip"><span class="cnum">[2]</span> РўРµС…РїР°СЃРїРѕСЂС‚_С†РµС…2.docx</span>
+              </div>
+              <div class="rating-row">
+                <span class="rating-label">РџРѕР»РЅРѕС‚Р° РѕС‚РІРµС‚Р°</span>
+                <button class="star-btn">1</button><button class="star-btn">2</button><button class="star-btn">3</button><button class="star-btn on">4</button><button class="star-btn">5</button>
+              </div>
+              <div class="rating-row">
+                <span class="rating-label">РљРѕСЂСЂРµРєС‚РЅРѕСЃС‚СЊ РѕС‚РІРµС‚Р°</span>
+                <button class="star-btn">1</button><button class="star-btn">2</button><button class="star-btn">3</button><button class="star-btn">4</button><button class="star-btn on">5</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="turn">
+          <div class="q">РљР°РєР°СЏ Р°РІР°СЂРёР№РЅР°СЏ Р·Р°С‰РёС‚Р° РїСЂРµРґСѓСЃРјРѕС‚СЂРµРЅР° РґР»СЏ РЅР°СЃРѕСЃРЅРѕР№ РіСЂСѓРїРїС‹?</div>
+          <div class="a">
+            <span class="a-avatar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7z"/><path d="M19 15l.7 1.8 1.8.7-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7z"/></svg>
+            </span>
+            <div class="a-body">
+              <div class="a-text">РџСЂРµРґСѓСЃРјРѕС‚СЂРµРЅР° Р·Р°С‰РёС‚Р° РїРѕ РґР°РІР»РµРЅРёСЋ (СЂРµР»Рµ Р”Р”-1, СѓСЃС‚Р°РІРєР° 0,4 РњРџР°) Рё Р·Р°С‰РёС‚Р° РѕС‚ СЃСѓС…РѕРіРѕ С…РѕРґР°. РџСЂРё СЃСЂР°Р±Р°С‚С‹РІР°РЅРёРё Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РІРєР»СЋС‡Р°РµС‚СЃСЏ СЂРµР·РµСЂРІРЅС‹Р№ РЅР°СЃРѕСЃ.</div>
+              <div class="a-sources">
+                <span class="chip"><span class="cnum">[1]</span> Р РµРіР»Р°РјРµРЅС‚_РўРћ.pdf</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <textarea placeholder="РЎРїСЂРѕСЃРёС‚СЊ РїРѕ РґРѕРєСѓРјРµРЅС‚Р°РјвЂ¦"></textarea>
+        <span class="composer-hint">Shift+Enter вЂ” РїРµСЂРµРЅРѕСЃ</span>
+        <button class="btn-round">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <div class="sash"></div>
+
+    <!-- РџСЂР°РІР°СЏ РєРѕР»РѕРЅРєР°: РїСЂРµРІСЊСЋ РґРѕРєСѓРјРµРЅС‚Р° -->
+    <section class="pane paper">
+      <div class="preview-tabs">
+        <div class="ptab on">
+          <svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></svg>
+          <span>pump.md</span>
+          <button class="px">Г—</button>
+        </div>
+        <div class="ptab">
+          <svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></svg>
+          <span>РўРµС…РїР°СЃРїРѕСЂС‚_С†РµС…2.docx</span>
+          <button class="px">Г—</button>
+        </div>
+      </div>
+
+      <div class="preview-head">
+        <div style="min-width:0">
+          <div class="preview-title">pump.md</div>
+          <div class="preview-sub">Р‘Р°Р·Р° В«РўРµС…РґРѕРєСѓРјРµРЅС‚Р°С†РёСЏВ» В· 4 С„СЂР°РіРјРµРЅС‚Р°</div>
+        </div>
+        <span class="badge badge-ok" style="margin-left:auto">РёСЃС‚РѕС‡РЅРёРє РѕС‚РІРµС‚Р°</span>
+      </div>
+
+      <div class="preview-canvas">
+        <article class="chunk">
+          <p>РќР°СЃРѕСЃРЅР°СЏ СЃС‚Р°РЅС†РёСЏ С†РµС…Р° в„–2 РІРєР»СЋС‡Р°РµС‚ С‚СЂРё Р°РіСЂРµРіР°С‚Р°, СѓСЃС‚Р°РЅРѕРІР»РµРЅРЅС‹С… РЅР° РѕР±С‰РµРј С„СѓРЅРґР°РјРµРЅС‚Рµ СЃ РІРёР±СЂРѕРёР·РѕР»СЏС†РёРµР№. Р Р°Р·РІРѕРґРєР° РєРѕР»Р»РµРєС‚РѕСЂРѕРІ РІС‹РїРѕР»РЅРµРЅР° РїРѕ СЃС…РµРјРµ В«СЂР°Р±РѕС‡РёР№вЂ“СЂР°Р±РѕС‡РёР№вЂ“СЂРµР·РµСЂРІРЅС‹Р№В».</p>
+          <p class="hit">Р Р°Р±РѕС‡РёРµ РЅР°СЃРѕСЃС‹ Р¦РќРЎ 180-190 РѕР±РµСЃРїРµС‡РёРІР°СЋС‚ РїРѕРґР°С‡Сѓ 190 РјВі/С‡ РїСЂРё РЅР°РїРѕСЂРµ 190 Рј. Р РµР·РµСЂРІРЅС‹Р№ РЅР°СЃРѕСЃ Р¦РќРЎ 105-98 СЂР°СЃСЃС‡РёС‚Р°РЅ РЅР° 98 РјВі/С‡ Рё РІРєР»СЋС‡Р°РµС‚СЃСЏ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РїСЂРё РїР°РґРµРЅРёРё РґР°РІР»РµРЅРёСЏ РЅРёР¶Рµ 0,4 РњРџР°.</p>
+          <p>Р’СЃР°СЃС‹РІР°СЋС‰РёРµ Р»РёРЅРёРё РѕР±РѕСЂСѓРґРѕРІР°РЅС‹ С„РёР»СЊС‚СЂР°РјРё РіСЂСѓР±РѕР№ РѕС‡РёСЃС‚РєРё Рё РѕР±СЂР°С‚РЅС‹РјРё РєР»Р°РїР°РЅР°РјРё. РќР°РїРѕСЂРЅС‹Рµ Р»РёРЅРёРё РІС‹РІРµРґРµРЅС‹ РІ РѕР±С‰РёР№ РєРѕР»Р»РµРєС‚РѕСЂ СЃ РјР°РЅРѕРјРµС‚СЂР°РјРё РЅР° РєР°Р¶РґРѕРј РѕС‚РІРѕРґРµ.</p>
+          <p>РџР»Р°РЅРѕРІРѕРµ С‚РµС…РЅРёС‡РµСЃРєРѕРµ РѕР±СЃР»СѓР¶РёРІР°РЅРёРµ РїСЂРѕРІРѕРґРёС‚СЃСЏ РєР°Р¶РґС‹Рµ 2000 С‡Р°СЃРѕРІ РЅР°СЂР°Р±РѕС‚РєРё СЃ Р·Р°РјРµРЅРѕР№ С‚РѕСЂС†РµРІС‹С… СѓРїР»РѕС‚РЅРµРЅРёР№ Рё РїСЂРѕРІРµСЂРєРѕР№ Р±Р°Р»Р°РЅСЃРёСЂРѕРІРєРё СЂРѕС‚РѕСЂР°.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <!-- РЎС‚СЂРѕРєР° СЃРѕСЃС‚РѕСЏРЅРёСЏ -->
+  <footer class="statusbar">
+    <span class="sb-item"><span class="sb-dot on"></span>Р“РѕС‚РѕРІРѕ</span>
+    <span class="sb-sep"></span>
+    <span class="sb-item">Р‘Р°Р·Р°: РўРµС…РґРѕРєСѓРјРµРЅС‚Р°С†РёСЏ</span>
+    <span class="sb-spacer"></span>
+    <span class="sb-item">РђР»РµРєСЃРµР№ Р›Р°Р·Р°СЂРµРІ В· РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ</span>
+    <span class="sb-sep"></span>
+    <button>РЈРїСЂР°РІР»РµРЅРёРµ</button>
+  </footer>
+</div>
+</body>
+</html>
+
