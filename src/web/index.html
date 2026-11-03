@@ -639,6 +639,111 @@
     }
     .admin-header h1 { margin: 0; font-size: 19px; font-weight: 700; }
     .ah-sub { color: var(--fg3); font-size: 12.5px; margin-top: 2px; }
+    .toolbar { display: flex; align-items: center; gap: 8px; }
+    .toolbar .spacer { flex: 1; }
+    .table { width: 100%; border-collapse: collapse; font-size: 12.5px; background: var(--paper); }
+    .table th {
+      text-align: left;
+      font-weight: 600;
+      font-size: 11px;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--fg3);
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .table td { padding: 8px 12px; border-bottom: 1px solid var(--line-2); vertical-align: middle; }
+    .table tr:last-child td { border-bottom: 0; }
+    .table tr:hover td { background: var(--paper-2); }
+    .table-card {
+      background: var(--paper);
+      border: 1px solid var(--line-2);
+      border-radius: var(--r-3);
+      overflow: hidden;
+      box-shadow: var(--shadow-1);
+    }
+    .row-actions { display: flex; gap: 4px; justify-content: flex-end; flex-wrap: wrap; }
+    .user-cell { display: flex; align-items: center; gap: 9px; }
+    .user-cell .user-name { font-weight: 600; }
+    .user-cell .user-login { color: var(--fg3); font-size: 11.5px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 20px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .badge-ok { background: var(--ready-soft); color: var(--ready); }
+    .badge-off { background: var(--danger-soft); color: var(--danger); }
+    .btn-ghost-sm {
+      font: inherit;
+      font-size: 12px;
+      color: var(--fg2);
+      background: transparent;
+      border: 1px solid var(--line-3);
+      border-radius: var(--r-2);
+      padding: 3px 9px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-ghost-sm:hover { background: var(--wash); color: var(--fg); }
+    .btn-ghost-sm.danger { color: var(--danger); }
+    .btn-ghost-sm.danger:hover { background: var(--danger-soft); }
+    .toggle {
+      position: relative;
+      width: 34px;
+      height: 20px;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: var(--line-3);
+      cursor: pointer;
+      border: 0;
+    }
+    .toggle.on { background: var(--accent); }
+    .toggle::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: var(--shadow-1);
+      transition: left .15s;
+    }
+    .toggle.on::after { left: 16px; }
+    .role-card {
+      background: var(--paper);
+      border: 1px solid var(--line-2);
+      border-radius: var(--r-3);
+      box-shadow: var(--shadow-1);
+      overflow: hidden;
+    }
+    .rc-head { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--line-2); }
+    .rc-name { font-weight: 700; font-size: 13.5px; }
+    .rc-desc { color: var(--fg3); font-size: 12px; }
+    .rc-actions { margin-left: auto; display: flex; gap: 6px; }
+    .rc-body { padding: 4px 16px 14px; }
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--fg3);
+      margin: 14px 0 6px;
+    }
+    .perm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px 14px; }
+    .perm-row { display: flex; align-items: center; gap: 9px; padding: 6px 0; font-size: 12.5px; color: var(--fg2); }
+    .kb-matrix { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 4px; }
+    .kb-matrix th, .kb-matrix td { text-align: center; padding: 7px 10px; border-bottom: 1px solid var(--line-2); }
+    .kb-matrix th:first-child, .kb-matrix td:first-child { text-align: left; }
+    .kb-matrix th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--fg3); }
+    .check { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; flex: 0 0 auto; }
     .access-block { border: 1px solid var(--line2); border-radius: 8px; background: var(--editor); }
     .access-block > summary {
       cursor: pointer;
@@ -1984,9 +2089,32 @@
       const line = document.createElement("label");
       const box = document.createElement("input");
       box.type = "checkbox";
+      box.className = "check";
       box.checked = Boolean(checked);
       line.append(box, document.createTextNode(" " + label));
       return { line: line, box: box };
+    }
+
+    function badge(label, kind) {
+      return element("span", "badge " + (kind === "off" ? "badge-off" : "badge-ok"), label);
+    }
+
+    function toggleButton(checked) {
+      const node = element("button", checked ? "toggle on" : "toggle");
+      node.type = "button";
+      node.addEventListener("click", () => node.classList.toggle("on"));
+      return node;
+    }
+
+    function sectionTitle(text) {
+      return element("div", "section-title", text);
+    }
+
+    function adminGhost(label, action, danger) {
+      const button = element("button", danger ? "btn-ghost-sm danger" : "btn-ghost-sm", label);
+      button.type = "button";
+      button.addEventListener("click", action);
+      return button;
     }
 
     async function sendJson(url, method, body) {
@@ -2006,10 +2134,34 @@
       if ((me.actions || []).includes("manage_roles")) {
         roles = (await (await fetch("/admin/roles")).json()).roles || [];
       }
+      const toolbar = element("div", "toolbar");
+      toolbar.append(adminInput("Поиск по логину…"), element("span", "spacer"));
+      adminBody.append(toolbar);
+
+      const table = element("table", "table");
+      const thead = element("thead");
+      const headRow = element("tr");
+      ["Пользователь", "Роль", "Статус", "Действия"].forEach((title) => {
+        const th = element("th", "", title);
+        if (title === "Действия") th.style.textAlign = "right";
+        headRow.append(th);
+      });
+      thead.append(headRow);
+      table.append(thead);
+      const tbody = element("tbody");
       (data.users || []).forEach((user) => {
-        const row = document.createElement("div");
-        field(row, "p", user.login + " — " + user.role + (user.blocked ? " (заблокирован)" : ""));
+        const tr = element("tr");
+        const tdUser = element("td");
+        const cell = element("div", "user-cell");
+        const avatar = element("span", "user-avatar", String(user.login || "?").slice(0, 2).toUpperCase());
+        const meta = element("div", "user-meta");
+        meta.append(element("div", "user-name", user.login || ""));
+        cell.append(avatar, meta);
+        tdUser.append(cell);
+
+        const tdRole = element("td");
         const rolePick = document.createElement("select");
+        rolePick.className = "select";
         roles.forEach((role) => {
           const option = document.createElement("option");
           option.value = role.id;
@@ -2017,28 +2169,46 @@
           option.selected = role.id === user.role_id;
           rolePick.append(option);
         });
-        if (roles.length) row.append(rolePick, adminButton("Сменить роль", async () => {
-          const sent = await sendJson("/admin/users/" + user.id, "PATCH", { role_id: rolePick.value });
-          field(adminBody, "p", sent.ok ? "Роль записана" : (sent.payload.detail || "Ошибка"));
-          if (sent.ok) showUsers();
-        }));
-        row.append(adminButton(user.blocked ? "Разблокировать" : "Заблокировать", async () => {
+        tdRole.append(rolePick);
+
+        const tdStatus = element("td");
+        tdStatus.append(badge(user.blocked ? "заблокирован" : "активен", user.blocked ? "off" : "ok"));
+
+        const tdActions = element("td");
+        const actions = element("div", "row-actions");
+        if (roles.length) {
+          actions.append(adminGhost("Сменить роль", async () => {
+            const sent = await sendJson("/admin/users/" + user.id, "PATCH", { role_id: rolePick.value });
+            field(adminBody, "p", sent.ok ? "Роль записана" : (sent.payload.detail || "Ошибка"));
+            if (sent.ok) showUsers();
+          }));
+        }
+        actions.append(adminGhost(user.blocked ? "Разблокировать" : "Заблокировать", async () => {
           const sent = await sendJson("/admin/users/" + user.id, "PATCH", { blocked: !user.blocked });
           field(adminBody, "p", sent.ok ? "Записано" : (sent.payload.detail || "Ошибка"));
           if (sent.ok) showUsers();
         }));
-        row.append(adminButton("Удалить", async () => {
+        actions.append(adminGhost("Пароль", async () => {
+          const password = window.prompt("Новый пароль", "");
+          if (!password) return;
+          const sent = await sendJson("/admin/users/" + user.id, "PATCH", { password: password });
+          field(adminBody, "p", sent.ok ? "Пароль задан" : (sent.payload.detail || "Ошибка"));
+        }));
+        actions.append(adminGhost("Удалить", async () => {
           const sent = await sendJson("/admin/users/" + user.id, "DELETE");
           field(adminBody, "p", sent.ok ? "Удалён" : (sent.payload.detail || "Ошибка"));
           if (sent.ok) showUsers();
-        }));
-        const password = adminInput("Новый пароль");
-        row.append(password, adminButton("Задать пароль", async () => {
-          const sent = await sendJson("/admin/users/" + user.id, "PATCH", { password: password.value });
-          field(adminBody, "p", sent.ok ? "Пароль задан" : (sent.payload.detail || "Ошибка"));
-        }));
-        adminBody.append(row);
+        }, true));
+        tdActions.append(actions);
+
+        tr.append(tdUser, tdRole, tdStatus, tdActions);
+        tbody.append(tr);
       });
+      table.append(tbody);
+      const wrap = element("div", "table-card");
+      wrap.append(table);
+      adminBody.append(wrap);
+
       const form = document.createElement("form");
       form.className = "card";
       const login = adminInput("Логин");
@@ -2114,30 +2284,74 @@
       field(adminBody, "p", "Действие роли само базу не открывает. Создание базы и «Открыть себе» эту матрицу не меняют.");
       const data = await (await fetch("/admin/roles")).json();
       const globals = ["manage_users", "manage_roles", "manage_groups", "manage_access", "create_kb", "view_audit"];
+      const globalLabel = {
+        manage_users: "Управлять пользователями",
+        manage_roles: "Управлять ролями",
+        manage_groups: "Управлять группами",
+        manage_access: "Управлять доступами",
+        create_kb: "Создавать базы",
+        view_audit: "Смотреть журнал",
+      };
       const content = ["ask", "upload", "delete", "arrange"];
       const contentLabel = { ask: "Спрашивать", upload: "Загружать", delete: "Удалять", arrange: "Раскладывать" };
       (data.roles || []).forEach((role) => {
-        const block = document.createElement("div");
-        field(block, "p", role.name);
+        const card = element("div", "role-card");
+        const head = element("div", "rc-head");
+        head.append(element("div", "rc-name", role.name));
+        const headActions = element("div", "rc-actions");
+        head.append(headActions);
+        card.append(head);
+
+        const body = element("div", "rc-body");
+        body.append(sectionTitle("Общие права"));
+        const grid = element("div", "perm-grid");
         const boxes = {};
         globals.forEach((action) => {
-          const item = checkboxLine(action, (role.actions || []).includes(action));
-          boxes[action] = item.box;
-          block.append(item.line);
+          const row = element("div", "perm-row");
+          const toggle = toggleButton((role.actions || []).includes(action));
+          boxes[action] = toggle;
+          row.append(toggle, document.createTextNode(globalLabel[action]));
+          grid.append(row);
         });
+        body.append(grid);
+
+        body.append(sectionTitle("Права по базам"));
         const matrix = {};
-        (data.bases || []).forEach((base) => {
-          field(block, "p", base.name);
-          matrix[base.id] = {};
-          content.forEach((action) => {
-            const on = ((role.kb_actions || {})[base.id] || []).includes(action);
-            const item = checkboxLine(contentLabel[action], on);
-            matrix[base.id][action] = item.box;
-            block.append(item.line);
+        if ((data.bases || []).length) {
+          const table = element("table", "kb-matrix");
+          const thead = element("thead");
+          const headRow = element("tr");
+          headRow.append(element("th", "", "База"));
+          content.forEach((action) => headRow.append(element("th", "", contentLabel[action])));
+          thead.append(headRow);
+          table.append(thead);
+          const tbody = element("tbody");
+          (data.bases || []).forEach((base) => {
+            const tr = element("tr");
+            tr.append(element("td", "", base.name));
+            matrix[base.id] = {};
+            content.forEach((action) => {
+              const td = element("td");
+              const on = ((role.kb_actions || {})[base.id] || []).includes(action);
+              const box = document.createElement("input");
+              box.type = "checkbox";
+              box.className = "check";
+              box.checked = on;
+              matrix[base.id][action] = box;
+              td.append(box);
+              tr.append(td);
+            });
+            tbody.append(tr);
           });
-        });
-        block.append(adminButton("Записать", async () => {
-          const actions = globals.filter((action) => boxes[action].checked);
+          table.append(tbody);
+          body.append(table);
+        } else {
+          body.append(element("p", "muted", "Баз нет"));
+        }
+        card.append(body);
+
+        headActions.append(adminButton("Записать", async () => {
+          const actions = globals.filter((action) => boxes[action].classList.contains("on"));
           const kbActions = {};
           Object.keys(matrix).forEach((kbId) => {
             kbActions[kbId] = content.filter((action) => matrix[kbId][action].checked);
@@ -2145,12 +2359,13 @@
           const sent = await sendJson("/admin/roles/" + role.id, "PATCH", { actions: actions, kb_actions: kbActions });
           field(adminBody, "p", sent.ok ? "Записано" : (sent.payload.detail || "Ошибка"));
         }));
-        block.append(adminButton("Удалить роль", async () => {
+        headActions.append(adminGhost("Удалить", async () => {
           const sent = await sendJson("/admin/roles/" + role.id, "DELETE");
           if (sent.ok) document.getElementById("admin-roles").click();
           else field(adminBody, "p", sent.payload.detail || "Ошибка");
-        }));
-        adminBody.append(block);
+        }, true));
+
+        adminBody.append(card);
       });
       const name = adminInput("Имя роли");
       adminBody.append(name, adminButton("Создать роль", async () => {
