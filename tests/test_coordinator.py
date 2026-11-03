@@ -873,6 +873,39 @@ def test_search_does_not_fall_back_when_names_empty(monkeypatch):
     assert step["output_summary"]["chunks_returned"] == 0
 
 
+def test_concurrent_runs_dont_block_queue(monkeypatch):
+    import threading
+    import time
+
+    started = []
+
+    def slow(*_args, **_kwargs):
+        started.append(time.perf_counter())
+        time.sleep(1.5)
+        return {"answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []}
+
+    monkeypatch.setattr(coordinator, "_run", slow)
+    threads = [
+        threading.Thread(target=coordinator.run, args=("q1", "d1")),
+        threading.Thread(target=coordinator.run, args=("q2", "d2")),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+        assert not thread.is_alive()
+    assert len(started) == 2
+    gap = abs(started[1] - started[0])
+    assert gap < 1.0, f"второй проход стартовал через {gap:.2f}s"
+
+
+def test_no_global_graph_executor():
+    import inspect
+
+    assert "_graph_executor" not in inspect.getsource(coordinator.run)
+    assert not hasattr(coordinator, "_graph_executor")
+
+
 def test_search_does_not_fall_back_when_no_work(monkeypatch):
     monkeypatch.setattr(coordinator, "select_agent", lambda *_args: [])
     seen = []

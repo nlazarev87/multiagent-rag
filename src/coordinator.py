@@ -21,7 +21,6 @@ from store import known, list_documents, search_notes_begin, search_notes_end
 
 ATTEMPTS = runtime().get("attempts", 2)
 _scope = contextvars.ContextVar("rag_scope", default=None)
-_graph_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="graph-timeout")
 
 
 def _attempts():
@@ -213,17 +212,22 @@ def _stamp_sources(state):
 
 
 def run(query, dialog_id, scope=None, features=None):
-    """Вернуть ответ, статус, имена документов и источники для одного вопроса."""
+    """Вернуть ответ, статус, имена документов и источники для одного вопроса.
+
+    Свой пул на этот вызов. Зависший проход не занимает очередь следующего:
+    после предела пул закрывается без ожидания потока.
+    """
     active = scope if scope is not None else _scope.get()
     if active is not None and not active.kbs:
         add_turn(dialog_id, {"query": query, "answer": NO_ANSWER, "document_names": []})
         return {"answer": NO_ANSWER, "status": MISSING, "document_names": [], "sources": []}
     row_token = _extra_rows.set(active.chunks) if active is not None else None
     trace_token = _trace.set(active.trace) if active is not None else None
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="graph-call")
     try:
         timeout_s = (runtime().get("timeouts") or {}).get("graph_ms", 120000) / 1000
         ctx = contextvars.copy_context()
-        future = _graph_executor.submit(ctx.run, _run, query, dialog_id, active, features)
+        future = executor.submit(ctx.run, _run, query, dialog_id, active, features)
         try:
             return future.result(timeout=timeout_s)
         except TimeoutError:
@@ -231,6 +235,7 @@ def run(query, dialog_id, scope=None, features=None):
                 raise
             raise TimeoutError(f"graph timeout after {timeout_s}s")
     finally:
+        executor.shutdown(wait=False)
         if row_token is not None:
             _extra_rows.reset(row_token)
         if trace_token is not None:
