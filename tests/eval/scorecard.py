@@ -565,7 +565,7 @@ def measure_coord():
             "verdicts": [verdict(agents.UNCONFIRMED, feedback="a"), verdict(agents.UNCONFIRMED, feedback="b")],
             "reply": "Цех имеет номер 4 [1].",
             "order": ["select", "clarify", "search", "answer", "check", "answer", "check", "save"],
-            "status": agents.MISSING,
+            "status": agents.UNCONFIRMED,
             "answers": 2,
             "retry": True,
         },
