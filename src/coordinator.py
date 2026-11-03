@@ -4,16 +4,19 @@
 после повторов заменяется отказом, кроме числа из обзора таблицы.
 """
 from pathlib import Path
+from datetime import datetime, timezone
 
 import contextvars
 import re
+import time
 
 from langgraph.graph import END, StateGraph
 
 from agents import CONFIRMED, MISSING, NO_ANSWER, UNCONFIRMED, _codes, _count_ask, _dependent, _extra_rows, _from_overview, _trace, _words, answer_agent, check_agent, clarify_agent, search_agent, select_agent
 from dialog import add_turn, get_dialog
+from llm import model_name
 from settings import routing, runtime
-from store import known, list_documents
+from store import known, list_documents, search_notes_begin, search_notes_end
 
 ATTEMPTS = runtime().get("attempts", 2)
 _scope = contextvars.ContextVar("rag_scope", default=None)
@@ -224,41 +227,140 @@ def run(query, dialog_id, scope=None, features=None):
             _trace.reset(trace_token)
 
 
+def _clock():
+    return time.perf_counter(), datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
 def _run(query, dialog_id, scope, features=None):
     if features is None:
         features = runtime().get("features", {})
+    trace_steps = []
+
+    def _step(node, started, input_summary=None, output_summary=None, extra=None):
+        mark, stamp = started
+        entry = {
+            "node": node,
+            "started_at": stamp,
+            "duration_ms": round((time.perf_counter() - mark) * 1000, 2),
+            "input_summary": input_summary,
+            "output_summary": output_summary,
+        }
+        if extra:
+            entry.update(extra)
+        trace_steps.append(entry)
+
+    def _keep_steps():
+        if scope is not None:
+            scope.trace_steps = list(trace_steps)
+
     listed = _catalog_result(query, dialog_id, scope)
     if listed is not None:
+        _keep_steps()
         return listed
 
     def select(state):
+        started = _clock()
         state["work"] = select_agent(state["query"], get_dialog(state["dialog_id"]))
+        work = state.get("work") or []
+        chosen = work[0].get("id") if work and isinstance(work[0], dict) else None
+        _step(
+            "select", started,
+            input_summary={"query_len": len(state.get("query") or "")},
+            output_summary={"work_len": len(work), "chosen_turn_id": chosen},
+        )
         return state
 
     def clarify(state):
+        started = _clock()
         state["clear"] = clarify_agent(state["query"], state["work"])
+        _step(
+            "clarify", started,
+            input_summary={"query_len": len(state.get("query") or "")},
+            output_summary={"search_string": state.get("clear")},
+        )
         return state
 
     def search(state):
+        started = _clock()
         places = _places(state["work"], state["query"], state.get("feedback") or "")
-        if scope is not None:
-            limit = runtime().get("search_limit", 4)
-            state["chunks"] = scope.search(state["clear"], limit, places)
-            scope.found = list(state["chunks"])
-            return state
-        names = [item.get("document_name") for item in places if item.get("document_name")] if places else None
-        state["chunks"] = search_agent(state["clear"], names)
+        names = None
+        if places:
+            names = [item.get("document_name") for item in places if item.get("document_name")] or None
+        # Один проход поиска. Второй search_chunks(debug=True) открыл бы другой
+        # индекс при допуске и удвоил время. Заметки пишет сам search_chunks.
+        token = search_notes_begin()
+        try:
+            if scope is not None:
+                limit = runtime().get("search_limit", 4)
+                state["chunks"] = scope.search(state["clear"], limit, places)
+                scope.found = list(state["chunks"])
+            else:
+                state["chunks"] = search_agent(state["clear"], names)
+            notes = search_notes_end(token)
+            token = None
+        except Exception:
+            if token is not None:
+                search_notes_end(token)
+            _step("search", started, output_summary={"error": True})
+            raise
+        chunks = [item for item in (state.get("chunks") or []) if isinstance(item, dict)]
+        docs = []
+        for item in chunks:
+            name = item.get("document_name")
+            if name and name not in docs:
+                docs.append(name)
+        if len(notes) == 1:
+            focused_query = notes[0].get("focused_query")
+            allowed = notes[0].get("allowed")
+            ranked_count = notes[0].get("ranked_count")
+        elif notes:
+            focused_query = [item.get("focused_query") for item in notes]
+            allowed = [item.get("allowed") for item in notes]
+            ranked_count = sum(item.get("ranked_count") or 0 for item in notes)
+        else:
+            focused_query = None
+            allowed = None
+            ranked_count = None
+        bases = list(getattr(scope, "used", None) or []) if scope is not None else None
+        _step(
+            "search", started,
+            input_summary={"query": state.get("clear") or state.get("query"), "document_names": names},
+            output_summary={
+                "chunks_returned": len(chunks),
+                "top_ids": [item.get("id") for item in chunks if item.get("id")],
+                "top_docs": docs,
+            },
+            extra={
+                "clear_query": state.get("clear"),
+                "focused_query": focused_query,
+                "allowed": allowed,
+                "ranked_count": ranked_count,
+                "bases_queried": bases,
+            },
+        )
         return state
 
     def answer(state):
+        started = _clock()
         state["attempts"] = state.get("attempts", 0) + 1
+        usage = {}
         state["answer"] = answer_agent(
             state["query"], state["clear"], state["chunks"], state["work"],
-            state.get("feedback"), state.get("features"),
+            state.get("feedback"), state.get("features"), usage,
+        )
+        extra = {}
+        if usage.get("tokens_in") is not None or usage.get("tokens_out") is not None:
+            extra["tokens_in"] = usage.get("tokens_in")
+            extra["tokens_out"] = usage.get("tokens_out")
+        _step(
+            "answer", started,
+            output_summary={"model": model_name(), "answer_len": len(state.get("answer") or "")},
+            extra=extra or None,
         )
         return state
 
     def check(state):
+        started = _clock()
         checker = scope.known if scope is not None else known
         verdict = check_agent(state["answer"], state["chunks"], state["query"], checker)
         state["status"] = verdict["status"]
@@ -267,6 +369,10 @@ def _run(query, dialog_id, scope, features=None):
         if scope is not None:
             scope.attempts = state.get("attempts") or 0
             scope.feedback = state.get("feedback") or ""
+        _step(
+            "check", started,
+            output_summary={"status": state.get("status"), "feedback": state.get("feedback") or ""},
+        )
         return state
 
     def route(state):
@@ -279,6 +385,7 @@ def _run(query, dialog_id, scope, features=None):
         return "answer"
 
     def finish(state):
+        started = _clock()
         overview = None
         # Вопрос «сколько» не заменяется отказом, если в найденном тексте уже есть полная строка обзора.
         show_overview = (state.get("features") or {}).get("from_overview", True)
@@ -317,6 +424,10 @@ def _run(query, dialog_id, scope, features=None):
         if places:
             turn["places"] = places
         add_turn(state["dialog_id"], turn)
+        _step(
+            "finish", started,
+            output_summary={"status": state.get("status"), "document_names": list(state.get("document_names") or [])},
+        )
         return state
 
     graph = StateGraph(dict)
@@ -329,7 +440,13 @@ def _run(query, dialog_id, scope, features=None):
     graph.add_edge("answer", "check")
     graph.add_conditional_edges("check", route, {"answer": "answer", "search": "search", "finish": "finish"})
     graph.add_edge("finish", END)
-    out = graph.compile().invoke({"query": query, "dialog_id": dialog_id, "features": features})
+    out = graph.compile().invoke({
+        "query": query,
+        "dialog_id": dialog_id,
+        "features": features,
+        "trace_steps": trace_steps,
+    })
+    _keep_steps()
     return {
         "answer": out["answer"],
         "status": out["status"],

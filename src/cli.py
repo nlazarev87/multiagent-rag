@@ -4,6 +4,7 @@
 """
 import os
 import sys
+import uuid
 from pathlib import Path
 
 import audit
@@ -110,14 +111,21 @@ def main(argv=None):
     if not words:
         return None
     scope = build_scope(user)
+    request_id = str(uuid.uuid4())
+
+    def _record(**fields):
+        record = query_record(user, scope, **fields)
+        record["request_id"] = request_id
+        record["trace_json"] = getattr(scope, "trace_steps", None)
+        return record
+
     try:
         if not scope.kbs:
             result = {"answer": "В документах нет ответа.", "status": "нет ответа", "document_names": [], "sources": []}
         else:
             result = run(" ".join(words), "cli", scope)
     except Exception as exc:
-        audit.write("query", user, query_record(
-            user, scope,
+        audit.write("query", user, _record(
             query=" ".join(words),
             answer="",
             status="нет",
@@ -128,8 +136,7 @@ def main(argv=None):
         ), ok=False)
         print("Ошибка сервера", file=sys.stderr)
         return None
-    audit.write("query", user, query_record(
-        user, scope,
+    audit.write("query", user, _record(
         query=" ".join(words),
         answer=result.get("answer", ""),
         status=result.get("status", ""),

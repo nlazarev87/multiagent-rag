@@ -1461,3 +1461,46 @@ def test_query_writes_the_chunk_and_a_failure_keeps_the_fields(monkeypatch):
     assert failed["payload"]["status"] == "нет"
     assert failed["payload"]["error"] == "RuntimeError"
     assert "rejected" in failed["payload"]
+
+
+def test_query_response_has_request_id(monkeypatch):
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
+        "answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []
+    })
+    client = TestClient(app)
+    response = client.post("/query", json={"query": "вопрос", "dialog_id": "d"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["request_id"]
+    assert response.headers["X-Request-ID"] == body["request_id"]
+
+
+def test_query_request_id_in_audit(monkeypatch):
+    import audit
+
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
+        "answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []
+    })
+    client = TestClient(app)
+    response = client.post("/query", json={"query": "вопрос", "dialog_id": "d"})
+    saved = audit.list_events(kind="query")[0]
+    assert saved["payload"]["request_id"] == response.json()["request_id"]
+    assert "trace_json" in saved["payload"]
+    assert saved["payload"].get("trace") == [] or isinstance(saved["payload"].get("trace"), list)
+
+
+def test_query_error_has_request_id_header(monkeypatch):
+    import audit
+
+    def run(query, dialog_id, scope=None):
+        raise RuntimeError("model down")
+
+    monkeypatch.setattr("api.run", run)
+    client = TestClient(app)
+    response = client.post("/query", json={"query": "сбой", "dialog_id": "d"})
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Ошибка сервера"
+    assert response.headers["X-Request-ID"]
+    failed = audit.list_events(kind="query")[0]
+    assert failed["payload"]["request_id"] == response.headers["X-Request-ID"]
+    assert failed["ok"] is False

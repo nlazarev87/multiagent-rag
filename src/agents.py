@@ -448,7 +448,7 @@ def _drop_repeat_cite(answer):
     return text
 
 
-def answer_agent(query, clear_query, chunks, work_turns, feedback=None, features=None):
+def answer_agent(query, clear_query, chunks, work_turns, feedback=None, features=None, usage_sink=None):
     """Текст ответа. Пустые куски дают отказ, обзор таблицы может обойтись без модели."""
     if not chunks:
         return NO_ANSWER
@@ -469,7 +469,11 @@ def answer_agent(query, clear_query, chunks, work_turns, feedback=None, features
     sink = _trace.get()
     if sink is not None:
         sink.append(prompt)
-    return _drop_repeat_cite(_with_cite(complete(SYSTEM, prompt, examples=EXAMPLES), chunks))
+    if usage_sink is None:
+        reply = complete(SYSTEM, prompt, examples=EXAMPLES)
+    else:
+        reply = complete(SYSTEM, prompt, examples=EXAMPLES, usage_sink=usage_sink)
+    return _drop_repeat_cite(_with_cite(reply, chunks))
 
 
 def _pure_number(token):
