@@ -16,6 +16,7 @@ _latin_not_found_var = contextvars.ContextVar("latin_not_found", default=False)
 
 NO_ANSWER = "В документах нет ответа."
 CONFIRMED = "подтверждён"
+CONFIRMED_OVERVIEW = "подтверждён (overview)"
 UNCONFIRMED = "не подтверждён"
 MISSING = "нет ответа"
 WRONG_DOC = "Возьми другой документ: в найденном тексте нет слов вопроса."

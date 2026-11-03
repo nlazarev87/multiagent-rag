@@ -13,7 +13,7 @@ import time
 
 from langgraph.graph import END, StateGraph
 
-from agents import CONFIRMED, MISSING, NO_ANSWER, UNCONFIRMED, _codes, _count_ask, _dependent, _extra_rows, _from_overview, _trace, _words, answer_agent, check_agent, clarify_agent, search_agent, select_agent
+from agents import CONFIRMED, CONFIRMED_OVERVIEW, MISSING, NO_ANSWER, UNCONFIRMED, _codes, _count_ask, _dependent, _extra_rows, _from_overview, _trace, _words, answer_agent, check_agent, clarify_agent, search_agent, select_agent
 from dialog import add_turn, get_dialog
 from llm import model_name
 from settings import routing, runtime
@@ -418,16 +418,29 @@ def _run(query, dialog_id, scope, features=None):
         show_overview = (state.get("features") or {}).get("from_overview", True)
         if show_overview and state["status"] in (MISSING, UNCONFIRMED) and _count_ask(state.get("query", "")):
             overview = _from_overview(state.get("query", ""), state.get("chunks") or [])
-        if state["status"] in (MISSING, UNCONFIRMED) and not overview:
+        heuristic_finish_answer = False
+        if overview:
+            state["answer"] = overview
+            state["sources"] = _overview_sources(overview, state.get("chunks") or [])
+            state["status"] = CONFIRMED_OVERVIEW
+            state["feedback"] = "ответ построен по строке обзора, не моделью"
+            heuristic_finish_answer = True
+        elif (
+            state["status"] == UNCONFIRMED
+            and state.get("attempts", 0) >= 2
+            and state.get("answer")
+            and state.get("chunks")
+        ):
+            # Текст модели остаётся как есть: _cited сотрёт номер при пустых источниках.
+            heuristic_finish_answer = True
+        elif state["status"] in (MISSING, UNCONFIRMED):
             state["answer"] = NO_ANSWER
             state["sources"] = []
             state["status"] = MISSING
-        elif overview:
-            state["answer"] = overview
-            state["sources"] = _overview_sources(overview, state.get("chunks") or [])
-            state["status"] = CONFIRMED
         else:
             state["answer"] = _cited(state["answer"], state["sources"])
+        if scope is not None:
+            scope.feedback = state.get("feedback") or ""
         names = []
         for source in state["sources"]:
             if source["document_name"] not in names:
@@ -453,7 +466,12 @@ def _run(query, dialog_id, scope, features=None):
         add_turn(state["dialog_id"], turn)
         _step(
             "finish", started,
-            output_summary={"status": state.get("status"), "document_names": list(state.get("document_names") or [])},
+            output_summary={
+                "status": state.get("status"),
+                "document_names": list(state.get("document_names") or []),
+                "feedback": state.get("feedback") or "",
+            },
+            extra={"heuristic_finish_answer": heuristic_finish_answer},
         )
         return state
 

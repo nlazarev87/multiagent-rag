@@ -54,12 +54,15 @@ def test_run_replaces_answer_when_documents_have_none(monkeypatch):
     assert result["status"] == agents.MISSING
 
 
-def test_run_gives_up_after_second_failure(monkeypatch):
+def test_run_keeps_model_answer_after_second_failure(monkeypatch):
     order = []
     _wire(monkeypatch, order, [_verdict(agents.UNCONFIRMED, feedback="a"), _verdict(agents.UNCONFIRMED, feedback="b")])
     result = coordinator.run("Какой номер у цеха?", "d3")
     assert order.count("answer") == 2
-    assert result == {"answer": agents.NO_ANSWER, "status": agents.MISSING, "document_names": [], "sources": []}
+    assert result["status"] == agents.UNCONFIRMED
+    assert result["answer"] == "Цех имеет номер 4 [1]."
+    assert result["sources"] == []
+    assert result["document_names"] == []
 
 
 def test_catalog_lists_loaded_documents_without_search(monkeypatch):
@@ -99,7 +102,7 @@ def test_count_keeps_overview_after_a_rejected_example(monkeypatch):
     monkeypatch.setattr(coordinator, "search_agent", lambda *_args: order.append("search") or [chunk])
     monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: order.append("answer") or "В библиотеке три потока [1].")
     result = coordinator.run("Сколько интеграционных потоков между системами?", "count")
-    assert result["status"] == agents.CONFIRMED
+    assert result["status"] == agents.CONFIRMED_OVERVIEW
     assert result["answer"] == "4 ИД потока [1]."
     assert result["sources"][0]["document_name"] == "note.txt"
 
@@ -547,7 +550,10 @@ def test_run_searches_again_when_feedback_names_a_document(monkeypatch):
     )
     result = coordinator.run("Какой номер у цеха?", "d-doc")
     assert order == ["select", "clarify", "search", "answer", "check", "search", "answer", "check", "save"]
-    assert result == {"answer": agents.NO_ANSWER, "status": agents.MISSING, "document_names": [], "sources": []}
+    assert result["status"] == agents.UNCONFIRMED
+    assert result["answer"] == "Цех имеет номер 4 [1]."
+    assert result["sources"] == []
+    assert result["document_names"] == []
 
 
 def test_catalog_reports_an_empty_library(monkeypatch):
@@ -786,7 +792,28 @@ def test_run_writes_trace_steps_to_scope(monkeypatch):
     assert "focused_query" in search
     assert "clear_query" in search
     assert search["search_fallback_used"] is False
+    finish = next(step for step in steps if step["node"] == "finish")
+    assert finish["heuristic_finish_answer"] is False
     assert scope.trace == []
+
+
+def test_run_finish_step_has_heuristic_flag(monkeypatch):
+    order = []
+    _wire(monkeypatch, order, [
+        _verdict(agents.UNCONFIRMED, feedback="a"),
+        _verdict(agents.UNCONFIRMED, feedback="b"),
+    ])
+    scope = type("Scope", (), {})()
+    scope.kbs = ["kb"]
+    scope.trace = []
+    scope.chunks = []
+    scope.known = lambda _term: True
+    scope.search = lambda _clear, _limit, _places: [CHUNK]
+    result = coordinator.run("Какой номер у цеха?", "d-keep", scope)
+    assert result["status"] == agents.UNCONFIRMED
+    assert result["answer"] == "Цех имеет номер 4 [1]."
+    finish = next(step for step in scope.trace_steps if step["node"] == "finish")
+    assert finish["heuristic_finish_answer"] is True
 
 
 def _scope_with_search(monkeypatch, seen, results):
