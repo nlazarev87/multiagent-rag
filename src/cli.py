@@ -13,6 +13,7 @@ import kb
 from access import build_scope, can, query_record, source_rows
 from coordinator import run
 from ingest import ingest_dir
+from settings import runtime
 from store import upsert_chunks
 
 
@@ -116,7 +117,8 @@ def main(argv=None):
     def _record(**fields):
         record = query_record(user, scope, **fields)
         record["request_id"] = request_id
-        record["trace_json"] = getattr(scope, "trace_steps", None)
+        if runtime().get("audit", {}).get("trace_json", True):
+            record["trace_json"] = getattr(scope, "trace_steps", None)
         return record
 
     try:

@@ -27,5 +27,9 @@
     "llm_ms": 90000,
     "chroma_ms": 10000,
     "retries": 1
+  },
+  "audit": {
+    "rotation_threshold_mb": 100,
+    "trace_json": true
   }
 }

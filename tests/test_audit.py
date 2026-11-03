@@ -1,5 +1,6 @@
 import sqlite3
 import threading
+from datetime import datetime
 
 import audit
 
@@ -129,3 +130,76 @@ def test_same_second_continues_and_the_period_includes_its_edges(tmp_path, monke
     assert len(audit.list_events(before="2026-11-02T00:00:01Z")) == 3
     assert audit.list_events(after="2026-11-02T00:00:02Z") == []
     assert audit.list_events(before="2026-11-02T00:00:00Z") == []
+
+
+def _user():
+    return {"id": "u", "login": "ann", "role_id": "r", "role": "Роль"}
+
+
+def _tiny(monkeypatch):
+    monkeypatch.setattr("settings.runtime", lambda: {"audit": {"rotation_threshold_mb": 0.0001}})
+
+
+def test_rotate_when_threshold_exceeded(tmp_path, monkeypatch):
+    _root(tmp_path, monkeypatch)
+    _tiny(monkeypatch)
+    for number in range(100):
+        audit.write("test", _user(), {"n": number, "pad": "x" * 100})
+    folder = audit.path().parent
+    assert list(folder.glob("log-*.sqlite"))
+    assert audit.path().exists()
+
+
+def test_rotation_not_triggered_below_threshold(tmp_path, monkeypatch):
+    _root(tmp_path, monkeypatch)
+    monkeypatch.setattr("settings.runtime", lambda: {"audit": {"rotation_threshold_mb": 100}})
+    audit.write("test", _user(), {"n": 1})
+    assert list(audit.path().parent.glob("log-*.sqlite")) == []
+    assert audit.path().exists()
+
+
+def test_archive_name_unique_within_month(tmp_path, monkeypatch):
+    _root(tmp_path, monkeypatch)
+    _tiny(monkeypatch)
+    for number in range(3):
+        audit.write("test", _user(), {"n": number, "pad": "x" * 400})
+    folder = audit.path().parent
+    stamp = datetime.now().strftime("%Y-%m")
+    assert (folder / f"log-{stamp}.sqlite").exists()
+    assert (folder / f"log-{stamp}-2.sqlite").exists()
+
+
+def test_rotation_preserves_hash_chain(tmp_path, monkeypatch):
+    _root(tmp_path, monkeypatch)
+    _tiny(monkeypatch)
+    for number in range(3):
+        audit.write("test", _user(), {"n": number, "pad": "x" * 400})
+    archives = list(audit.path().parent.glob("log-*.sqlite"))
+    assert archives
+    assert audit.verify()
+    for archive in archives:
+        assert audit.verify(file=archive.name)
+
+
+def test_list_events_reads_archives(tmp_path, monkeypatch):
+    _root(tmp_path, monkeypatch)
+    _tiny(monkeypatch)
+    for number in range(3):
+        audit.write("test", _user(), {"n": number, "pad": "x" * 400})
+    archive = next(audit.path().parent.glob("log-*.sqlite"))
+    rows = audit.list_events(file=archive.name, limit=50)
+    assert rows
+    assert {row["kind"] for row in rows} == {"test"}
+
+
+def test_get_event_searches_archives(tmp_path, monkeypatch):
+    _root(tmp_path, monkeypatch)
+    monkeypatch.setattr("settings.runtime", lambda: {"audit": {"rotation_threshold_mb": 100}})
+    audit.write("test", _user(), {"n": 1})
+    audit.write("test", _user(), {"n": 2})
+    _tiny(monkeypatch)
+    audit.write("test", _user(), {"n": 3, "pad": "x" * 400})
+    found = audit.get_event(2)
+    assert found["payload"]["n"] == 2
+    current = audit.get_event(1)
+    assert current["payload"]["n"] == 3
