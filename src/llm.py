@@ -2,6 +2,8 @@
 
 Видеокарта не используется. Файл 7B рядом с 1.5B не удалять: start.ps1 big его ждёт.
 """
+import concurrent.futures
+import contextvars
 import os
 import threading
 from pathlib import Path
@@ -13,6 +15,9 @@ _llm = None
 loaded = False
 _load_lock = threading.Lock()
 _run_lock = threading.Lock()
+# Повтор должен стартовать, пока предыдущий вызов ещё сидит в своём потоке.
+# Одного работника на это не хватает: вторая попытка стояла бы в очереди и не началась.
+_llm_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="llm-timeout")
 
 
 def _n_ctx():
@@ -50,12 +55,8 @@ def model_name():
     return Path(os.environ.get("LLM_MODEL_PATH", "")).stem
 
 
-def complete(system, user, max_tokens=None, examples=(), *, usage_sink=None):
-    """Ответ модели. Примеры идут парами user/assistant перед вопросом.
-
-    usage_sink, если передан, получает tokens_in и tokens_out из ответа модели.
-    Старый вызов без этого аргумента возвращает только текст.
-    """
+def _complete_sync(system, user, max_tokens, examples, usage_sink):
+    """Тело ответа. Вызывается из соседнего потока и само не смотрит на предел времени."""
     load()
     data = runtime()
     if max_tokens is None:
@@ -72,3 +73,31 @@ def complete(system, user, max_tokens=None, examples=(), *, usage_sink=None):
         usage_sink["tokens_in"] = usage.get("prompt_tokens")
         usage_sink["tokens_out"] = usage.get("completion_tokens")
     return reply["choices"][0]["message"]["content"].strip()
+
+
+def complete(system, user, max_tokens=None, examples=(), *, usage_sink=None, timeout_s=None):
+    """Ответ модели. Примеры идут парами user/assistant перед вопросом.
+
+    usage_sink, если передан, получает tokens_in и tokens_out из ответа модели.
+    Старый вызов без этого аргумента возвращает только текст.
+    Предел времени — timeouts.llm_ms. Повтор один, если в конфиге retries=1.
+    Поток с моделью после предела не обрывается: он дописывает ответ уже без слушателя.
+    """
+    limits = runtime().get("timeouts") or {}
+    if timeout_s is None:
+        timeout_s = limits.get("llm_ms", 90000) / 1000
+    retries = limits.get("retries", 1)
+    last_error = None
+    for attempt in range(retries + 1):
+        ctx = contextvars.copy_context()
+        future = _llm_executor.submit(ctx.run, _complete_sync, system, user, max_tokens, examples, usage_sink)
+        try:
+            return future.result(timeout=timeout_s)
+        except TimeoutError:
+            if future.done():
+                raise
+            last_error = TimeoutError(f"llm timeout after {timeout_s}s ({retries + 1} attempts)")
+            if attempt < retries:
+                continue
+            raise last_error
+    raise last_error

@@ -3,6 +3,7 @@
 Два файла с одним текстом не схлопываются в одну запись. Удаление документа
 во время поиска не роняет уже идущий запрос.
 """
+import concurrent.futures
 import contextvars
 import math
 import os
@@ -63,6 +64,7 @@ _import_lock = threading.Lock()
 # it opened. A delete or an upload clears the global when it finishes, and
 # that must not crash the request that is already reading it.
 _index_lock = threading.RLock()
+_dense_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="chroma-timeout")
 _WORD = re.compile(r"[0-9a-zа-я]+(?:[._/-][0-9a-zа-я]+)*")
 _NAME = re.compile(r"[0-9A-Za-zА-Яа-яЁё]+(?:[._/-][0-9A-Za-zА-Яа-яЁё]+)*")
 _STOP = set(
@@ -416,21 +418,47 @@ def _lexical(index, query, allowed):
     return [index["ids"][number] for _, number in scored[:_candidates()]]
 
 
-def _dense(col, query, allowed, total):
-    embedding = _embed(["query: " + query])
-    with _index_lock:
-        # The collection may have shrunk while the query vector was built.
-        # Asking for more neighbours than Chroma still holds raises.
-        current = col.count()
-        if current == 0:
-            return []
-        found = col.query(
-            query_embeddings=embedding,
-            n_results=min(_candidates(), current, total or current),
-            where=_chroma_where(allowed),
-            include=["distances"],
-        )
+def _dense_query(col, embedding, allowed, total):
+    # The collection may have shrunk while the query vector was built.
+    # Asking for more neighbours than Chroma still holds raises.
+    current = col.count()
+    if current == 0:
+        return []
+    found = col.query(
+        query_embeddings=embedding,
+        n_results=min(_candidates(), current, total or current),
+        where=_chroma_where(allowed),
+        include=["distances"],
+    )
     return found["ids"][0] if found["ids"] else []
+
+
+def _dense_sync(col, embedding, allowed, total, skip_lock=False):
+    # Чужой каталог уже держит _index_lock на вызывающем потоке.
+    # Повторный захват из этого потока встал бы до конца chroma_ms.
+    if skip_lock:
+        return _dense_query(col, embedding, allowed, total)
+    with _index_lock:
+        return _dense_query(col, embedding, allowed, total)
+
+
+def _dense(col, query, allowed, total):
+    """Тот же поиск по смыслу. Дольше chroma_ms клиент не ждёт сам запрос к индексу.
+
+    Числовая модель считается на вызывающем потоке: её загрузка не входит в chroma_ms.
+    """
+    embedding = _embed(["query: " + query])
+    timeout_s = (runtime().get("timeouts") or {}).get("chroma_ms", 10000) / 1000
+    ctx = contextvars.copy_context()
+    future = _dense_executor.submit(
+        ctx.run, _dense_sync, col, embedding, allowed, total, _foreign_read.get(),
+    )
+    try:
+        return future.result(timeout=timeout_s)
+    except TimeoutError:
+        if future.done():
+            raise
+        raise TimeoutError(f"chroma timeout after {timeout_s}s")
 
 
 def _fuse(*rankings):
