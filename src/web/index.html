@@ -81,7 +81,7 @@
       cursor: col-resize;
       z-index: 2;
     }
-    .sash:hover, .sash.drag { background: var(--line2); }
+    .sash:hover, .sash.drag { background: var(--accent); }
     .sash::before {
       content: "";
       position: absolute;
@@ -150,22 +150,14 @@
     }
     #chats li:hover .kill, #chats .kill:focus { opacity: 1; }
     #chats .kill:hover { color: var(--danger); background: var(--focus); }
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px 10px;
-      color: var(--fg2);
-      font-size: 12px;
-    }
     .dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #C5C5C5;
+      background: #7A7A88;
       flex-shrink: 0;
     }
-    .dot.on { background: var(--ready); }
+    .dot.on { background: #3FBF6F; }
     #readiness { margin: 0; }
     .mid-head {
       display: flex;
@@ -412,17 +404,30 @@
     #status {
       position: relative;
       z-index: 6;
-      height: 22px;
-      flex: 0 0 22px;
+      height: 28px;
+      flex: 0 0 28px;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 0 8px;
-      background: var(--chrome);
+      gap: 14px;
+      padding: 0 10px;
+      background: #26262E;
       border-top: 1px solid var(--line);
-      color: var(--fg2);
+      color: #E8E8EE;
       font-size: 12px;
     }
+    #status .sb-spacer { flex: 1; }
+    #status .sb-sep { width: 1px; height: 14px; background: rgba(255,255,255,.22); }
+    #status button {
+      border: 0;
+      background: transparent;
+      color: #E8E8EE;
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      padding: 2px 7px;
+      border-radius: var(--r-1);
+    }
+    #status button:hover { background: rgba(255,255,255,.14); }
     .admin-body { flex: 1; overflow: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
     .admin-head { display: flex; gap: 8px; padding: 8px; border-bottom: 1px solid var(--line); }
     .access-block { border: 1px solid var(--line2); border-radius: 8px; background: var(--editor); }
@@ -476,10 +481,6 @@
         <button id="manage" type="button" class="hidden">Управление</button>
       </div>
       <ul id="chats"></ul>
-      <div class="status">
-        <span class="dot" id="ready-dot"></span>
-        <p id="readiness">Модель загружается…</p>
-      </div>
     </aside>
     <div class="sash" id="sash-left" role="separator" aria-orientation="vertical" aria-label="Граница диалогов"></div>
     <section class="pane" aria-label="Агент">
@@ -519,7 +520,7 @@
       </div>
     </section>
   </main>
-  <footer id="status" class="hidden"><span id="status-login"></span><span id="status-role"></span><button type="button" id="status-password">Сменить пароль</button><button type="button" id="status-out">Выйти</button></footer>
+  <footer id="status" class="hidden"><span class="dot" id="ready-dot"></span><span id="readiness">Модель загружается…</span><span class="sb-spacer"></span><span id="status-login"></span><span id="status-role"></span><span class="sb-sep"></span><button type="button" id="status-password">Сменить пароль</button><button type="button" id="status-out">Выйти</button></footer>
   <script>
     const shell = document.getElementById("shell");
     const chatsEl = document.getElementById("chats");
