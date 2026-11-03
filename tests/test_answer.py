@@ -2058,3 +2058,69 @@ def test_check_keeps_a_second_file_that_holds_the_same_fact():
     )
     assert verdict["status"] == agents.CONFIRMED
     assert {source["document_name"] for source in verdict["sources"]} == {"pump.md", "stock.txt"}
+
+
+def test_check_detects_phrase_contradiction(monkeypatch):
+    chunks = [
+        {"text": "Давление 6 бар.", "document_name": "a.txt", "chunk_index": 0, "section": ""},
+        {"text": "Давление 8 бар.", "document_name": "a.txt", "chunk_index": 1, "section": ""},
+    ]
+    result = agents.check_agent(
+        "Фрагменты противоречат друг другу: 6 и 8 бар [1].",
+        chunks,
+        query="Какое давление?",
+    )
+    assert result["status"] == agents.UNCONFIRMED
+    assert "contradiction_detected" in result["feedback"]
+
+
+def test_check_detects_numeric_contradiction_with_repeated_term(monkeypatch):
+    chunks = [
+        {"text": "Давление в насосе: 6 бар.", "document_name": "a.txt", "chunk_index": 0, "section": ""},
+        {"text": "Давление в насосе: 8 бар.", "document_name": "a.txt", "chunk_index": 1, "section": ""},
+    ]
+    result = agents.check_agent(
+        "Давление 6 бар [1]. Давление 8 бар [2].",
+        chunks,
+        query="Какое давление в насосе?",
+    )
+    assert result["status"] == agents.UNCONFIRMED
+    assert "contradiction_detected" in result["feedback"]
+
+
+def test_check_does_not_flag_different_measures_in_one_chunk(monkeypatch):
+    chunks = [
+        {"text": "Давление 6 бар. Год выпуска 2019.", "document_name": "a.txt", "chunk_index": 0, "section": ""},
+    ]
+    result = agents.check_agent(
+        "Давление 6 бар, год выпуска 2019 [1].",
+        chunks,
+        query="Какое давление и год выпуска?",
+    )
+    assert "contradiction_detected" not in result.get("feedback", "")
+
+
+def test_check_does_not_flag_same_number_twice(monkeypatch):
+    chunks = [
+        {"text": "Давление 6 бар.", "document_name": "a.txt", "chunk_index": 0, "section": ""},
+        {"text": "Давление в норме, 6 бар.", "document_name": "a.txt", "chunk_index": 1, "section": ""},
+    ]
+    result = agents.check_agent(
+        "Давление 6 бар [1].",
+        chunks,
+        query="Какое давление?",
+    )
+    assert "contradiction_detected" not in result.get("feedback", "")
+
+
+def test_check_does_not_flag_implicit_term(monkeypatch):
+    chunks = [
+        {"text": "Давление в насосе: 6 бар.", "document_name": "a.txt", "chunk_index": 0, "section": ""},
+        {"text": "Давление в насосе: 8 бар.", "document_name": "a.txt", "chunk_index": 1, "section": ""},
+    ]
+    result = agents.check_agent(
+        "Давление 6 бар [1], но также 8 бар [2].",
+        chunks,
+        query="Какое давление в насосе?",
+    )
+    assert "contradiction_detected" not in result.get("feedback", "")

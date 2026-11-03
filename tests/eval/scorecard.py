@@ -193,6 +193,8 @@ def measure_select():
 
 def _feedback_type(verdict):
     text = verdict.get("feedback") or ""
+    if "contradiction_detected" in text:
+        return "contradiction"
     if "переписывал" in text:
         return "copied"
     if "нет во фрагментах" in text:
