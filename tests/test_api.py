@@ -1475,6 +1475,21 @@ def test_query_response_has_request_id(monkeypatch):
     assert response.headers["X-Request-ID"] == body["request_id"]
 
 
+def test_trace_json_disabled(monkeypatch):
+    import audit
+
+    monkeypatch.setattr("api.runtime", lambda: {"audit": {"trace_json": False}})
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
+        "answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []
+    })
+    client = TestClient(app)
+    response = client.post("/query", json={"query": "вопрос", "dialog_id": "d"})
+    assert response.status_code == 200
+    saved = audit.list_events(kind="query")[0]
+    assert "trace_json" not in saved["payload"]
+    assert saved["payload"]["request_id"] == response.json()["request_id"]
+
+
 def test_query_request_id_in_audit(monkeypatch):
     import audit
 

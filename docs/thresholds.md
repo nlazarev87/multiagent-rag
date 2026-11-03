@@ -53,6 +53,13 @@
 | llm_ms | 90000 | ✅ |
 | retries | 1 | ✅ |
 
+## audit
+
+| Порог | Значение | Смысл | Config |
+|---|---|---|---|
+| `rotation_threshold_mb` | 100 | при превышении `log.sqlite` архивируется | ✅ `runtime.json` |
+| `trace_json` | true | писать полный trace в audit | ✅ `runtime.json` |
+
 ## Дубли (Wave 6)
 - «код»: store._names, agents._codes, agents._anchors.
 - «первые 5 букв»: store, agents, coordinator.

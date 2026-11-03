@@ -15,48 +15,121 @@ def path():
     return auth.app_root() / "data" / "audit" / "log.sqlite"
 
 
-def _connect():
-    target = path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(target, timeout=5, check_same_thread=False)
+def _connect(target=None):
+    chosen = path() if target is None else target
+    chosen.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(chosen, timeout=5, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
-def ensure():
-    key = str(path())
+def _schema(conn):
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prev_hash TEXT NOT NULL,
+            row_hash TEXT NOT NULL,
+            body TEXT NOT NULL
+        );
+        CREATE TRIGGER IF NOT EXISTS events_no_update
+        BEFORE UPDATE ON events
+        BEGIN
+            SELECT RAISE(ABORT, 'audit');
+        END;
+        CREATE TRIGGER IF NOT EXISTS events_no_delete
+        BEFORE DELETE ON events
+        BEGIN
+            SELECT RAISE(ABORT, 'audit');
+        END;
+        """
+    )
+
+
+def ensure(target=None):
+    chosen = path() if target is None else target
+    key = str(chosen)
     if key in _ready:
         return
     with _lock:
         if key in _ready:
             return
-        conn = _connect()
+        conn = _connect(chosen)
         try:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS events (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    prev_hash TEXT NOT NULL,
-                    row_hash TEXT NOT NULL,
-                    body TEXT NOT NULL
-                );
-                CREATE TRIGGER IF NOT EXISTS events_no_update
-                BEFORE UPDATE ON events
-                BEGIN
-                    SELECT RAISE(ABORT, 'audit');
-                END;
-                CREATE TRIGGER IF NOT EXISTS events_no_delete
-                BEFORE DELETE ON events
-                BEGIN
-                    SELECT RAISE(ABORT, 'audit');
-                END;
-                """
-            )
+            _schema(conn)
             conn.commit()
         finally:
             conn.close()
         _ready.add(key)
+
+
+def _archive_rank(name):
+    body = name.removesuffix(".sqlite")[4:]
+    parts = body.split("-")
+    if len(parts) >= 3 and parts[-1].isdigit() and len(parts[-1]) < 4:
+        return ("-".join(parts[:-1]), int(parts[-1]))
+    return (body, 1)
+
+
+def _archives():
+    return sorted(path().parent.glob("log-*.sqlite"), key=lambda item: _archive_rank(item.name), reverse=True)
+
+
+def _files():
+    current = path()
+    found = [current] if current.exists() else []
+    found.extend(_archives())
+    return found
+
+
+def _named(file):
+    name = str(file or "")
+    if not name.endswith(".sqlite") or "/" in name or "\\" in name:
+        return None
+    return path().parent / name
+
+
+def _threshold_bytes():
+    from settings import runtime
+    raw = runtime().get("audit", {}).get("rotation_threshold_mb", 100)
+    return int(float(raw) * 1024 * 1024)
+
+
+def _maybe_rotate():
+    current = path()
+    if not current.exists():
+        return
+    try:
+        limit = _threshold_bytes()
+    except (TypeError, ValueError):
+        return
+    if current.stat().st_size < limit:
+        return
+    with _lock:
+        if not current.exists() or current.stat().st_size < limit:
+            return
+        conn = _connect(current)
+        try:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            conn.close()
+        if current.stat().st_size < limit:
+            return
+        stamp = datetime.now().strftime("%Y-%m")
+        folder = current.parent
+        target = folder / f"log-{stamp}.sqlite"
+        number = 2
+        while target.exists():
+            target = folder / f"log-{stamp}-{number}.sqlite"
+            number += 1
+        current.rename(target)
+        for suffix in ("-wal", "-shm"):
+            side = current.parent / (current.name + suffix)
+            if side.exists():
+                side.rename(target.parent / (target.name + suffix))
+        _ready.discard(str(current))
+    ensure()
 
 
 def canonical(payload):
@@ -68,6 +141,7 @@ def _stamp():
 
 
 def write(kind, user, payload, ok=True):
+    _maybe_rotate()
     ensure()
     payload = payload or {}
     login = "" if user is None else user.get("login", "")
@@ -101,9 +175,15 @@ def write(kind, user, payload, ok=True):
             conn.close()
 
 
-def verify():
-    ensure()
-    conn = _connect()
+def verify(file=None):
+    if file is None:
+        ensure()
+        target = path()
+    else:
+        target = _named(file)
+        if target is None or not target.exists():
+            return False
+    conn = _connect(target)
     try:
         rows = conn.execute("SELECT id, prev_hash, row_hash, body FROM events ORDER BY id").fetchall()
     finally:
@@ -127,9 +207,15 @@ def _load(row):
     return body
 
 
-def list_events(*, user_id="", role_id="", group_id="", kind="", after="", before="", before_id=0, limit=50):
-    ensure()
-    conn = _connect()
+def list_events(*, file=None, user_id="", role_id="", group_id="", kind="", after="", before="", before_id=0, limit=50):
+    if file is None:
+        ensure()
+        target = path()
+    else:
+        target = _named(file)
+        if target is None or not target.exists():
+            return []
+    conn = _connect(target)
     try:
         rows = conn.execute("SELECT id, prev_hash, row_hash, body FROM events ORDER BY id DESC").fetchall()
     finally:
@@ -163,11 +249,27 @@ def list_events(*, user_id="", role_id="", group_id="", kind="", after="", befor
     return found
 
 
-def get_event(event_id):
-    ensure()
-    conn = _connect()
+def _get_from(target, event_id):
+    if not target.exists():
+        return None
+    conn = _connect(target)
     try:
-        row = conn.execute("SELECT id, prev_hash, row_hash, body FROM events WHERE id = ?", (event_id,)).fetchone()
+        row = conn.execute(
+            "SELECT id, prev_hash, row_hash, body FROM events WHERE id = ?",
+            (event_id,),
+        ).fetchone()
     finally:
         conn.close()
     return None if row is None else _load(row)
+
+
+def get_event(event_id, file=None):
+    if file is not None:
+        target = _named(file)
+        return None if target is None else _get_from(target, event_id)
+    ensure()
+    for candidate in _files():
+        found = _get_from(candidate, event_id)
+        if found is not None:
+            return found
+    return None

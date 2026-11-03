@@ -21,6 +21,7 @@ import kb
 import trees
 import workspace
 from coordinator import run
+from settings import runtime
 from ingest import SUFFIXES, _blocks, chunks_from_blocks, ingest_dir
 from store import chunks_for_document, delete_document, list_documents, upsert_chunks
 
@@ -816,7 +817,8 @@ def query(body: Query, request: Request):
     def _record(**fields):
         record = access.query_record(user, scope, **fields)
         record["request_id"] = request_id
-        record["trace_json"] = getattr(scope, "trace_steps", None)
+        if runtime().get("audit", {}).get("trace_json", True):
+            record["trace_json"] = getattr(scope, "trace_steps", None)
         return record
 
     try:
