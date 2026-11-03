@@ -744,6 +744,22 @@
     .kb-matrix th:first-child, .kb-matrix td:first-child { text-align: left; }
     .kb-matrix th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--fg3); }
     .check { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; flex: 0 0 auto; }
+    .badge-mute { background: var(--sink); color: var(--fg3); }
+    .badge-mute::before { background: var(--fg4); }
+    .audit-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--line-2);
+      font-size: 12.5px;
+    }
+    .audit-row:hover { background: var(--paper-2); }
+    .audit-time { font-family: Consolas, monospace; font-size: 11.5px; color: var(--fg3); width: 160px; flex: 0 0 auto; }
+    .audit-kind { width: 110px; flex: 0 0 auto; }
+    .audit-who { width: 140px; flex: 0 0 auto; color: var(--fg2); }
+    .audit-msg { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--fg3); }
+    .group-members { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
     .access-block { border: 1px solid var(--line2); border-radius: 8px; background: var(--editor); }
     .access-block > summary {
       cursor: pointer;
@@ -2096,7 +2112,8 @@
     }
 
     function badge(label, kind) {
-      return element("span", "badge " + (kind === "off" ? "badge-off" : "badge-ok"), label);
+      const cls = kind === "off" ? "badge-off" : kind === "mute" ? "badge-mute" : "badge-ok";
+      return element("span", "badge " + cls, label);
     }
 
     function toggleButton(checked) {
@@ -2240,40 +2257,54 @@
 
     async function showAudit() {
       adminBody.replaceChildren();
-      const person = adminInput("id человека");
-      const role = adminInput("id роли");
-      const group = adminInput("id группы");
-      const kind = adminInput("тип");
-      const after = adminInput("с времени UTC");
-      const before = adminInput("до времени UTC");
-      const list = document.createElement("div");
+      const kindSel = document.createElement("select");
+      kindSel.className = "select";
+      [["", "Все типы"], ["login", "Вход"], ["user_create", "Пользователь"], ["upload", "Загрузка"], ["delete", "Удаление"], ["access_allow", "Доступ"]].forEach((pair) => {
+        const option = document.createElement("option");
+        option.value = pair[0];
+        option.textContent = pair[1];
+        kindSel.append(option);
+      });
+      const person = adminInput("Пользователь…");
+      const toolbar = element("div", "toolbar");
+      const list = element("div", "table-card");
+      let beforeTime = "";
       async function load(cursor) {
         list.replaceChildren();
         const query = new URLSearchParams();
         if (person.value) query.set("user", person.value);
-        if (role.value) query.set("role", role.value);
-        if (group.value) query.set("group", group.value);
-        if (kind.value) query.set("kind", kind.value);
-        if (after.value) query.set("after", after.value);
-        if (before.value) query.set("before", before.value);
+        if (kindSel.value) query.set("kind", kindSel.value);
+        if (beforeTime) query.set("before", beforeTime);
         if (cursor) query.set("before_id", String(cursor));
         const data = await (await fetch("/admin/audit?" + query.toString())).json();
         const events = data.events || [];
         events.forEach((event) => {
-          list.append(adminButton(event.time + " " + event.kind + " " + event.login, async () => {
+          const row = element("div", "audit-row");
+          row.append(element("span", "audit-time", event.time || ""));
+          row.append(element("span", "audit-kind", event.kind || ""));
+          row.append(element("span", "audit-who", event.login || ""));
+          const open = element("button", "audit-open", "Открыть");
+          open.type = "button";
+          open.className = "btn-ghost-sm";
+          open.addEventListener("click", async () => {
             const full = await (await fetch("/admin/audit/" + event.id)).json();
-            field(list, "pre", JSON.stringify(full, null, 2));
-          }));
+            const pre = element("pre", "", JSON.stringify(full, null, 2));
+            pre.style.gridColumn = "1 / -1";
+            row.after(pre);
+          });
+          row.append(open);
+          list.append(row);
         });
         if (events.length === 50) {
           const last = events[events.length - 1];
-          list.append(adminButton("Дальше", () => {
-            before.value = last.time || "";
+          list.append(adminGhost("Дальше", () => {
+            beforeTime = last.time || "";
             load(last.id);
           }));
         }
       }
-      adminBody.append(person, role, group, kind, after, before, adminButton("Обновить", () => load()), list);
+      toolbar.append(kindSel, person, element("span", "spacer"), adminGhost("Обновить", () => load()));
+      adminBody.append(toolbar, list);
       await load();
     }
 
@@ -2378,25 +2409,48 @@
       adminBody.replaceChildren();
       field(adminBody, "p", "Роль в группе — это все, у кого она есть сейчас и будет потом.");
       const data = await (await fetch("/admin/groups")).json();
+      const userById = {};
+      const roleById = {};
+      try {
+        const users = await (await fetch("/admin/users")).json();
+        (users.users || []).forEach((user) => { userById[user.id] = user.login; });
+      } catch (error) {}
+      try {
+        const roles = await (await fetch("/admin/roles")).json();
+        (roles.roles || []).forEach((role) => { roleById[role.id] = role.name; });
+      } catch (error) {}
       (data.groups || []).forEach((group) => {
-        const block = document.createElement("div");
-        field(block, "p", group.name);
+        const card = element("div", "role-card");
+        const head = element("div", "rc-head");
+        head.append(element("div", "rc-name", group.name));
+        const headActions = element("div", "rc-actions");
+        head.append(headActions);
+        card.append(head);
+        const body = element("div", "rc-body");
+        const chips = element("div", "group-members");
+        (group.user_ids || []).forEach((id) => chips.append(element("span", "chip", userById[id] || id)));
+        (group.role_ids || []).forEach((id) => chips.append(element("span", "chip", "Роль: " + (roleById[id] || id))));
+        if (!chips.children.length) chips.append(element("span", "chip", "пусто"));
+        body.append(chips);
         const users = adminInput("id людей через пробел");
         users.value = (group.user_ids || []).join(" ");
         const roles = adminInput("id ролей через пробел");
         roles.value = (group.role_ids || []).join(" ");
-        block.append(users, roles, adminButton("Записать состав", async () => {
+        body.append(users, roles);
+        card.append(body);
+        headActions.append(adminButton("Записать", async () => {
           const sent = await sendJson("/admin/groups/" + group.id + "/members", "PUT", {
             user_ids: users.value.split(/\s+/).filter(Boolean),
             role_ids: roles.value.split(/\s+/).filter(Boolean),
           });
           field(adminBody, "p", sent.ok ? "Состав записан" : (sent.payload.detail || "Ошибка"));
-        }), adminButton("Удалить группу", async () => {
+        }));
+        headActions.append(adminGhost("Удалить", async () => {
           const sent = await sendJson("/admin/groups/" + group.id, "DELETE");
           if (sent.ok) document.getElementById("admin-groups").click();
           else field(adminBody, "p", sent.payload.detail || "Ошибка");
-        }));
-        adminBody.append(block);
+        }, true));
+        adminBody.append(card);
       });
       const name = adminInput("Имя группы");
       adminBody.append(name, adminButton("Создать группу", async () => {
@@ -2419,22 +2473,26 @@
         if (rows.some((row) => row.effect === "allow")) return "открыт";
         return "нет входа";
       };
+      const toolbar = element("div", "toolbar");
       const filter = adminInput("База или человек");
-      adminBody.append(filter);
-      const mark = (label, title, state, boxes, openedUser) => {
-        label.textContent = title + " — " + state;
+      toolbar.append(filter, element("span", "spacer"));
+      adminBody.append(toolbar);
+      const mark = (label, title, stateBadge, state, boxes, openedUser) => {
+        label.textContent = title;
+        stateBadge.textContent = state;
+        stateBadge.className = "badge " + (state === "открыт" ? "badge-ok" : state === "закрыт" ? "badge-off" : "badge-mute");
         if (openedUser && boxes && boxes.ask) boxes.ask.checked = true;
         loadUi(false);
       };
-      const openSubject = (baseId, type, id, label, title, boxes) => async () => {
+      const openSubject = (baseId, type, id, label, title, stateBadge, boxes) => async () => {
         await sendJson("/admin/kb/" + baseId + "/deny", "DELETE", { subject_type: type, subject_id: id });
         const sent = await sendJson("/admin/kb/" + baseId + "/allow", "POST", { subject_type: type, subject_id: id });
-        if (sent.ok) mark(label, title, "открыт", boxes, type === "user");
+        if (sent.ok) mark(label, title, stateBadge, "открыт", boxes, type === "user");
         else field(adminBody, "p", sent.payload.detail || "Ошибка");
       };
-      const closeSubject = (baseId, type, id, label, title) => async () => {
+      const closeSubject = (baseId, type, id, label, title, stateBadge) => async () => {
         const sent = await sendJson("/admin/kb/" + baseId + "/deny", "POST", { subject_type: type, subject_id: id });
-        if (sent.ok) mark(label, title, "закрыт");
+        if (sent.ok) mark(label, title, stateBadge, "закрыт");
         else field(adminBody, "p", sent.payload.detail || "Ошибка");
       };
       (data.bases || []).forEach((base) => {
@@ -2446,7 +2504,7 @@
         block.append(head);
         const tools = document.createElement("div");
         tools.className = "access-tools";
-        tools.append(adminButton("Открыть себе", async () => {
+        tools.append(adminGhost("Открыть себе", async () => {
           const sent = await sendJson("/admin/kb/" + base.id + "/self", "POST");
           if (!sent.ok) {
             field(block, "p", sent.payload.detail || "Ошибка");
@@ -2454,8 +2512,11 @@
           }
           const mine = me && block.querySelector('[data-subject="user:' + me.id + '"]');
           if (mine) {
-            const label = mine.querySelector(".access-state");
-            if (label) label.textContent = (me.login || "") + " — открыт";
+            const stateBadge = mine.querySelector(".badge");
+            if (stateBadge) {
+              stateBadge.textContent = "открыт";
+              stateBadge.className = "badge badge-ok";
+            }
             mine.querySelectorAll("input[type=checkbox]").forEach((box) => { box.checked = true; });
           }
           loadUi(false);
@@ -2466,9 +2527,12 @@
             const line = document.createElement("div");
             line.className = "access-row";
             line.setAttribute("data-subject", kind + ":" + id);
-            const label = field(line, "p", title + " — " + stateOf(base.acl, kind, id), "access-state");
-            line.append(adminButton("Открыть", openSubject(base.id, kind, id, label, title, boxes)));
-            line.append(adminButton("Закрыть", closeSubject(base.id, kind, id, label, title)));
+            const state = stateOf(base.acl, kind, id);
+            const label = field(line, "p", title, "access-state");
+            const stateBadge = badge(state, state === "открыт" ? "ok" : state === "закрыт" ? "off" : "mute");
+            line.append(stateBadge);
+            line.append(adminGhost("Открыть", openSubject(base.id, kind, id, label, title, stateBadge, boxes)));
+            line.append(adminGhost("Закрыть", closeSubject(base.id, kind, id, label, title, stateBadge)));
             return line;
           };
           roles.forEach((role) => block.append(addLine("role", role.id, "Роль " + role.name)));
@@ -2482,7 +2546,7 @@
                 boxes[action] = item.box;
                 line.append(item.line);
               });
-              line.append(adminButton("Записать личные", async () => {
+              line.append(adminGhost("Записать личные", async () => {
                 const actions = ["ask", "upload", "delete", "arrange"].filter((action) => boxes[action].checked);
                 const sent = await sendJson("/admin/kb/" + base.id + "/people/" + person.id + "/actions", "PUT", { actions: actions });
                 if (!sent.ok) field(block, "p", sent.payload.detail || "Ошибка");
