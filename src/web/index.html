@@ -534,6 +534,61 @@
       flex-direction: column;
       gap: 8px;
     }
+    #gate {
+      background:
+        radial-gradient(1100px 600px at 12% -8%, var(--accent-soft), transparent 60%),
+        radial-gradient(900px 520px at 108% 108%, var(--accent-soft-2), transparent 55%),
+        var(--bg);
+    }
+    .gate-card {
+      width: 384px;
+      max-width: calc(100% - 32px);
+      background: var(--paper);
+      border: 1px solid var(--line-2);
+      border-radius: 14px;
+      box-shadow: var(--shadow-3);
+      padding: 28px 26px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .gate-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 17px;
+      font-weight: 700;
+    }
+    .gate-mark {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), #8B5CF6);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      box-shadow: var(--shadow-2);
+    }
+    .gate-mark svg { width: 17px; height: 17px; }
+    .gate-sub { color: var(--fg3); font-size: 12.5px; margin: 0; }
+    .gate-title { margin: 0; font-size: 15px; font-weight: 600; }
+    .gate-foot { color: var(--fg4); font-size: 11.5px; text-align: center; margin: 0; }
+    #gate-error { color: var(--danger); font-size: 12px; min-height: 16px; margin: 0; }
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 12px; font-weight: 600; color: var(--fg2); }
+    .input {
+      height: 30px;
+      padding: 0 10px;
+      border: 1px solid var(--line-3);
+      border-radius: var(--r-2);
+      background: var(--paper);
+      color: var(--fg);
+      font: inherit;
+      font-size: 12.5px;
+      outline: none;
+    }
+    .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus-ring); }
+    .input::placeholder { color: var(--fg4); }
     .card input, .admin-body input, .admin-body select {
       font: inherit;
       color: inherit;
@@ -785,12 +840,24 @@
 </head>
 <body>
   <form id="gate" class="hidden">
-    <div class="card">
-      <p id="gate-title">Вход</p>
-      <input id="gate-login" autocomplete="username" placeholder="Логин" aria-label="Логин">
-      <input id="gate-password" type="password" autocomplete="current-password" placeholder="Пароль" aria-label="Пароль">
+    <div class="gate-card">
+      <div class="gate-logo">
+        <span class="gate-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 13h5"/><path d="M10 16h3"/></svg></span>
+        <span>Семантика</span>
+      </div>
+      <p class="gate-sub">Локальный поиск по вашим документам · без интернета</p>
+      <h1 class="gate-title" id="gate-title">Вход</h1>
+      <div class="field">
+        <label for="gate-login">Логин</label>
+        <input id="gate-login" class="input" autocomplete="username" placeholder="например, alazarev" aria-label="Логин">
+      </div>
+      <div class="field">
+        <label for="gate-password">Пароль</label>
+        <input id="gate-password" class="input" type="password" autocomplete="current-password" placeholder="••••••••" aria-label="Пароль">
+      </div>
       <button id="gate-submit" class="text-btn" type="submit">Войти</button>
       <p id="gate-error"></p>
+      <p class="gate-foot">Данные обрабатываются только на этом компьютере</p>
     </div>
   </form>
   <section id="admin" class="hidden" aria-label="Управление">
