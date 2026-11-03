@@ -47,10 +47,31 @@ def test_cover_latin_off_does_not_refuse(monkeypatch):
     assert calls["cover"] == 0
     assert calls["model"] == 1
     assert "из модели" in answer
-    calls["model"] = 0
-    on = dict(off, cover_latin=True)
-    assert agents.answer_agent("Где NPP?", "Где NPP?", chunks, [], features=on) == agents.NO_ANSWER
-    assert calls["model"] == 0
+
+
+def test_cover_latin_on_with_none_does_not_refuse(monkeypatch):
+    """Латиница не найдена в кусках — ответ идёт в модель, а не в отказ."""
+    calls = {"cover": 0, "model": 0}
+
+    def cover(query, chunks):
+        calls["cover"] += 1
+        return None
+
+    def model(*_args, **_kwargs):
+        calls["model"] += 1
+        return "ответ модели без латиницы"
+
+    monkeypatch.setattr(agents, "_cover_latin", cover)
+    monkeypatch.setattr(agents, "count_tokens", lambda text: len(text.split()))
+    monkeypatch.setattr(agents, "complete", model)
+    chunks = [{"text": "Насос работает.", "document_name": "a.txt", "chunk_index": 0, "section": ""}]
+    features = {"cover_latin": True, "prefer_name": False, "from_overview": False}
+    answer = agents.answer_agent("Где NPP?", "Где NPP?", chunks, [], features=features)
+    assert calls["cover"] == 1
+    assert calls["model"] == 1
+    assert "ответ модели" in answer
+    assert agents._latin_not_found_var.get() is True
+    agents._latin_not_found_var.set(False)
 
 
 @pytest.mark.slow

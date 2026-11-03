@@ -12,9 +12,13 @@ def test_answer_refuses_empty_chunks():
     assert agents.answer_agent("цвет", "цвет насоса", [], []) == agents.NO_ANSWER
 
 
-def test_answer_refuses_latin_token_missing_from_chunks(monkeypatch):
-    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("complete")))
-    assert agents.answer_agent("Какая версия Python у насоса?", "Какая версия Python у насоса?", [PUMP], []) == agents.NO_ANSWER
+def test_answer_keeps_chunks_when_latin_is_missing(monkeypatch):
+    monkeypatch.setattr(agents, "count_tokens", lambda text: len(text.split()))
+    monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: "Версия в тексте не названа.")
+    answer = agents.answer_agent("Какая версия Python у насоса?", "Какая версия Python у насоса?", [PUMP], [])
+    assert answer != agents.NO_ANSWER
+    assert "Версия" in answer
+    agents._latin_not_found_var.set(False)
 
 
 def test_count_uses_overview_when_another_heading_matches(monkeypatch):
@@ -398,6 +402,31 @@ def test_check_drops_a_section_about_another_code():
     )
     assert verdict["status"] == agents.CONFIRMED
     assert [source["number"] for source in verdict["sources"]] == [1]
+
+
+def test_check_rejects_hallucinated_latin():
+    agents._latin_not_found_var.set(True)
+    try:
+        chunks = [{"text": "Насос работает.", "document_name": "a.txt", "chunk_index": 0, "section": ""}]
+        result = agents.check_agent("NPP находится в цеху.", chunks, "Где NPP?")
+        assert result["status"] == agents.UNCONFIRMED
+        assert "latin_not_found" in result["feedback"]
+    finally:
+        agents._latin_not_found_var.set(False)
+
+
+def test_check_accepts_answer_without_latin_when_not_found():
+    chunk = {"text": "Насос > Характеристики\nРабочее давление: 6 бар\nНомер цеха: 4", "document_name": "pump.md"}
+    answer = "Рабочее давление насоса равно 6 бар [1]."
+    blocked = agents.check_agent(answer, [chunk], "Где NPP?")
+    assert blocked["status"] == agents.UNCONFIRMED
+    agents._latin_not_found_var.set(True)
+    try:
+        result = agents.check_agent(answer, [chunk], "Где NPP?")
+        assert result["status"] == agents.CONFIRMED
+        assert "latin_not_found" in result["feedback"]
+    finally:
+        agents._latin_not_found_var.set(False)
 
 
 def test_check_confirms_grounded_answer_and_cites_sources():
