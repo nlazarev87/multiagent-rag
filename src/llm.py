@@ -4,6 +4,7 @@
 """
 import os
 import threading
+from pathlib import Path
 
 from settings import runtime
 
@@ -44,8 +45,17 @@ def count_tokens(text):
         return len(_llm.tokenize(text.encode("utf-8"), add_bos=False))
 
 
-def complete(system, user, max_tokens=None, examples=()):
-    """Ответ модели. Примеры идут парами user/assistant перед вопросом."""
+def model_name():
+    """Имя файла модели без суффикса. Пусто, если путь не задан."""
+    return Path(os.environ.get("LLM_MODEL_PATH", "")).stem
+
+
+def complete(system, user, max_tokens=None, examples=(), *, usage_sink=None):
+    """Ответ модели. Примеры идут парами user/assistant перед вопросом.
+
+    usage_sink, если передан, получает tokens_in и tokens_out из ответа модели.
+    Старый вызов без этого аргумента возвращает только текст.
+    """
     load()
     data = runtime()
     if max_tokens is None:
@@ -57,4 +67,8 @@ def complete(system, user, max_tokens=None, examples=()):
     messages.append({"role": "user", "content": user})
     with _run_lock:
         reply = _llm.create_chat_completion(messages=messages, max_tokens=max_tokens, temperature=temperature)
+    usage = reply.get("usage") if isinstance(reply, dict) else None
+    if usage_sink is not None and isinstance(usage, dict):
+        usage_sink["tokens_in"] = usage.get("prompt_tokens")
+        usage_sink["tokens_out"] = usage.get("completion_tokens")
     return reply["choices"][0]["message"]["content"].strip()

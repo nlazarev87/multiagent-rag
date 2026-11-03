@@ -7,6 +7,7 @@ import json
 import os
 import threading
 import time
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -807,9 +808,17 @@ def ui_ratings(dialog_id: str, turn_index: int, body: Ratings):
 @app.post("/query")
 def query(body: Query, request: Request):
     """Ответить на вопрос. Базу выбирает проверка прав, не поле запроса."""
+    request_id = str(uuid.uuid4())
     user = _user(request)
     memory_key = f"{user['id']}:{body.dialog_id}"
     scope = access.build_scope(user)
+
+    def _record(**fields):
+        record = access.query_record(user, scope, **fields)
+        record["request_id"] = request_id
+        record["trace_json"] = getattr(scope, "trace_steps", None)
+        return record
+
     try:
         existed = workspace.prepare_dialog(body.dialog_id, memory_key=memory_key) is not None
         if not scope.kbs:
@@ -817,8 +826,7 @@ def query(body: Query, request: Request):
         else:
             result = run(body.query, memory_key, scope)
         workspace.append_turn(body.dialog_id, body.query, result, create=not existed)
-        audit.write("query", user, access.query_record(
-            user, scope,
+        audit.write("query", user, _record(
             query=body.query,
             answer=result.get("answer", ""),
             status=result.get("status", ""),
@@ -827,10 +835,11 @@ def query(body: Query, request: Request):
             attempts=getattr(scope, "attempts", 0) or 0,
             feedback=getattr(scope, "feedback", "") or "",
         ))
-        return result
+        result = dict(result)
+        result["request_id"] = request_id
+        return JSONResponse(content=result, headers={"X-Request-ID": request_id})
     except Exception as exc:
-        audit.write("query", user, access.query_record(
-            user, scope,
+        audit.write("query", user, _record(
             query=body.query,
             answer="",
             status="нет",
@@ -840,7 +849,11 @@ def query(body: Query, request: Request):
             feedback="",
             error=type(exc).__name__,
         ), ok=False)
-        raise HTTPException(500, detail="Ошибка сервера") from exc
+        return JSONResponse(
+            content={"detail": "Ошибка сервера"},
+            status_code=500,
+            headers={"X-Request-ID": request_id},
+        )
 
 
 def _need(user, action):

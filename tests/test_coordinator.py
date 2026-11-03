@@ -763,3 +763,26 @@ def test_finish_drops_only_the_invalid_number_in_a_citation(monkeypatch):
     result = coordinator.run("Какой номер у цеха?", "cite-mix")
     assert result["answer"] == "А Б [1]."
     assert [source["number"] for source in result["sources"]] == [1]
+
+
+def test_run_writes_trace_steps_to_scope(monkeypatch):
+    order = []
+    _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
+    scope = type("Scope", (), {})()
+    scope.kbs = ["kb"]
+    scope.trace = []
+    scope.chunks = []
+    scope.known = lambda _term: True
+    scope.search = lambda clear, limit, places: [CHUNK]
+    result = coordinator.run("Какой номер у цеха?", "d-trace", scope)
+    assert set(result) == {"answer", "status", "document_names", "sources"}
+    steps = scope.trace_steps
+    assert isinstance(steps, list) and steps
+    assert all("node" in step and "duration_ms" in step for step in steps)
+    seen = [step["node"] for step in steps]
+    for node in ("select", "clarify", "search", "answer", "check", "finish"):
+        assert node in seen
+    search = next(step for step in steps if step["node"] == "search")
+    assert "focused_query" in search
+    assert "clear_query" in search
+    assert scope.trace == []

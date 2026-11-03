@@ -633,6 +633,41 @@ def known_permit(permit, term):
     return _read_permit(permit, lambda: known_at(permit.chroma, term))
 
 
+_search_notes = contextvars.ContextVar("store_search_notes", default=None)
+
+
+def search_notes_begin():
+    """Начать копить диагностику поиска в этом потоке. Без begin список не пишется."""
+    return _search_notes.set([])
+
+
+def search_notes_end(token):
+    """Забрать накопленные заметки и вернуть прежнее значение."""
+    notes = list(_search_notes.get() or [])
+    _search_notes.reset(token)
+    return notes
+
+
+def _remember_search(focused_query, allowed, ranked_count, slots):
+    notes = _search_notes.get()
+    if notes is None:
+        return
+    docs = []
+    for slot in slots or []:
+        if not isinstance(slot, dict):
+            continue
+        name = slot.get("document_name")
+        if name and name not in docs:
+            docs.append(name)
+    notes.append({
+        "focused_query": focused_query,
+        "allowed": allowed,
+        "ranked_count": ranked_count,
+        "top_ids": [slot.get("id") for slot in slots or [] if isinstance(slot, dict)],
+        "top_docs": docs,
+    })
+
+
 def search_chunks(clear_query, limit=4, document_names=None, debug=False, features=None):
     """Вернуть не больше limit кусков. Имена ограничивают поиск уже выбранными файлами.
 
@@ -646,6 +681,7 @@ def search_chunks(clear_query, limit=4, document_names=None, debug=False, featur
     calls += 1
     col, total, index = _open_index()
     if index is None:
+        _remember_search(None, None, 0, [])
         if debug:
             return {
                 "slots": [],
@@ -653,6 +689,7 @@ def search_chunks(clear_query, limit=4, document_names=None, debug=False, featur
                 "raw_dense": [],
                 "ranked": [],
                 "scope_used": None,
+                "focused_query": None,
             }
         return []
     if features.get("scope", True):
@@ -665,10 +702,10 @@ def search_chunks(clear_query, limit=4, document_names=None, debug=False, featur
             allowed = present
     raw_lexical_ids = _lexical(index, clear_query, allowed)
     if features.get("focus", True):
-        focus_query = _focus(clear_query, allowed)
+        focused_query = _focus(clear_query, allowed)
     else:
-        focus_query = clear_query
-    raw_dense_ids = _dense(col, focus_query, allowed, total)
+        focused_query = clear_query
+    raw_dense_ids = _dense(col, focused_query, allowed, total)
     fused_ids = _fuse(raw_lexical_ids, raw_dense_ids)
     ranked_ids = [
         key
@@ -676,6 +713,7 @@ def search_chunks(clear_query, limit=4, document_names=None, debug=False, featur
         if key in index["position"] and _meta_ok(index["metas"][index["position"][key]])
     ]
     slots = _contexts(index, ranked_ids, limit, features=features)
+    _remember_search(focused_query, allowed, len(ranked_ids), slots)
     if not debug:
         return slots
 
@@ -702,4 +740,5 @@ def search_chunks(clear_query, limit=4, document_names=None, debug=False, featur
         "raw_dense": _materialize(raw_dense_ids),
         "ranked": _materialize(ranked_ids),
         "scope_used": allowed,
+        "focused_query": focused_query,
     }
