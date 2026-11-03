@@ -87,6 +87,18 @@ def test_per_question_has_features_active(fresh_run):
             )
 
 
+def test_per_question_has_total_duration(fresh_run):
+    pq = fresh_run.get("_per_question", [])
+    assert pq, "no per_question entries"
+    assert "total_duration_ms" in pq[0], "per_question missing total_duration_ms"
+    for question in pq:
+        value = question["total_duration_ms"]
+        assert isinstance(value, (int, float)), (
+            f"{question['id']}: total_duration_ms is not numeric ({type(value).__name__})"
+        )
+        assert value >= 0, f"{question['id']}: total_duration_ms must be non-negative"
+
+
 def test_per_question_has_staged_fields(fresh_run):
     pq = fresh_run.get("_per_question", [])
     assert pq, "no per_question entries"
