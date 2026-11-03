@@ -785,4 +785,73 @@ def test_run_writes_trace_steps_to_scope(monkeypatch):
     search = next(step for step in steps if step["node"] == "search")
     assert "focused_query" in search
     assert "clear_query" in search
+    assert search["search_fallback_used"] is False
     assert scope.trace == []
+
+
+def _scope_with_search(monkeypatch, seen, results):
+    monkeypatch.setattr(coordinator, "get_dialog", lambda _id: [])
+    monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
+    monkeypatch.setattr(coordinator, "clarify_agent", lambda query, _work: query)
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Смена длится 8 часов [1].")
+    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+
+    def search(_clear, _limit, places):
+        seen.append(places)
+        return results.pop(0)
+
+    scope = type("Scope", (), {})()
+    scope.kbs = ["kb"]
+    scope.trace = []
+    scope.chunks = []
+    scope.known = lambda _term: True
+    scope.search = search
+    return scope
+
+
+def _search_step(scope):
+    return next(step for step in scope.trace_steps if step["node"] == "search")
+
+
+def test_search_falls_back_when_sliced_search_returns_empty(monkeypatch):
+    previous = {
+        "query": "Какой номер у цеха?",
+        "answer": "Цех имеет номер 4.",
+        "document_names": ["a.txt"],
+    }
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: [previous])
+    seen = []
+    scope = _scope_with_search(monkeypatch, seen, [[], [CHUNK]])
+    coordinator.run("Сколько она длится?", "d-fallback", scope)
+    assert seen == [[{"kb_id": "", "document_name": "a.txt"}], None]
+    step = _search_step(scope)
+    assert step["search_fallback_used"] is True
+    assert step["output_summary"]["chunks_returned"] == 1
+    assert step["output_summary"]["fallback_used"] is True
+
+
+def test_search_does_not_fall_back_when_names_empty(monkeypatch):
+    previous = {
+        "query": "Какой номер у цеха?",
+        "answer": "Цех имеет номер 4.",
+        "document_names": [],
+    }
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: [previous])
+    seen = []
+    scope = _scope_with_search(monkeypatch, seen, [[]])
+    coordinator.run("Сколько она длится?", "d-empty-names", scope)
+    assert seen == [None]
+    step = _search_step(scope)
+    assert step["search_fallback_used"] is False
+    assert step["output_summary"]["chunks_returned"] == 0
+
+
+def test_search_does_not_fall_back_when_no_work(monkeypatch):
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: [])
+    seen = []
+    scope = _scope_with_search(monkeypatch, seen, [[]])
+    coordinator.run("Какое давление у насоса?", "d-no-work", scope)
+    assert seen == [None]
+    step = _search_step(scope)
+    assert step["search_fallback_used"] is False
+    assert step["output_summary"]["chunks_returned"] == 0
