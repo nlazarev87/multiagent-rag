@@ -1344,7 +1344,7 @@ def test_heading_follows_a_russian_style_an_outline_or_a_base_style(tmp_path, mo
     assert all("Скрытая строка оглавления" not in chunk["text"] for chunk in chunks)
 
 
-def test_pdf_text_two_pages(tmp_path):
+def test_pdf_text_two_pages(tmp_path, monkeypatch):
     from pypdf import PdfWriter
     from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
@@ -1371,6 +1371,7 @@ def test_pdf_text_two_pages(tmp_path):
     with open(pdf_path, "wb") as handle:
         writer.write(handle)
 
+    monkeypatch.setattr("ingest.count_tokens", _token_count)
     blocks = ingest._pdf_blocks(pdf_path)
     headings = [block for block in blocks if block["kind"] == "heading"]
     assert [block["text"] for block in headings] == ["page:1", "page:2"]
