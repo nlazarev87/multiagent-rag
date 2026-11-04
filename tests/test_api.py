@@ -1463,6 +1463,28 @@ def test_query_writes_the_chunk_and_a_failure_keeps_the_fields(monkeypatch):
     assert "rejected" in failed["payload"]
 
 
+def test_openapi_has_query_response():
+    schema = app.openapi()
+    assert "/query" in schema["paths"]
+    assert "/v1/query" in schema["paths"]
+    props = schema["components"]["schemas"]["QueryResponse"]["properties"]
+    for name in ("request_id", "answer", "status", "sources", "document_names"):
+        assert name in props
+
+
+def test_v1_query_returns_request_id(monkeypatch):
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
+        "answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []
+    })
+    client = TestClient(app)
+    response = client.post("/v1/query", json={"query": "вопрос", "dialog_id": "d"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["request_id"]
+    assert response.headers["X-Request-ID"] == body["request_id"]
+    assert "feedback" not in body
+
+
 def test_query_response_has_request_id(monkeypatch):
     monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
         "answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []
