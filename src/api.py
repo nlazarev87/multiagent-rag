@@ -13,6 +13,9 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 import access
 import audit
@@ -26,6 +29,22 @@ from ingest import SUFFIXES, _blocks, _max_file_size_bytes, chunks_from_blocks, 
 from store import chunks_for_document, delete_document, list_documents, upsert_chunks
 
 app = FastAPI()
+
+
+def _session_key(request: Request) -> str:
+    """Ключ лимита /query: cookie session. Без cookie — id пользователя, иначе адрес."""
+    session = request.cookies.get("session")
+    if session:
+        return f"session:{session}"
+    user = getattr(getattr(request, "state", None), "user", None) or {}
+    if user.get("id"):
+        return f"user:{user['id']}"
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_session_key, key_style="endpoint")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 INBOX = Path("data/inbox")
 _PUBLIC = {("GET", "/"), ("GET", "/ready"), ("GET", "/auth/state"), ("POST", "/setup"), ("POST", "/login")}
 
@@ -842,8 +861,7 @@ def ui_ratings(dialog_id: str, turn_index: int, body: Ratings):
     return turn
 
 
-@app.post("/v1/query", response_model=QueryResponse, response_model_exclude_none=True)
-@app.post("/query", response_model=QueryResponse, response_model_exclude_none=True)
+@limiter.limit("10/minute")
 def query(body: Query, request: Request, response: Response):
     """Ответить на вопрос. Базу выбирает проверка прав, не поле запроса."""
     request_id = str(uuid.uuid4())
@@ -917,6 +935,22 @@ def query(body: Query, request: Request, response: Response):
             status_code=500,
             headers={"X-Request-ID": request_id},
         )
+
+
+app.add_api_route(
+    "/query",
+    query,
+    methods=["POST"],
+    response_model=QueryResponse,
+    response_model_exclude_none=True,
+)
+app.add_api_route(
+    "/v1/query",
+    query,
+    methods=["POST"],
+    response_model=QueryResponse,
+    response_model_exclude_none=True,
+)
 
 
 def _need(user, action):
