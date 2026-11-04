@@ -1074,6 +1074,20 @@ def test_dedup_same_document_keeps_both_copies(tmp_path, monkeypatch):
     assert all("[также в:" not in slot["text"] for slot in slots)
 
 
+def test_k1_b_from_runtime(monkeypatch):
+    """#142: K1 и B читаются из runtime.json."""
+    monkeypatch.setattr(store, "runtime", lambda: {"k1": 2.0, "b": 0.5})
+    assert store._k1() == 2.0
+    assert store._b() == 0.5
+
+
+def test_k1_b_defaults_when_missing(monkeypatch):
+    """#142: без ключей остаются 1.5 и 0.75."""
+    monkeypatch.setattr(store, "runtime", lambda: {})
+    assert store._k1() == 1.5
+    assert store._b() == 0.75
+
+
 def test_dedup_different_texts_two_slots(tmp_path, monkeypatch):
     """#230: разный текст — два слота."""
     _fresh(tmp_path, monkeypatch)
