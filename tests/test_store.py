@@ -918,3 +918,84 @@ def test_two_catalogs_stay_apart_and_reset_follows_chroma(tmp_path, monkeypatch)
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == "первый каталог"
     store.reset()
+
+
+def _pump(checksum="a", text="Насос синий."):
+    return {
+        "text": text,
+        "document_name": "pump.md",
+        "chunk_index": 0,
+        "checksum": checksum,
+        "section": "",
+    }
+
+
+def test_second_search_does_not_rebuild_index(tmp_path, monkeypatch):
+    """#162: второй поиск берёт собранный _index и не вызывает _build."""
+    _fresh(tmp_path, monkeypatch)
+    _vectors(monkeypatch)
+    store.upsert_chunks([_pump()])
+    calls = {"n": 0}
+    original = store._build
+
+    def counting(col):
+        calls["n"] += 1
+        return original(col)
+
+    monkeypatch.setattr(store, "_build", counting)
+    store.search_chunks("насос", 4)
+    assert calls["n"] == 1, f"expected 1 _build, got {calls['n']}"
+    store.search_chunks("насос", 4)
+    assert calls["n"] == 1, f"second search re-called _build ({calls['n']})"
+
+
+def test_upsert_and_delete_invalidate_index(tmp_path, monkeypatch):
+    """#163: запись и удаление обнуляют _index."""
+    _fresh(tmp_path, monkeypatch)
+    _vectors(monkeypatch)
+    store.upsert_chunks([_pump()])
+    store.search_chunks("насос", 4)
+    assert store._index is not None
+    store.upsert_chunks([_pump(checksum="b", text="Насос зелёный.")])
+    assert store._index is None
+    store.search_chunks("насос", 4)
+    assert store._index is not None
+    store.delete_document("pump.md")
+    assert store._index is None
+
+
+def test_open_index_concurrent_no_exception(tmp_path, monkeypatch):
+    """#163: десять потоков получают один и тот же _index."""
+    import threading
+
+    _fresh(tmp_path, monkeypatch)
+    _vectors(monkeypatch)
+    store.upsert_chunks([_pump()])
+    errors = []
+    results = []
+    calls = {"n": 0}
+    original = store._build
+
+    def counting(col):
+        calls["n"] += 1
+        return original(col)
+
+    monkeypatch.setattr(store, "_build", counting)
+
+    def worker():
+        try:
+            _col, _total, index = store._open_index()
+            results.append(id(index))
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(10)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+    assert not errors, f"concurrent _open_index raised: {errors}"
+    assert len(results) == 10
+    assert len(set(results)) == 1, f"multiple _index objects: {set(results)}"
+    assert calls["n"] == 1, f"expected 1 _build, got {calls['n']}"
+    assert store._index is not None
