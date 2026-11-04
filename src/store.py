@@ -38,6 +38,14 @@ def _rrf():
     return runtime().get("rrf", RRF)
 
 
+def _k1():
+    return runtime().get("k1", K1)
+
+
+def _b():
+    return runtime().get("b", B)
+
+
 def _meta_ok(meta):
     extra = route_where()
     if not extra:
@@ -405,6 +413,8 @@ def _lexical(index, query, allowed):
     total = sum(index["chunks"][doc] for doc in documents)
     average = max(1.0, sum(index["size"][doc] for doc in documents) / max(1, total))
     frequency = {term: sum(index["frequency"][doc][term] for doc in documents) for term in terms}
+    k1 = _k1()
+    b = _b()
     scored = []
     for number, count in enumerate(index["counts"]):
         if allowed and index["metas"][number]["document_name"] not in allowed:
@@ -417,8 +427,8 @@ def _lexical(index, query, allowed):
             if not seen:
                 continue
             weight = math.log(1 + (total - frequency[term] + 0.5) / (frequency[term] + 0.5))
-            norm = K1 * (1 - B + B * index["lengths"][number] / average)
-            score += weight * seen * (K1 + 1) / (seen + norm)
+            norm = k1 * (1 - b + b * index["lengths"][number] / average)
+            score += weight * seen * (k1 + 1) / (seen + norm)
         if score > 0:
             scored.append((score, number))
     scored.sort(key=lambda item: (-item[0], item[1]))

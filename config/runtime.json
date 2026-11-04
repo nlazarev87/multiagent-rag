@@ -2,6 +2,8 @@
   "candidates": 30,
   "context": 260,
   "rrf": 5,
+  "k1": 1.5,
+  "b": 0.75,
   "tokens": 250,
   "overlap": 40,
   "intro": 120,

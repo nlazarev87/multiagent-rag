@@ -5,8 +5,8 @@
 ## store.py
 | Порог | Значение | Тест | Config |
 |---|---|---|---|
-| K1 | 1.5 | test_store (косвенно) | ❌ Wave 6 |
-| B | 0.75 | test_store (косвенно) | ❌ Wave 6 |
+| K1 | 1.5 | test_store::test_k1_b_from_runtime | ✅ |
+| B | 0.75 | test_store::test_k1_b_defaults_when_missing | ✅ |
 | CANDIDATES | 30 | test_store | ✅ |
 | RRF | 5 | test_store | ✅ |
 | search_limit | 4 | test_store | ✅ |
