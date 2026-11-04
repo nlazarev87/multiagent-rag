@@ -10,7 +10,7 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -120,6 +120,27 @@ class Docs(BaseModel):
 class Query(BaseModel):
     query: str
     dialog_id: str
+
+
+class SourceModel(BaseModel):
+    """Один источник в ответе на вопрос."""
+    number: int
+    document_name: str
+    section: str = ""
+    chunk_index: int | None = None
+    kb_id: str | None = None
+    kb_name: str | None = None
+    text: str | None = None
+
+
+class QueryResponse(BaseModel):
+    """Тело ответа /query и /v1/query."""
+    answer: str
+    status: str
+    document_names: list[str] = []
+    sources: list[SourceModel] = []
+    request_id: str
+    feedback: str | None = None
 
 
 class UiTree(BaseModel):
@@ -821,10 +842,12 @@ def ui_ratings(dialog_id: str, turn_index: int, body: Ratings):
     return turn
 
 
-@app.post("/query")
-def query(body: Query, request: Request):
+@app.post("/v1/query", response_model=QueryResponse, response_model_exclude_none=True)
+@app.post("/query", response_model=QueryResponse, response_model_exclude_none=True)
+def query(body: Query, request: Request, response: Response):
     """Ответить на вопрос. Базу выбирает проверка прав, не поле запроса."""
     request_id = str(uuid.uuid4())
+    response.headers["X-Request-ID"] = request_id
     user = _user(request)
     memory_key = f"{user['id']}:{body.dialog_id}"
     scope = access.build_scope(user)
@@ -852,9 +875,13 @@ def query(body: Query, request: Request):
             attempts=getattr(scope, "attempts", 0) or 0,
             feedback=getattr(scope, "feedback", "") or "",
         ))
-        result = dict(result)
-        result["request_id"] = request_id
-        return JSONResponse(content=result, headers={"X-Request-ID": request_id})
+        return QueryResponse(
+            answer=result.get("answer") or "",
+            status=result.get("status") or "",
+            document_names=list(result.get("document_names") or []),
+            sources=list(result.get("sources") or []),
+            request_id=request_id,
+        )
     except TimeoutError:
         audit.write("query", user, _record(
             query=body.query,
@@ -866,17 +893,13 @@ def query(body: Query, request: Request):
             feedback="timeout",
             error="timeout",
         ), ok=False)
-        return JSONResponse(
-            content={
-                "answer": "Обработка заняла слишком много времени. Попробуйте позже.",
-                "status": "нет ответа",
-                "document_names": [],
-                "sources": [],
-                "feedback": "timeout",
-                "request_id": request_id,
-            },
-            status_code=200,
-            headers={"X-Request-ID": request_id},
+        return QueryResponse(
+            answer="Обработка заняла слишком много времени. Попробуйте позже.",
+            status="нет ответа",
+            document_names=[],
+            sources=[],
+            request_id=request_id,
+            feedback="timeout",
         )
     except Exception as exc:
         audit.write("query", user, _record(
