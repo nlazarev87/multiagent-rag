@@ -1439,6 +1439,32 @@ def test_pdf_table_two_rows(tmp_path):
     assert "Some paragraph text" in paragraphs
 
 
+def test_pdf_one_row_is_not_a_table(tmp_path):
+    """#227: сетка из одной строки не становится таблицей.
+
+    `_pdf_blocks` берёт сетку только из двух и более непустых строк.
+    Одна полоса с двумя ячейками таблицей не считается. Текст ячеек
+    может попасть в абзац, если pdfplumber не увидел рамку как таблицу.
+    """
+    pdf_path = tmp_path / "one_row.pdf"
+    content = (
+        b"100 500 m 100 450 l S\n"
+        b"200 500 m 200 450 l S\n"
+        b"300 500 m 300 450 l S\n"
+        b"100 500 m 300 500 l S\n"
+        b"100 450 m 300 450 l S\n"
+        b"BT /F1 10 Tf 110 470 Td (Name) Tj ET\n"
+        b"BT /F1 10 Tf 210 470 Td (Value) Tj ET\n"
+    )
+    _write_pdf_page(pdf_path, content)
+    blocks = ingest._pdf_blocks(pdf_path)
+    tables = [block for block in blocks if block.get("kind") == "table"]
+    assert len(tables) == 0, (
+        f"expected 0 tables (one row), got {len(tables)}: "
+        f"{[table.get('rows') for table in tables]}"
+    )
+
+
 def _write_pdf_page(path, content):
     from pypdf import PdfWriter
     from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
