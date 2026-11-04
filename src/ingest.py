@@ -14,7 +14,7 @@ from pathlib import Path
 
 from settings import runtime
 
-SUFFIXES = {".txt", ".md", ".doc", ".docx"}
+SUFFIXES = {".txt", ".md", ".doc", ".docx", ".pdf"}
 VERSION = 3
 TOKENS = 250
 OVERLAP = 40
@@ -341,6 +341,29 @@ def _text_blocks(text):
     return [{"kind": "p", "text": " ".join(line.split())} for line in text.splitlines() if line.strip()]
 
 
+def _pdf_blocks(path):
+    """Текст PDF по страницам. Таблицы сюда не входят.
+
+    Непустая страница начинается с заголовка page:N, дальше абзацы.
+    Пустая страница не даёт блоков. Файл без текста возвращает пустой список,
+    и ingest_dir не добавляет по нему куски.
+    """
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(path))
+    blocks = []
+    for number, page in enumerate(reader.pages, start=1):
+        text = (page.extract_text() or "").strip()
+        if not text:
+            continue
+        blocks.append({"kind": "heading", "level": 1, "text": f"page:{number}"})
+        for paragraph in text.split("\n\n"):
+            paragraph = paragraph.strip()
+            if paragraph:
+                blocks.append({"kind": "p", "text": paragraph})
+    return blocks
+
+
 def _doc_blocks(path):
     with tempfile.TemporaryDirectory() as folder:
         subprocess.run(
@@ -358,6 +381,8 @@ def _blocks(path):
         return _docx_blocks(path)
     if suffix == ".doc":
         return _doc_blocks(path)
+    if suffix == ".pdf":
+        return _pdf_blocks(path)
     text = path.read_text(encoding="utf-8")
     return _markdown_blocks(text) if suffix == ".md" else _text_blocks(text)
 

@@ -1010,7 +1010,7 @@ def test_ingest_dir_indexes_only_supported_files(tmp_path, monkeypatch):
     _word_tokens.cache_clear()
     try:
         (tmp_path / "a.txt").write_text("Первая строка.", encoding="utf-8")
-        (tmp_path / "skip.pdf").write_bytes(b"\xff\xfe")
+        (tmp_path / "skip.xyz").write_bytes(b"\xff\xfe")
         nested = tmp_path / "nested"
         nested.mkdir()
         (nested / "b.txt").write_text("Вложенный текст.", encoding="utf-8")
@@ -1342,3 +1342,42 @@ def test_heading_follows_a_russian_style_an_outline_or_a_base_style(tmp_path, mo
     assert "1 введение в предмет остаётся абзацем." in mode_text
     assert "Текст унаследованного раздела." in grouped["Унаследованный раздел"][0]
     assert all("Скрытая строка оглавления" not in chunk["text"] for chunk in chunks)
+
+
+def test_pdf_text_two_pages(tmp_path):
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    pdf_path = tmp_path / "two_pages.pdf"
+    writer = PdfWriter()
+    page1 = writer.add_blank_page(width=612, height=792)
+    page2 = writer.add_blank_page(width=612, height=792)
+    font = DictionaryObject()
+    font[NameObject("/Type")] = NameObject("/Font")
+    font[NameObject("/Subtype")] = NameObject("/Type1")
+    font[NameObject("/BaseFont")] = NameObject("/Helvetica")
+    font_ref = writer._add_object(font)
+    for page, text in [(page1, "Hello page one"), (page2, "Hello page two")]:
+        content = f"BT /F1 24 Tf 100 700 Td ({text}) Tj ET".encode("latin-1")
+        stream = DecodedStreamObject()
+        stream.set_data(content)
+        stream_ref = writer._add_object(stream)
+        page[NameObject("/Contents")] = stream_ref
+        fonts = DictionaryObject()
+        fonts[NameObject("/F1")] = font_ref
+        resources = DictionaryObject()
+        resources[NameObject("/Font")] = fonts
+        page[NameObject("/Resources")] = resources
+    with open(pdf_path, "wb") as handle:
+        writer.write(handle)
+
+    blocks = ingest._pdf_blocks(pdf_path)
+    headings = [block for block in blocks if block["kind"] == "heading"]
+    assert [block["text"] for block in headings] == ["page:1", "page:2"]
+    paragraphs = " ".join(block["text"] for block in blocks if block["kind"] == "p")
+    assert "Hello page one" in paragraphs
+    assert "Hello page two" in paragraphs
+    chunks = ingest.chunks_from_blocks(blocks, pdf_path.name)
+    assert [chunk["document_name"] for chunk in chunks] == ["two_pages.pdf", "two_pages.pdf"]
+    assert [chunk["chunk_index"] for chunk in chunks] == [0, 1]
+    assert [chunk["section"] for chunk in chunks] == ["page:1", "page:2"]
