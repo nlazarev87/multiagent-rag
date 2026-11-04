@@ -187,6 +187,27 @@ def _subheader(top, low):
     return spans and tied
 
 
+_NUMERIC_CELL = re.compile(r"^[\d\s.,\-]+$")
+
+
+def _is_numeric_cell(cell):
+    """Ячейка — число: целое, дробное, диапазон. Пустая не мешает."""
+    if cell is None:
+        return True
+    text = str(cell).strip()
+    if not text:
+        return True
+    return bool(_NUMERIC_CELL.match(text))
+
+
+def _is_numeric_row(cells):
+    """Все непустые ячейки — числа. Такая строка — данные, не шапка."""
+    filled = [cell for cell in cells if cell is not None and str(cell).strip()]
+    if not filled:
+        return False
+    return all(_is_numeric_cell(cell) for cell in filled)
+
+
 def _table_block(table, caption, depth=0):
     grid = [_aligned_row(row) for row in table.rows]
     width = max((len(row) for row in grid), default=0)
@@ -197,7 +218,11 @@ def _table_block(table, caption, depth=0):
         return {"kind": "p", "text": text} if text else None
     labels = [_text(cell, depth) for cell in grid[0]]
     start = 1
-    if len(grid) > 2 and _subheader(grid[0], grid[1]):
+    if _is_numeric_row(labels):
+        # #140: первая строка из чисел — данные. Пустые имена не склеивают столбцы.
+        labels = [""] * len(grid[0])
+        start = 0
+    elif len(grid) > 2 and _subheader(grid[0], grid[1]):
         labels = [
             top if _same_cell(upper, lower) or not _text(lower, depth) else f"{top} / {_text(lower, depth)}"
             for top, upper, lower in zip(labels, grid[0], grid[1])
@@ -213,7 +238,7 @@ def _table_block(table, caption, depth=0):
                 # slides the next value into this column: a two-column row stores
                 # the measurement as the name, and the column summary counts it
                 # under the previous header.
-                if not pairs or pairs[-1][0] != label:
+                if not pairs or not label or pairs[-1][0] != label:
                     pairs.append((label, ""))
                 last = None
                 continue
@@ -221,12 +246,12 @@ def _table_block(table, caption, depth=0):
                 # This column is the rest of a merged cell. Skipping it slides
                 # the next value left, and the column summary counts that value
                 # under this header.
-                if not pairs or pairs[-1][0] != label:
+                if not pairs or not label or pairs[-1][0] != label:
                     pairs.append((label, ""))
                 continue
             last = cell._tc
             value = _text(cell, depth)
-            if pairs and pairs[-1][0] == label:
+            if pairs and label and pairs[-1][0] == label:
                 if value:
                     pairs[-1] = (label, f"{pairs[-1][1]}; {value}" if pairs[-1][1] else value)
                 continue
@@ -235,7 +260,7 @@ def _table_block(table, caption, depth=0):
             rows.append(pairs)
     names = []
     for label in labels:
-        if not names or names[-1] != label:
+        if not names or not label or names[-1] != label:
             names.append(label)
     return {"kind": "table", "caption": caption, "labels": names, "width": len(labels), "rows": rows}
 
@@ -380,12 +405,18 @@ def _pdf_blocks(path):
                 if paragraph:
                     blocks.append({"kind": "p", "text": paragraph})
             for index, grid in tables:
+                if _is_numeric_row(grid[0]):
+                    labels = [""] * len(grid[0])
+                    data = grid
+                else:
+                    labels = grid[0]
+                    data = grid[1:]
                 blocks.append({
                     "kind": "table",
                     "caption": "",
-                    "labels": grid[0],
+                    "labels": labels,
                     "width": len(grid[0]),
-                    "rows": grid[1:],
+                    "rows": data,
                     "group": f"pdf:{path.name}:{number}:{index}",
                 })
     return blocks
@@ -407,7 +438,8 @@ def _xlsx_cell(cell):
 def _xlsx_blocks(path):
     """XLSX: каждый непустой лист — одна таблица.
 
-    Первая непустая строка — имена столбцов. Дальше пары
+    Первая непустая строка — имена столбцов, если в ней есть нечисловой текст.
+    Строка из чисел остаётся данными, имена столбцов пустые. Дальше пары
     (столбец, значение). Пустая ячейка остаётся в своём столбце.
     Группа sheet:{имя листа}:0. Лист короче двух строк не даёт блоков.
     """
@@ -426,10 +458,15 @@ def _xlsx_blocks(path):
                     grid.append(cells)
             if len(grid) < 2:
                 continue
-            labels = grid[0]
+            if _is_numeric_row(grid[0]):
+                labels = [""] * len(grid[0])
+                data_rows = grid
+            else:
+                labels = grid[0]
+                data_rows = grid[1:]
             width = len(labels)
             rows = []
-            for cells in grid[1:]:
+            for cells in data_rows:
                 cells = cells + [""] * (width - len(cells))
                 rows.append([
                     (labels[index] if index < width else "", cell)
@@ -474,10 +511,13 @@ def _blocks(path):
 
 
 def _row_line(pairs, keyvalue):
-    if keyvalue:
+    if keyvalue and any(label for label, _value in pairs):
         key, value = pairs[0][1], (pairs[1][1] if len(pairs) > 1 else "")
         if not key:
-            return f"{pairs[1][0]}: {value}" if len(pairs) > 1 else ""
+            if len(pairs) < 2:
+                return ""
+            label = pairs[1][0]
+            return f"{label}: {value}" if label else value
         return f"{key}: {value or '—'}"
     return "; ".join(f"{label}: {value}" if label else value for label, value in pairs if value)
 
