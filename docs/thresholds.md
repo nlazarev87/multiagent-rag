@@ -44,6 +44,13 @@
 | overlap | 40 | test_ingest | ✅ |
 | intro | 120 | test_ingest::test_intro | ✅ |
 
+## ingest
+
+| Порог | Значение | Смысл | Config |
+|---|---|---|---|
+| `max_file_size_mb` | 50 | файл больше — пропускается с `file_too_large` | ✅ `runtime.json` |
+| `max_chunks_per_doc` | 5000 | больше кусков — первые 5000 + warning | ✅ `runtime.json` |
+
 ## llm.py
 | Порог | Значение | Config |
 |---|---|---|

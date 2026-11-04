@@ -22,7 +22,7 @@ import trees
 import workspace
 from coordinator import run
 from settings import runtime
-from ingest import SUFFIXES, _blocks, chunks_from_blocks, ingest_dir
+from ingest import SUFFIXES, _blocks, _max_file_size_bytes, chunks_from_blocks, ingest_dir
 from store import chunks_for_document, delete_document, list_documents, upsert_chunks
 
 app = FastAPI()
@@ -477,6 +477,21 @@ def _save_uploads_locked(payloads, folder, chroma, legacy, user):
                 raise HTTPException(400, detail="Некорректное имя файла")
             if path.resolve().parent != inbox:
                 raise HTTPException(400, detail="Некорректное имя файла")
+            if len(payload) > _max_file_size_bytes():
+                # #137: загрузка уже прочитана в память; отказ до записи на диск.
+                try:
+                    audit.write("upload", user, {
+                        "file": name,
+                        "size": len(payload),
+                        "error": "file_too_large",
+                    }, ok=False)
+                except Exception:
+                    pass
+                # Имя runtime в этом модуле связано при импорте. Повторный
+                # импорт читает settings.runtime в момент отказа.
+                from settings import runtime
+                limit_mb = runtime().get("ingest", {}).get("max_file_size_mb", 50)
+                raise HTTPException(status_code=413, detail=f"Файл больше {limit_mb} МБ")
             previous = path.read_bytes() if path.is_file() else None
             saved.append((path, previous))
             path.write_bytes(payload)

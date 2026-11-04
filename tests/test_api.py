@@ -1519,3 +1519,39 @@ def test_query_error_has_request_id_header(monkeypatch):
     failed = audit.list_events(kind="query")[0]
     assert failed["payload"]["request_id"] == response.headers["X-Request-ID"]
     assert failed["ok"] is False
+
+
+def test_upload_rejects_file_over_size_limit(tmp_path, monkeypatch):
+    """#137: тело больше предела не пишется на диск, журнал kind=upload."""
+    monkeypatch.setattr(api, "_max_file_size_bytes", lambda: 10)
+    monkeypatch.setattr(
+        "settings.runtime",
+        lambda: {"ingest": {"max_file_size_mb": 50, "max_chunks_per_doc": 5000}},
+    )
+    events = []
+
+    def capture(kind, user, payload, ok=True):
+        events.append((kind, payload, ok))
+
+    monkeypatch.setattr("audit.write", capture)
+    with pytest.raises(HTTPException) as error:
+        api._save_uploads_locked([("big.txt", b"x" * 11)], tmp_path, None, True, None)
+    assert error.value.status_code == 413
+    assert "50" in error.value.detail
+    assert "МБ" in error.value.detail
+    assert not (tmp_path / "big.txt").exists()
+    assert events == [("upload", {"file": "big.txt", "size": 11, "error": "file_too_large"}, False)]
+
+
+def test_upload_rejects_file_over_size_limit_dynamic(tmp_path, monkeypatch):
+    """#137: текст 413 берётся из runtime, не зашит."""
+    monkeypatch.setattr(api, "_max_file_size_bytes", lambda: 10)
+    monkeypatch.setattr(
+        "settings.runtime",
+        lambda: {"ingest": {"max_file_size_mb": 100, "max_chunks_per_doc": 5000}},
+    )
+    monkeypatch.setattr("audit.write", lambda *_a, **_k: None)
+    with pytest.raises(HTTPException) as error:
+        api._save_uploads_locked([("big.txt", b"x" * 11)], tmp_path, None, True, None)
+    assert "100" in error.value.detail
+    assert "50" not in error.value.detail

@@ -712,6 +712,28 @@ def load_text(path):
     return "\n".join(line for line in lines if line)
 
 
+def _max_file_size_bytes():
+    """Предел размера файла в байтах из runtime."""
+    from settings import runtime
+    mb = runtime().get("ingest", {}).get("max_file_size_mb", 50)
+    return mb * 1024 * 1024
+
+
+def _max_chunks_per_doc():
+    """Предел кусков на документ из runtime."""
+    from settings import runtime
+    return runtime().get("ingest", {}).get("max_chunks_per_doc", 5000)
+
+
+def _audit_upload(user, payload, ok):
+    """Журнал kind=upload. Сбой записи не останавливает разбор."""
+    try:
+        from audit import write as audit_write
+        audit_write("upload", user, payload, ok=ok)
+    except Exception:
+        return
+
+
 def ingest_dir(directory):
     """Прочитать папку и вернуть куски текста. Битый файл не отменяет остальные."""
     # Upload and startup both read the whole inbox. One file that cannot be
@@ -722,7 +744,30 @@ def ingest_dir(directory):
         if path.suffix.lower() not in SUFFIXES or not path.is_file():
             continue
         try:
-            chunks += chunks_from_blocks(_blocks(path), path.name)
+            size = path.stat().st_size
+        except OSError:
+            continue
+        if size > _max_file_size_bytes():
+            # #137: файл больше предела — не разбирать.
+            _audit_upload(None, {
+                "file": path.name,
+                "size": size,
+                "error": "file_too_large",
+            }, False)
+            continue
+        try:
+            extracted = chunks_from_blocks(_blocks(path), path.name)
+            limit = _max_chunks_per_doc()
+            if len(extracted) > limit:
+                total = len(extracted)
+                extracted = extracted[:limit]
+                _audit_upload(None, {
+                    "file": path.name,
+                    "chunks_total": total,
+                    "chunks_kept": limit,
+                    "warning": "too_many_chunks",
+                }, True)
+            chunks += extracted
         except ImportError:
             raise
         except Exception:
