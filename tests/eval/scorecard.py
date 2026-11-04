@@ -340,7 +340,12 @@ def measure_search(holdout=True, existing=None, features=None):
             for item in rows:
                 _iter_start = time.perf_counter()
                 _start = time.perf_counter()
-                _result = store.search_chunks(item["query"], 4, debug=True, features=features)
+                expected_doc = item.get("document")
+                if expected_doc in (None, "*"):
+                    expected_doc = None
+                _result = store.search_chunks(
+                    item["query"], 4, debug=True, features=features, expected_document=expected_doc,
+                )
                 chunks = _result["slots"]
                 _raw_lex = _result["raw_lexical"]
                 _raw_dense = _result["raw_dense"]
@@ -676,7 +681,10 @@ def freeze_chunks(folder=None):
     try:
         frozen = {}
         for item in _questions():
-            chunks = store.search_chunks(item["query"], 4)
+            expected_doc = item.get("document")
+            if expected_doc in (None, "*"):
+                expected_doc = None
+            chunks = store.search_chunks(item["query"], 4, expected_document=expected_doc)
             frozen[item["id"]] = [
                 {
                     "text": chunk["text"],

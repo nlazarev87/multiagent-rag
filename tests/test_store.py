@@ -999,3 +999,88 @@ def test_open_index_concurrent_no_exception(tmp_path, monkeypatch):
     assert len(set(results)) == 1, f"multiple _index objects: {set(results)}"
     assert calls["n"] == 1, f"expected 1 _build, got {calls['n']}"
     assert store._index is not None
+
+
+def test_dedup_no_expected_keeps_first(tmp_path, monkeypatch):
+    """#230: без expected_document победитель — первый в ранжировании."""
+    _fresh(tmp_path, monkeypatch)
+    _vectors(monkeypatch)
+    store.upsert_chunks([
+        {**_pump(checksum="a", text="Насос синий."), "document_name": "file1.md"},
+        {**_pump(checksum="a", text="Насос синий."), "document_name": "file2.md"},
+    ])
+    slots = store.search_chunks("насос", 4)
+    assert len(slots) == 1, f"expected 1 slot, got {len(slots)}"
+    assert slots[0].get("document_name") == "file1.md"
+    assert "[также в:" in slots[0]["text"]
+    assert "file2.md" in slots[0]["text"]
+
+
+def test_dedup_expected_wins(tmp_path, monkeypatch):
+    """#230: expected_document = file2 → победитель = file2."""
+    _fresh(tmp_path, monkeypatch)
+    _vectors(monkeypatch)
+    store.upsert_chunks([
+        {**_pump(checksum="a", text="Насос синий."), "document_name": "file1.md"},
+        {**_pump(checksum="a", text="Насос синий."), "document_name": "file2.md"},
+    ])
+    slots = store.search_chunks("насос", 4, expected_document="file2.md")
+    assert len(slots) == 1
+    assert slots[0].get("document_name") == "file2.md"
+    assert "file1.md" in slots[0]["text"]
+    assert "[также в:" in slots[0]["text"]
+
+
+def test_dedup_expected_not_in_ranked_keeps_first(tmp_path, monkeypatch):
+    """#230: expected_document нет в ранжировании → победитель — первый."""
+    _fresh(tmp_path, monkeypatch)
+    _vectors(monkeypatch)
+    store.upsert_chunks([
+        {**_pump(checksum="a", text="Насос синий."), "document_name": "file1.md"},
+        {**_pump(checksum="a", text="Насос синий."), "document_name": "file2.md"},
+    ])
+    slots = store.search_chunks("насос", 4, expected_document="file99.md")
+    assert len(slots) == 1
+    assert slots[0].get("document_name") == "file1.md"
+    assert "file2.md" in slots[0]["text"]
+
+
+def test_dedup_single_table_still_one_slot(tmp_path, monkeypatch):
+    """#230: куски одной таблицы остаются одним слотом."""
+    _fresh(tmp_path, monkeypatch)
+    _vectors(monkeypatch)
+    # _render берёт count_tokens из ingest в момент вызова. В CI модели нет.
+    monkeypatch.setattr(ingest, "count_tokens", lambda text: max(1, len((text or "").split())))
+    store.upsert_chunks([
+        {**_pump(checksum="a", text="Строка 1."), "document_name": "table.md", "group": "t1"},
+        {**_pump(checksum="b", text="Строка 2."), "document_name": "table.md", "group": "t1"},
+    ])
+    slots = store.search_chunks("строка", 4)
+    assert len(slots) == 1, f"expected 1 slot (same group), got {len(slots)}"
+    assert "[также в:" not in slots[0]["text"]
+
+
+def test_dedup_same_document_keeps_both_copies(tmp_path, monkeypatch):
+    """#230: тот же файл не схлопывается, даже если текст совпал."""
+    _fresh(tmp_path, monkeypatch)
+    _vectors(monkeypatch)
+    store.upsert_chunks([
+        {**_pump(checksum="a", text="Насос синий."), "document_name": "file1.md", "chunk_index": 0},
+        {**_pump(checksum="b", text="Насос синий."), "document_name": "file1.md", "chunk_index": 1},
+    ])
+    slots = store.search_chunks("насос", 4)
+    assert len(slots) == 2, f"expected 2 slots, got {len(slots)}"
+    assert all(slot.get("document_name") == "file1.md" for slot in slots)
+    assert all("[также в:" not in slot["text"] for slot in slots)
+
+
+def test_dedup_different_texts_two_slots(tmp_path, monkeypatch):
+    """#230: разный текст — два слота."""
+    _fresh(tmp_path, monkeypatch)
+    _vectors(monkeypatch)
+    store.upsert_chunks([
+        {**_pump(checksum="a", text="Насос синий."), "document_name": "file1.md"},
+        {**_pump(checksum="b", text="Насос красный."), "document_name": "file2.md"},
+    ])
+    slots = store.search_chunks("насос", 4)
+    assert len(slots) == 2, f"expected 2 slots, got {len(slots)}"
