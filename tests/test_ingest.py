@@ -1382,3 +1382,169 @@ def test_pdf_text_two_pages(tmp_path, monkeypatch):
     assert [chunk["document_name"] for chunk in chunks] == ["two_pages.pdf", "two_pages.pdf"]
     assert [chunk["chunk_index"] for chunk in chunks] == [0, 1]
     assert [chunk["section"] for chunk in chunks] == ["page:1", "page:2"]
+
+
+def test_pdf_table_two_rows(tmp_path):
+    """#165: PDF с таблицей 2x2 → блок kind='table', group=pdf:name:page:idx."""
+    from pypdf import PdfWriter
+    from pypdf.generic import NameObject, DictionaryObject, DecodedStreamObject
+
+    pdf_path = tmp_path / "with_table.pdf"
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+
+    font = DictionaryObject()
+    font[NameObject("/Type")] = NameObject("/Font")
+    font[NameObject("/Subtype")] = NameObject("/Type1")
+    font[NameObject("/BaseFont")] = NameObject("/Helvetica")
+    font_ref = writer._add_object(font)
+
+    para = b"BT /F1 12 Tf 100 700 Td (Some paragraph text) Tj ET\n"
+    lines = (
+        b"100 500 m 100 400 l S\n"
+        b"200 500 m 200 400 l S\n"
+        b"300 500 m 300 400 l S\n"
+        b"100 500 m 300 500 l S\n"
+        b"100 450 m 300 450 l S\n"
+        b"100 400 m 300 400 l S\n"
+    )
+    texts = (
+        b"BT /F1 10 Tf 110 470 Td (Name) Tj ET\n"
+        b"BT /F1 10 Tf 210 470 Td (Value) Tj ET\n"
+        b"BT /F1 10 Tf 110 420 Td (Pressure) Tj ET\n"
+        b"BT /F1 10 Tf 210 420 Td (6 bar) Tj ET\n"
+    )
+    stream = DecodedStreamObject()
+    stream.set_data(para + lines + texts)
+    stream_ref = writer._add_object(stream)
+    page[NameObject("/Contents")] = stream_ref
+    resources = DictionaryObject()
+    fonts = DictionaryObject()
+    fonts[NameObject("/F1")] = font_ref
+    resources[NameObject("/Font")] = fonts
+    page[NameObject("/Resources")] = resources
+    with open(pdf_path, "wb") as handle:
+        writer.write(handle)
+
+    blocks = ingest._pdf_blocks(pdf_path)
+    tables = [block for block in blocks if block.get("kind") == "table"]
+    assert len(tables) == 1, f"expected 1 table, got {len(tables)}"
+    table = tables[0]
+    assert table["labels"] == ["Name", "Value"], f"labels: {table.get('labels')}"
+    assert table["rows"] == [["Pressure", "6 bar"]], f"rows: {table.get('rows')}"
+    assert table["group"] == "pdf:with_table.pdf:1:0", f"group: {table.get('group')}"
+    paragraphs = " ".join(block["text"] for block in blocks if block.get("kind") == "p")
+    assert "Pressure" not in paragraphs, "table content leaked into paragraph"
+    assert "6 bar" not in paragraphs, "table content leaked into paragraph"
+    assert "Some paragraph text" in paragraphs
+
+
+def _write_pdf_page(path, content):
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+    font = DictionaryObject()
+    font[NameObject("/Type")] = NameObject("/Font")
+    font[NameObject("/Subtype")] = NameObject("/Type1")
+    font[NameObject("/BaseFont")] = NameObject("/Helvetica")
+    font_ref = writer._add_object(font)
+    stream = DecodedStreamObject()
+    stream.set_data(content)
+    stream_ref = writer._add_object(stream)
+    page[NameObject("/Contents")] = stream_ref
+    resources = DictionaryObject()
+    fonts = DictionaryObject()
+    fonts[NameObject("/F1")] = font_ref
+    resources[NameObject("/Font")] = fonts
+    page[NameObject("/Resources")] = resources
+    with open(path, "wb") as handle:
+        writer.write(handle)
+
+
+def test_pdf_table_merged_cell(tmp_path):
+    """#165: объединённая ячейка остаётся пустой строкой в своём столбце."""
+    pdf_path = tmp_path / "merged.pdf"
+    # Вертикаль между столбцами только в шапке. Во второй строке ячейки слиты.
+    content = (
+        b"100 500 m 100 400 l S\n"
+        b"300 500 m 300 400 l S\n"
+        b"200 500 m 200 450 l S\n"
+        b"100 500 m 300 500 l S\n"
+        b"100 450 m 300 450 l S\n"
+        b"100 400 m 300 400 l S\n"
+        b"BT /F1 10 Tf 110 470 Td (Name) Tj ET\n"
+        b"BT /F1 10 Tf 210 470 Td (Value) Tj ET\n"
+        b"BT /F1 10 Tf 110 420 Td (Pressure) Tj ET\n"
+    )
+    _write_pdf_page(pdf_path, content)
+    blocks = ingest._pdf_blocks(pdf_path)
+    tables = [block for block in blocks if block.get("kind") == "table"]
+    assert len(tables) == 1
+    assert tables[0]["rows"] == [["Pressure", ""]], f"rows: {tables[0].get('rows')}"
+
+
+def test_pdf_two_tables_one_page(tmp_path):
+    """#165: две таблицы на одной странице получают group ...:0 и ...:1."""
+    pdf_path = tmp_path / "two_tables.pdf"
+    content = (
+        b"100 600 m 100 500 l S\n"
+        b"200 600 m 200 500 l S\n"
+        b"300 600 m 300 500 l S\n"
+        b"100 600 m 300 600 l S\n"
+        b"100 550 m 300 550 l S\n"
+        b"100 500 m 300 500 l S\n"
+        b"BT /F1 10 Tf 110 570 Td (Name) Tj ET\n"
+        b"BT /F1 10 Tf 210 570 Td (Value) Tj ET\n"
+        b"BT /F1 10 Tf 110 520 Td (Pressure) Tj ET\n"
+        b"BT /F1 10 Tf 210 520 Td (6 bar) Tj ET\n"
+        b"100 300 m 100 200 l S\n"
+        b"200 300 m 200 200 l S\n"
+        b"300 300 m 300 200 l S\n"
+        b"100 300 m 300 300 l S\n"
+        b"100 250 m 300 250 l S\n"
+        b"100 200 m 300 200 l S\n"
+        b"BT /F1 10 Tf 110 270 Td (Alpha) Tj ET\n"
+        b"BT /F1 10 Tf 210 270 Td (Beta) Tj ET\n"
+        b"BT /F1 10 Tf 110 220 Td (Temp) Tj ET\n"
+        b"BT /F1 10 Tf 210 220 Td (40 C) Tj ET\n"
+    )
+    _write_pdf_page(pdf_path, content)
+    blocks = ingest._pdf_blocks(pdf_path)
+    tables = [block for block in blocks if block.get("kind") == "table"]
+    assert len(tables) == 2, f"expected 2 tables, got {len(tables)}"
+    assert tables[0]["group"] == "pdf:two_tables.pdf:1:0"
+    assert tables[1]["group"] == "pdf:two_tables.pdf:1:1"
+    assert tables[0]["labels"] != tables[1]["labels"] or tables[0]["rows"] != tables[1]["rows"]
+
+
+def test_pdf_table_chunks_from_blocks(tmp_path, monkeypatch):
+    """#165: нарезка PDF-таблицы сохраняет group и head, короткий абзац входит в ту же группу."""
+    monkeypatch.setattr("ingest.count_tokens", _token_count)
+    pdf_path = tmp_path / "with_table.pdf"
+    content = (
+        b"BT /F1 12 Tf 100 700 Td (Some paragraph text) Tj ET\n"
+        b"100 500 m 100 400 l S\n"
+        b"200 500 m 200 400 l S\n"
+        b"300 500 m 300 400 l S\n"
+        b"100 500 m 300 500 l S\n"
+        b"100 450 m 300 450 l S\n"
+        b"100 400 m 300 400 l S\n"
+        b"BT /F1 10 Tf 110 470 Td (Name) Tj ET\n"
+        b"BT /F1 10 Tf 210 470 Td (Value) Tj ET\n"
+        b"BT /F1 10 Tf 110 420 Td (Pressure) Tj ET\n"
+        b"BT /F1 10 Tf 210 420 Td (6 bar) Tj ET\n"
+    )
+    _write_pdf_page(pdf_path, content)
+    blocks = ingest._pdf_blocks(pdf_path)
+    chunks = ingest.chunks_from_blocks(blocks, "with_table.pdf")
+    table_chunks = [chunk for chunk in chunks if chunk.get("kind") == "table"]
+    assert table_chunks, f"expected table chunks, got {[chunk.get('kind') for chunk in chunks]}"
+    assert all(chunk["group"].startswith("pdf:") for chunk in table_chunks), (
+        f"group: {[chunk.get('group') for chunk in table_chunks]}"
+    )
+    assert any(chunk.get("head") for chunk in table_chunks), "expected non-empty head"
+    intros = [chunk for chunk in chunks if chunk.get("kind") == "intro"]
+    assert len(intros) == 1
+    assert intros[0]["group"] == table_chunks[0]["group"]

@@ -342,25 +342,52 @@ def _text_blocks(text):
 
 
 def _pdf_blocks(path):
-    """Текст PDF по страницам. Таблицы сюда не входят.
+    """PDF: текст вне таблиц и сами таблицы.
 
-    Непустая страница начинается с заголовка page:N, дальше абзацы.
-    Пустая страница не даёт блоков. Файл без текста возвращает пустой список,
+    Непустая страница начинается с заголовка page:N. Абзац вне рамки
+    таблицы — kind="p". Сетка из двух и более строк — один блок
+    kind="table", group=pdf:{имя}:{страница}:{номер}. Пустая страница
+    не даёт блоков. Файл без текста и таблиц возвращает пустой список,
     и ingest_dir не добавляет по нему куски.
     """
-    from pypdf import PdfReader
+    import pdfplumber
 
-    reader = PdfReader(str(path))
+    path = Path(path)
     blocks = []
-    for number, page in enumerate(reader.pages, start=1):
-        text = (page.extract_text() or "").strip()
-        if not text:
-            continue
-        blocks.append({"kind": "heading", "level": 1, "text": f"page:{number}"})
-        for paragraph in text.split("\n\n"):
-            paragraph = paragraph.strip()
-            if paragraph:
-                blocks.append({"kind": "p", "text": paragraph})
+    with pdfplumber.open(str(path)) as pdf:
+        for number, page in enumerate(pdf.pages, start=1):
+            found = page.find_tables() or []
+            visible = page
+            for table in found:
+                visible = visible.outside_bbox(table.bbox)
+            text = (visible.extract_text() or "").strip()
+            tables = []
+            for index, table in enumerate(found):
+                data = table.extract() or []
+                grid = [
+                    ["" if cell is None else str(cell).strip() for cell in (row or [])]
+                    for row in data
+                ]
+                grid = [row for row in grid if any(cell for cell in row)]
+                if len(grid) < 2:
+                    continue
+                tables.append((index, grid))
+            if not text and not tables:
+                continue
+            blocks.append({"kind": "heading", "level": 1, "text": f"page:{number}"})
+            for paragraph in text.split("\n\n"):
+                paragraph = paragraph.strip()
+                if paragraph:
+                    blocks.append({"kind": "p", "text": paragraph})
+            for index, grid in tables:
+                blocks.append({
+                    "kind": "table",
+                    "caption": "",
+                    "labels": grid[0],
+                    "width": len(grid[0]),
+                    "rows": grid[1:],
+                    "group": f"pdf:{path.name}:{number}:{index}",
+                })
     return blocks
 
 
@@ -510,6 +537,31 @@ def _table_pieces(block, section):
     return pieces
 
 
+def _ready_table(block):
+    """Нарезка ждёт пары (столбец, значение). PDF хранит ячейки строками."""
+    rows = block.get("rows") or []
+    sample = rows[0][0] if rows and rows[0] else None
+    if isinstance(sample, tuple):
+        return block
+    labels = ["" if label is None else str(label) for label in (block.get("labels") or [])]
+    paired = []
+    for row in rows:
+        cells = ["" if cell is None else str(cell) for cell in row]
+        pairs = [
+            (labels[index] if index < len(labels) else "", cell)
+            for index, cell in enumerate(cells)
+        ]
+        if any(value for _, value in pairs):
+            paired.append(pairs)
+    return {
+        "kind": "table",
+        "caption": block.get("caption") or "",
+        "labels": labels,
+        "width": block.get("width", len(labels)),
+        "rows": paired,
+    }
+
+
 def chunks_from_blocks(blocks, document_name=""):
     """Собрать куски текста из уже разобранных блоков одного документа."""
     # Upsert skips a document when this hash matches. Overlap, chunk size and the
@@ -549,12 +601,18 @@ def chunks_from_blocks(blocks, document_name=""):
         else:
             before = len(pieces)
             flush()
-            tables += 1
-            group = f"t{tables}"
+            # Своё имя группы у таблицы PDF. Счётчик tN — только для блока
+            # без имени, иначе следующая таблица docx в том же файле сдвигается.
+            own = block.get("group") or ""
+            if own:
+                group = own
+            else:
+                tables += 1
+                group = f"t{tables}"
             last = pieces[-1] if len(pieces) > before else None
             if last and last[1] == "text" and count_tokens(last[2]) <= _intro():
                 pieces[-1] = (last[0], "intro", last[2], group, "", last[5])
-            for kind, text, head, embed in _table_pieces(block, section()):
+            for kind, text, head, embed in _table_pieces(_ready_table(block), section()):
                 pieces.append((section(), kind, text, group, head, embed))
     flush()
     return [
@@ -584,8 +642,12 @@ def load_text(path):
     lines = []
     for block in _blocks(path):
         if block["kind"] == "table":
-            lines.append(block["caption"])
-            lines.extend(_row_line(pairs, block.get("width") == 2 and len(block["labels"]) == 2) for pairs in block["rows"])
+            ready = _ready_table(block)
+            lines.append(ready["caption"])
+            lines.extend(
+                _row_line(pairs, ready.get("width") == 2 and len(ready["labels"]) == 2)
+                for pairs in ready["rows"]
+            )
         else:
             lines.append(block["text"])
     return "\n".join(line for line in lines if line)
