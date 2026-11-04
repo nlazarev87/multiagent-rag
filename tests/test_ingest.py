@@ -1689,3 +1689,70 @@ def test_chunks_truncated_per_doc(tmp_path, monkeypatch):
     ]
     assert {item["file"] for item in warnings} == {"many.txt", "other.txt"}
     assert all(item["chunks_total"] == 6000 and item["chunks_kept"] == 5000 for item in warnings)
+
+
+def test_docx_no_header_numeric_first_row(tmp_path):
+    """#140: числовая первая строка docx остаётся в тексте, имена столбцов пустые."""
+    document = Document()
+    table = document.add_table(rows=2, cols=2)
+    table.rows[0].cells[0].text = "6"
+    table.rows[0].cells[1].text = "8"
+    table.rows[1].cells[0].text = "10"
+    table.rows[1].cells[1].text = "12"
+    path = tmp_path / "numbers.docx"
+    document.save(path)
+    tables = [block for block in ingest._blocks(path) if block["kind"] == "table"]
+    assert len(tables) == 1
+    assert tables[0]["labels"] == ["", ""]
+    assert tables[0]["rows"] == [[("", "6"), ("", "8")], [("", "10"), ("", "12")]]
+    text = load_text(path)
+    for number in ("6", "8", "10", "12"):
+        assert number in text
+    assert ": " not in text
+
+
+def test_pdf_no_header_numeric_first_row(tmp_path):
+    """#140: PDF-таблица из чисел сохраняет первую строку."""
+    pdf_path = tmp_path / "numbers.pdf"
+    _write_pdf_page(pdf_path, (
+        b"100 500 m 100 400 l S\n"
+        b"200 500 m 200 400 l S\n"
+        b"300 500 m 300 400 l S\n"
+        b"100 500 m 300 500 l S\n"
+        b"100 450 m 300 450 l S\n"
+        b"100 400 m 300 400 l S\n"
+        b"BT /F1 10 Tf 110 470 Td (6) Tj ET\n"
+        b"BT /F1 10 Tf 210 470 Td (8) Tj ET\n"
+        b"BT /F1 10 Tf 110 420 Td (10) Tj ET\n"
+        b"BT /F1 10 Tf 210 420 Td (12) Tj ET\n"
+    ))
+    tables = [block for block in ingest._pdf_blocks(pdf_path) if block.get("kind") == "table"]
+    assert len(tables) == 1
+    assert tables[0]["labels"] == ["", ""]
+    assert tables[0]["rows"] == [["6", "8"], ["10", "12"]]
+
+
+def test_xlsx_no_header_numeric_first_row(tmp_path):
+    """#140: лист из чисел не превращает первую строку в шапку."""
+    path = tmp_path / "numbers.xlsx"
+    _write_xlsx(path, {"N": [[6, 8], [10, 12]]})
+    blocks = ingest._xlsx_blocks(path)
+    assert len(blocks) == 1
+    assert blocks[0]["labels"] == ["", ""]
+    assert blocks[0]["rows"] == [[("", "6"), ("", "8")], [("", "10"), ("", "12")]]
+
+
+def test_header_word_row_stays_header(tmp_path):
+    """#140: слова в первой строке остаются именами столбцов."""
+    document = Document()
+    table = document.add_table(rows=2, cols=2)
+    table.rows[0].cells[0].text = "Показатель"
+    table.rows[0].cells[1].text = "Значение"
+    table.rows[1].cells[0].text = "6"
+    table.rows[1].cells[1].text = "8"
+    path = tmp_path / "headed.docx"
+    document.save(path)
+    tables = [block for block in ingest._docx_blocks(path) if block["kind"] == "table"]
+    assert len(tables) == 1
+    assert tables[0]["labels"] == ["Показатель", "Значение"]
+    assert tables[0]["rows"] == [[("Показатель", "6"), ("Значение", "8")]]
