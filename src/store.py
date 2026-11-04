@@ -13,6 +13,7 @@ from collections import Counter
 from pathlib import Path
 
 from settings import runtime, where as route_where
+from types import Chunk
 
 CHROMA = Path(os.environ.get("CHROMA_PATH", "data/chroma"))
 MODEL = Path(os.environ.get("EMBED_PATH", "data/models/multilingual-e5-small"))
@@ -696,7 +697,7 @@ def _remember_search(focused_query, allowed, ranked_count, slots):
     })
 
 
-def search_chunks(clear_query, limit=4, document_names=None, debug=False, features=None):
+def search_chunks(clear_query, limit=4, document_names=None, debug=False, features=None) -> list[Chunk] | dict:
     """Вернуть не больше limit кусков. Имена ограничивают поиск уже выбранными файлами.
 
     Пустой список означает весь индекс: третьим аргументом его не передают.
