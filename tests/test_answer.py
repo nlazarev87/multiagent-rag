@@ -12,6 +12,12 @@ def test_answer_refuses_empty_chunks():
     assert agents.answer_agent("цвет", "цвет насоса", [], []) == agents.NO_ANSWER
 
 
+def test_no_answer_constant_single_source():
+    """#144: фраза отказа — один объект из settings."""
+    from settings import NO_ANSWER
+    assert agents.NO_ANSWER is NO_ANSWER
+
+
 def test_answer_keeps_chunks_when_latin_is_missing(monkeypatch):
     monkeypatch.setattr(agents, "count_tokens", lambda text: len(text.split()))
     monkeypatch.setattr(agents, "complete", lambda *_args, **_kwargs: "Версия в тексте не названа.")

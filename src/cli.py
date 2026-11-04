@@ -13,7 +13,7 @@ import kb
 from access import build_scope, can, query_record, source_rows
 from coordinator import run
 from ingest import ingest_dir
-from settings import runtime
+from settings import NO_ANSWER, runtime
 from store import upsert_chunks
 
 
@@ -123,7 +123,7 @@ def main(argv=None):
 
     try:
         if not scope.kbs:
-            result = {"answer": "В документах нет ответа.", "status": "нет ответа", "document_names": [], "sources": []}
+            result = {"answer": NO_ANSWER, "status": "нет ответа", "document_names": [], "sources": []}
         else:
             result = run(" ".join(words), "cli", scope)
     except Exception as exc:
