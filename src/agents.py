@@ -10,9 +10,21 @@ from llm import complete, count_tokens
 from settings import fewshot, lexicon, prompts, runtime
 from store import chunks_for_document, search_chunks
 from pipeline_types import CheckResult, Chunk, SelectResult, Turn
+import pipeline_utils
+from pipeline_utils import (
+    _PRONOUNS,
+    _TOKEN,
+    _codes,
+    _count_ask,
+    _dependent,
+    _extra_rows,
+    _flat,
+    _from_overview,
+    _list_ask,
+    _trace,
+    _words,
+)
 
-_extra_rows = contextvars.ContextVar("extra_rows", default=None)
-_trace = contextvars.ContextVar("answer_trace", default=None)
 _latin_not_found_var = contextvars.ContextVar("latin_not_found", default=False)
 
 NO_ANSWER = "В документах нет ответа."
@@ -23,13 +35,12 @@ MISSING = "нет ответа"
 WRONG_DOC = "Возьми другой документ: в найденном тексте нет слов вопроса."
 SYSTEM = TASK = YES_NO = RETRY = COPIED = INVERT = LIST_GAP = DEFINE = ""
 PROMPT_TOKENS = 1500
-SPAN = 30
 EXAMPLES = []
 
 
 def _bind_prompts():
     data = prompts()
-    global SYSTEM, TASK, YES_NO, RETRY, COPIED, INVERT, LIST_GAP, DEFINE, PROMPT_TOKENS, SPAN
+    global SYSTEM, TASK, YES_NO, RETRY, COPIED, INVERT, LIST_GAP, DEFINE, PROMPT_TOKENS
     SYSTEM = data.get("system") or SYSTEM
     TASK = data.get("task") or TASK
     YES_NO = data.get("yes_no") or YES_NO
@@ -39,39 +50,10 @@ def _bind_prompts():
     LIST_GAP = data.get("list_gap") or LIST_GAP
     DEFINE = data.get("define") or DEFINE
     PROMPT_TOKENS = runtime().get("prompt_tokens", PROMPT_TOKENS)
-    SPAN = runtime().get("span", SPAN)
+    pipeline_utils.SPAN = runtime().get("span", pipeline_utils.SPAN)
 
 
 _bind_prompts()
-_PRONOUNS = {"он", "она", "оно", "они", "его", "её", "ее", "их", "ему", "ей", "им", "него", "неё", "нее", "них", "это", "этот", "эта", "эти"}
-_TOKEN = re.compile(r"[0-9A-Za-zА-Яа-яЁё]+(?:[._/:\-][0-9A-Za-zА-Яа-яЁё]+)*")
-
-
-def _words(text):
-    skip = {"какой", "какая", "какое", "какие", "какова", "каков", "каком", "сколько", "такое", "такой", "такая", "такие", "этом"}
-    words = []
-    for word in text.lower().replace("?", " ").split():
-        for piece in word.split("-"):
-            piece = piece.strip(".,:;\"'«»()")
-            if len(piece) > 3 and piece not in skip and piece not in _PRONOUNS:
-                words.append(piece)
-    return words
-
-
-def _flat(text):
-    return " ".join(text.lower().replace("ё", "е").split())
-
-
-def _codes(text):
-    found = []
-    for token in _TOKEN.findall(text or ""):
-        upper = sum(ch.isupper() for ch in token)
-        coded = any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
-        if upper >= 2 or coded:
-            key = token.lower().replace("ё", "е")
-            if key not in found:
-                found.append(key)
-    return found
 
 
 def _anchors(text):
@@ -85,11 +67,6 @@ def _anchors(text):
             if token not in found:
                 found.append(token)
     return found
-
-
-def _dependent(query):
-    tokens = set(re.findall(r"[а-яёa-z]+", query.lower()))
-    return bool(tokens & _PRONOUNS) or not _words(query)
 
 
 def select_agent(query: str, turns: list[Turn]) -> SelectResult:
@@ -175,27 +152,6 @@ def reload_behavior():
 _bind_examples()
 
 
-_OVERVIEW_LINE = re.compile(r"Разных значений в столбце «([^»]+)»: (\d+)\. Список: (.+)", re.IGNORECASE)
-_LIST_MARK = re.compile(r"(?<![а-яёa-z])(скольк(?:о|их|ими|им)|какие|перечисли)", re.IGNORECASE)
-_COUNT_MARK = re.compile(r"(?<![а-яёa-z])скольк(?:о|их|ими|им)(?![а-яёa-z])", re.IGNORECASE)
-_ENDINGS = (
-    "иями", "ями", "ами", "ого", "его", "ому", "ему",
-    "ыми", "ими", "ой", "ий", "ый", "ая", "яя", "ое", "ее",
-    "ия", "ие", "ые", "ию", "ии", "ых", "их",
-    "ом", "ем", "ах", "ях", "ов", "ев", "ам", "ям",
-    "а", "я", "ы", "и", "у", "ю", "е", "о",
-)
-_ASIDE = {"есть", "между", "входят", "находится", "используется", "используются"}
-
-
-def _list_ask(query):
-    return bool(_LIST_MARK.search(query or ""))
-
-
-def _count_ask(query):
-    return bool(_COUNT_MARK.search(query or ""))
-
-
 def _chunk_score(query, text):
     body = _flat(text)
     score = 0
@@ -203,104 +159,6 @@ def _chunk_score(query, text):
         if word in body or (len(word) >= 4 and word[:4] in body):
             score += 1
     return score
-
-
-def _word_stem(word):
-    for ending in _ENDINGS:
-        if len(word) > len(ending) + 2 and word.endswith(ending):
-            return word[:len(word) - len(ending)]
-    return word
-
-
-def _focus_words(query):
-    words = _words(query)
-    if words and words[0] == "перечисли":
-        words = words[1:]
-    focus = []
-    for word in words:
-        if word in _ASIDE:
-            break
-        focus.append(word)
-    return focus
-
-
-def _stem_hit(word, text):
-    stem = _word_stem(word)
-    return any(_word_stem(token) == stem for token in re.findall(r"[0-9a-zа-яё]+", _flat(text)))
-
-
-def _label_score(query, label):
-    asked = _flat(query)
-    name = _flat(label)
-    score = 0
-    for word in _words(query):
-        stem = word[:4] if len(word) >= 4 else word
-        if stem in name:
-            score += 1
-    for token in re.findall(r"[0-9a-zа-яё]+", name):
-        stem = token[:4] if len(token) >= 4 else token
-        if len(stem) >= 3 and stem in asked:
-            score += 1
-    return score
-
-
-def _from_overview(query, chunks):
-    if not _list_ask(query) or not chunks:
-        return None
-    focus = _focus_words(query)
-    if not focus:
-        return None
-    ranked = []
-    for number, chunk in enumerate(chunks, 1):
-        text = chunk.get("text") or ""
-        lines = text.splitlines()
-        section = lines[0] if lines else ""
-        for match in _OVERVIEW_LINE.finditer(text):
-            section_hits = sum(_stem_hit(word, section) for word in focus)
-            column_hits = sum(_stem_hit(word, match.group(1)) for word in focus)
-            label_hits = 1 if _label_score(query, match.group(1)) else 0
-            column_score = column_hits or label_hits
-            if not section_hits and not column_score:
-                continue
-            ranked.append((
-                section_hits,
-                column_score,
-                number,
-                match.group(2),
-                match.group(3).rstrip(" ."),
-                match.group(1).strip(),
-            ))
-    if not ranked:
-        return None
-    ranked.sort(key=lambda item: (-item[0], -item[1], item[2]))
-    chosen = None
-    for section_hits, column_score, number, count, items, label in ranked:
-        others = 0
-        for index, chunk in enumerate(chunks, 1):
-            if index == number:
-                continue
-            other_lines = (chunk.get("text") or "").splitlines()
-            heading = other_lines[0] if other_lines else ""
-            others = max(others, sum(_stem_hit(word, heading) for word in focus))
-        if not _count_ask(query) and section_hits < others and column_score <= others:
-            continue
-        chosen = (number, count, items, label)
-        break
-    if chosen is None and _count_ask(query) and ranked:
-        _, _, number, count, items, label = ranked[0]
-        chosen = (number, count, items, label)
-    if chosen is None:
-        return None
-    number, count, items, label = chosen
-    if _count_ask(query):
-        if any(ch.isdigit() for ch in query):
-            return None
-        listed = f"{count} {label} [{number}]."
-    else:
-        listed = f"{items} [{number}]."
-    if len(_flat(re.sub(r"\[[\d,\s]+\]", " ", listed)).split()) >= SPAN:
-        return None
-    return listed
 
 
 def _with_cite(answer, chunks):
@@ -1925,7 +1783,8 @@ def _source(number, chunk):
 
 def _copied(text, flats):
     words = _flat(re.sub(r"\[[\d,\s]+\]", " ", text)).split()
-    spans = {" ".join(words[start:start + SPAN]) for start in range(len(words) - SPAN + 1)}
+    span = pipeline_utils.SPAN
+    spans = {" ".join(words[start:start + span]) for start in range(len(words) - span + 1)}
     grams = [" ".join(words[start:start + 4]) for start in range(len(words) - 3)]
     repeated = any(grams.count(gram) >= 3 for gram in set(grams))
     return text.strip().count("\n") >= 2 or repeated or any(span in flat for span in spans for flat in flats)
