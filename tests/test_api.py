@@ -1543,6 +1543,28 @@ def test_query_error_has_request_id_header(monkeypatch):
     assert failed["ok"] is False
 
 
+def test_query_rate_limit(monkeypatch):
+    """#147: 11-й запрос одной сессии → 429. Другая сессия идёт со своего нуля."""
+    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
+        "answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []
+    })
+    api.limiter.reset()
+    first = TestClient(app)
+    first.cookies.set("session", "session-a")
+    codes = [
+        first.post("/query", json={"query": "вопрос", "dialog_id": "d"}).status_code
+        for _ in range(10)
+    ]
+    assert codes == [200] * 10
+    blocked = first.post("/v1/query", json={"query": "вопрос", "dialog_id": "d"})
+    assert blocked.status_code == 429
+    second = TestClient(app)
+    second.cookies.set("session", "session-b")
+    allowed = second.post("/query", json={"query": "вопрос", "dialog_id": "d"})
+    assert allowed.status_code == 200
+    assert allowed.headers["X-Request-ID"] == allowed.json()["request_id"]
+
+
 def test_upload_rejects_file_over_size_limit(tmp_path, monkeypatch):
     """#137: тело больше предела не пишется на диск, журнал kind=upload."""
     monkeypatch.setattr(api, "_max_file_size_bytes", lambda: 10)
