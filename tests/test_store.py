@@ -1049,6 +1049,8 @@ def test_dedup_single_table_still_one_slot(tmp_path, monkeypatch):
     """#230: куски одной таблицы остаются одним слотом."""
     _fresh(tmp_path, monkeypatch)
     _vectors(monkeypatch)
+    # _render берёт count_tokens из ingest в момент вызова. В CI модели нет.
+    monkeypatch.setattr(ingest, "count_tokens", lambda text: max(1, len((text or "").split())))
     store.upsert_chunks([
         {**_pump(checksum="a", text="Строка 1."), "document_name": "table.md", "group": "t1"},
         {**_pump(checksum="b", text="Строка 2."), "document_name": "table.md", "group": "t1"},
