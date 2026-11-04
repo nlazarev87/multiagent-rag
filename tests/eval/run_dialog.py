@@ -4,6 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import scorecard
+
 import dialog
 import store
 from agents import CONFIRMED
@@ -29,7 +30,10 @@ try:
         if name:
             ok = ok and name in result["document_names"]
         hits += int(ok)
-        print(f"e2e_dialog {query!r}: ok={ok} status={result['status']} calls={store.calls}", flush=True)
+        print(
+            f"e2e_dialog {query!r}: ok={ok} status={result['status']} calls={store.calls}",
+            flush=True,
+        )
 finally:
     store.CHROMA = saved
     store.reset()

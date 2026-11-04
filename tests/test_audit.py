@@ -81,25 +81,31 @@ def test_changed_row_breaks_the_chain(tmp_path, monkeypatch):
 
 def test_deleted_person_leaves_the_login(tmp_path, monkeypatch):
     _root(tmp_path, monkeypatch)
-    import auth
     from fastapi.testclient import TestClient
+
+    import auth
     from api import app
+
     client = TestClient(app)
     client.post("/setup", json={"login": "admin", "password": "password12"})
     role_id = auth.user_by_login("admin")["role_id"]
     created = auth.create_user("ann", "password12", role_id)
     audit.write("login_ok", created, {})
     auth.delete_user(created["id"])
-    rows = [row for row in audit.list_events() if row["kind"] == "login_ok" and row["login"] == "ann"]
+    rows = [
+        row for row in audit.list_events() if row["kind"] == "login_ok" and row["login"] == "ann"
+    ]
     assert rows
     assert b"password12" not in audit.path().read_bytes()
 
 
 def test_old_role_filter_uses_the_snapshot(tmp_path, monkeypatch):
     _root(tmp_path, monkeypatch)
-    import auth
     from fastapi.testclient import TestClient
+
+    import auth
     from api import app
+
     client = TestClient(app)
     client.post("/setup", json={"login": "admin", "password": "password12"})
     old = auth.create_role("Старая")

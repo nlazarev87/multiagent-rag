@@ -3,22 +3,41 @@
 Каталог смотрит на слова имени файла, не на подстроку. Неподтверждённый ответ
 после повторов заменяется отказом, кроме числа из обзора таблицы.
 """
-from pathlib import Path
-from typing import Any
-from datetime import datetime, timezone
 
 import concurrent.futures
 import contextvars
 import re
 import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
 from langgraph.graph import END, StateGraph
-from pipeline_types import GraphState
 
-from agents import CONFIRMED, CONFIRMED_OVERVIEW, MISSING, NO_ANSWER, UNCONFIRMED, answer_agent, check_agent, clarify_agent, search_agent, select_agent
-from pipeline_utils import _codes, _count_ask, _dependent, _extra_rows, _from_overview, _trace, _words
+from agents import (
+    CONFIRMED,
+    CONFIRMED_OVERVIEW,
+    MISSING,
+    NO_ANSWER,
+    UNCONFIRMED,
+    answer_agent,
+    check_agent,
+    clarify_agent,
+    search_agent,
+    select_agent,
+)
 from dialog import add_turn, get_dialog
 from llm import model_name
+from pipeline_types import GraphState
+from pipeline_utils import (
+    _codes,
+    _count_ask,
+    _dependent,
+    _extra_rows,
+    _from_overview,
+    _trace,
+    _words,
+)
 from settings import routing, runtime
 from store import known, list_documents, search_notes_begin, search_notes_end
 
@@ -50,12 +69,14 @@ def _overview_sources(answer, chunks):
         if not 1 <= number <= len(chunks or []):
             continue
         chunk = chunks[number - 1]
-        sources.append({
-            "number": number,
-            "document_name": chunk.get("document_name", ""),
-            "section": chunk.get("section", ""),
-            "chunk_index": chunk.get("chunk_index", 0),
-        })
+        sources.append(
+            {
+                "number": number,
+                "document_name": chunk.get("document_name", ""),
+                "section": chunk.get("section", ""),
+                "chunk_index": chunk.get("chunk_index", 0),
+            }
+        )
     return sources
 
 
@@ -77,13 +98,10 @@ def _inventory_verb(match, text):
     # ("какое давление у документа, который загружен").
     if not match.group(0).startswith("загружен"):
         return True
-    before = text[:match.start()]
+    before = text[: match.start()]
     if not re.search(r"\bкотор", before):
         return True
-    return not any(
-        not _catalog_noise(token)
-        for token in re.findall(r"[0-9a-zа-яё]{3,}", before)
-    )
+    return not any(not _catalog_noise(token) for token in re.findall(r"[0-9a-zа-яё]{3,}", before))
 
 
 def _name_words(name):
@@ -119,9 +137,13 @@ def _catalog_names(query, names):
             if len(piece) < 4 and not piece.isascii():
                 continue
             hits = [
-                name for name in names
+                name
+                for name in names
                 # Слово имени целиком или его начало. Кусок из середины слова не подходит.
-                if any(word == piece or (len(word) >= 4 and piece.startswith(word)) for word in words[name])
+                if any(
+                    word == piece or (len(word) >= 4 and piece.startswith(word))
+                    for word in words[name]
+                )
             ]
             if hits and len(hits) < len(names):
                 marks.append(set(hits))
@@ -179,7 +201,13 @@ def _previous_blob(turn):
         " ".join([source.get("text") or "", source.get("document_name") or ""])
         for source in turn.get("sources") or []
     )
-    return " ".join([turn.get("query") or "", turn.get("answer") or "", " ".join(names), places, texts]).lower().replace("ё", "е")
+    return (
+        " ".join(
+            [turn.get("query") or "", turn.get("answer") or "", " ".join(names), places, texts]
+        )
+        .lower()
+        .replace("ё", "е")
+    )
 
 
 def _places(work, query, feedback=""):
@@ -190,7 +218,9 @@ def _places(work, query, feedback=""):
     last = work[-1]
     if _refused(last.get("answer") or ""):
         return None
-    leftover = [token for token in _place_tokens(query) if not _token_in(_previous_blob(last), token)]
+    leftover = [
+        token for token in _place_tokens(query) if not _token_in(_previous_blob(last), token)
+    ]
     if leftover and (_codes(query) or len(leftover) > 1):
         return None
     places = last.get("places") or None
@@ -284,7 +314,8 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
         work = state.get("work") or []
         chosen = work[0].get("id") if work and isinstance(work[0], dict) else None
         _step(
-            "select", started,
+            "select",
+            started,
             input_summary={"query_len": len(state.get("query") or "")},
             output_summary={"work_len": len(work), "chosen_turn_id": chosen},
         )
@@ -294,7 +325,8 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
         started = _clock()
         state["clear"] = clarify_agent(state["query"], state["work"])
         _step(
-            "clarify", started,
+            "clarify",
+            started,
             input_summary={"query_len": len(state.get("query") or "")},
             output_summary={"search_string": state.get("clear")},
         )
@@ -305,7 +337,9 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
         places = _places(state["work"], state["query"], state.get("feedback") or "")
         names = None
         if places:
-            names = [item.get("document_name") for item in places if item.get("document_name")] or None
+            names = [
+                item.get("document_name") for item in places if item.get("document_name")
+            ] or None
         # Заметки пишет сам поиск. Второй вызов с debug=True здесь не нужен:
         # при допуске он открыл бы другой индекс. Если имена прошлого хода
         # ничего не дали, один повтор без имён идёт тем же вызовом, что и первый.
@@ -330,7 +364,8 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
             if token is not None:
                 search_notes_end(token)
             _step(
-                "search", started,
+                "search",
+                started,
                 output_summary={"error": True, "fallback_used": fallback_used},
                 extra={"search_fallback_used": fallback_used},
             )
@@ -356,8 +391,12 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
             ranked_count = None
         bases = list(getattr(scope, "used", None) or []) if scope is not None else None
         _step(
-            "search", started,
-            input_summary={"query": state.get("clear") or state.get("query"), "document_names": names},
+            "search",
+            started,
+            input_summary={
+                "query": state.get("clear") or state.get("query"),
+                "document_names": names,
+            },
             output_summary={
                 "chunks_returned": len(chunks),
                 "top_ids": [item.get("id") for item in chunks if item.get("id")],
@@ -380,15 +419,21 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
         state["attempts"] = state.get("attempts", 0) + 1
         usage: dict[str, Any] = {}
         state["answer"] = answer_agent(
-            state["query"], state["clear"], state["chunks"], state["work"],
-            state.get("feedback"), state.get("features"), usage,
+            state["query"],
+            state["clear"],
+            state["chunks"],
+            state["work"],
+            state.get("feedback"),
+            state.get("features"),
+            usage,
         )
         extra = {}
         if usage.get("tokens_in") is not None or usage.get("tokens_out") is not None:
             extra["tokens_in"] = usage.get("tokens_in")
             extra["tokens_out"] = usage.get("tokens_out")
         _step(
-            "answer", started,
+            "answer",
+            started,
             output_summary={"model": model_name(), "answer_len": len(state.get("answer") or "")},
             extra=extra or None,
         )
@@ -405,7 +450,8 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
             scope.attempts = state.get("attempts") or 0
             scope.feedback = state.get("feedback") or ""
         _step(
-            "check", started,
+            "check",
+            started,
             output_summary={"status": state.get("status"), "feedback": state.get("feedback") or ""},
         )
         return state
@@ -424,7 +470,11 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
         overview = None
         # Вопрос «сколько» не заменяется отказом, если в найденном тексте уже есть полная строка обзора.
         show_overview = (state.get("features") or {}).get("from_overview", True)
-        if show_overview and state["status"] in (MISSING, UNCONFIRMED) and _count_ask(state.get("query", "")):
+        if (
+            show_overview
+            and state["status"] in (MISSING, UNCONFIRMED)
+            and _count_ask(state.get("query", ""))
+        ):
             overview = _from_overview(state.get("query", ""), state.get("chunks") or [])
         heuristic_finish_answer = False
         if overview:
@@ -473,7 +523,8 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
             turn["places"] = places
         add_turn(state["dialog_id"], turn)
         _step(
-            "finish", started,
+            "finish",
+            started,
             output_summary={
                 "status": state.get("status"),
                 "document_names": list(state.get("document_names") or []),
@@ -484,21 +535,32 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
         return state
 
     graph = StateGraph(GraphState)
-    for name, node in (("select", select), ("clarify", clarify), ("search", search), ("answer", answer), ("check", check), ("finish", finish)):
+    for name, node in (
+        ("select", select),
+        ("clarify", clarify),
+        ("search", search),
+        ("answer", answer),
+        ("check", check),
+        ("finish", finish),
+    ):
         graph.add_node(name, node)
     graph.set_entry_point("select")
     graph.add_edge("select", "clarify")
     graph.add_edge("clarify", "search")
     graph.add_edge("search", "answer")
     graph.add_edge("answer", "check")
-    graph.add_conditional_edges("check", route, {"answer": "answer", "search": "search", "finish": "finish"})
+    graph.add_conditional_edges(
+        "check", route, {"answer": "answer", "search": "search", "finish": "finish"}
+    )
     graph.add_edge("finish", END)
-    out = graph.compile().invoke({
-        "query": query,
-        "dialog_id": dialog_id,
-        "features": features,
-        "trace_steps": trace_steps,
-    })
+    out = graph.compile().invoke(
+        {
+            "query": query,
+            "dialog_id": dialog_id,
+            "features": features,
+            "trace_steps": trace_steps,
+        }
+    )
     _keep_steps()
     return {
         "answer": out["answer"],

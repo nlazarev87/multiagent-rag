@@ -2,7 +2,12 @@ import agents
 import coordinator
 import dialog
 
-CHUNK = {"text": "Цех имеет номер 4.", "document_name": "charter.txt", "chunk_index": 0, "section": ""}
+CHUNK = {
+    "text": "Цех имеет номер 4.",
+    "document_name": "charter.txt",
+    "chunk_index": 0,
+    "section": "",
+}
 SOURCE = {"number": 1, "document_name": "charter.txt", "section": ""}
 
 
@@ -10,7 +15,9 @@ def _wire(monkeypatch, order, verdicts):
     monkeypatch.setattr(coordinator, "get_dialog", lambda _id: [])
     monkeypatch.setattr(coordinator, "add_turn", lambda *_args: order.append("save"))
     monkeypatch.setattr(coordinator, "select_agent", lambda *_a: order.append("select") or [])
-    monkeypatch.setattr(coordinator, "clarify_agent", lambda *_a: order.append("clarify") or "номер цеха")
+    monkeypatch.setattr(
+        coordinator, "clarify_agent", lambda *_a: order.append("clarify") or "номер цеха"
+    )
     monkeypatch.setattr(coordinator, "search_agent", lambda *_a: order.append("search") or [CHUNK])
     feedback = []
 
@@ -20,7 +27,9 @@ def _wire(monkeypatch, order, verdicts):
         return "Цех имеет номер 4 [1]."
 
     monkeypatch.setattr(coordinator, "answer_agent", answer)
-    monkeypatch.setattr(coordinator, "check_agent", lambda *_a: order.append("check") or verdicts.pop(0))
+    monkeypatch.setattr(
+        coordinator, "check_agent", lambda *_a: order.append("check") or verdicts.pop(0)
+    )
     return feedback
 
 
@@ -33,12 +42,21 @@ def test_run_order_and_sources(monkeypatch):
     _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
     result = coordinator.run("Какой номер у цеха?", "d1")
     assert order == ["select", "clarify", "search", "answer", "check", "save"]
-    assert result == {"answer": "Цех имеет номер 4 [1].", "status": agents.CONFIRMED, "document_names": ["charter.txt"], "sources": [SOURCE]}
+    assert result == {
+        "answer": "Цех имеет номер 4 [1].",
+        "status": agents.CONFIRMED,
+        "document_names": ["charter.txt"],
+        "sources": [SOURCE],
+    }
 
 
 def test_run_retries_once_with_feedback(monkeypatch):
     order = []
-    feedback = _wire(monkeypatch, order, [_verdict(agents.UNCONFIRMED, feedback="исправь"), _verdict(agents.CONFIRMED, [SOURCE])])
+    feedback = _wire(
+        monkeypatch,
+        order,
+        [_verdict(agents.UNCONFIRMED, feedback="исправь"), _verdict(agents.CONFIRMED, [SOURCE])],
+    )
     result = coordinator.run("Какой номер у цеха?", "d2")
     assert order == ["select", "clarify", "search", "answer", "check", "answer", "check", "save"]
     assert feedback == [None, "исправь"]
@@ -56,7 +74,11 @@ def test_run_replaces_answer_when_documents_have_none(monkeypatch):
 
 def test_run_keeps_model_answer_after_second_failure(monkeypatch):
     order = []
-    _wire(monkeypatch, order, [_verdict(agents.UNCONFIRMED, feedback="a"), _verdict(agents.UNCONFIRMED, feedback="b")])
+    _wire(
+        monkeypatch,
+        order,
+        [_verdict(agents.UNCONFIRMED, feedback="a"), _verdict(agents.UNCONFIRMED, feedback="b")],
+    )
     result = coordinator.run("Какой номер у цеха?", "d3")
     assert order.count("answer") == 2
     assert result["status"] == agents.UNCONFIRMED
@@ -84,9 +106,15 @@ def test_catalog_lists_loaded_documents_without_search(monkeypatch):
 
 
 def test_catalog_ignores_a_syllable_inside_a_filename_word(monkeypatch):
-    monkeypatch.setattr(coordinator, "list_documents", lambda: ["Идеи ИИ ассистентов.docx", "заметка.txt"])
-    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
-    result = coordinator.run("Перечисли название всех документов, которые загружены в систему", "all")
+    monkeypatch.setattr(
+        coordinator, "list_documents", lambda: ["Идеи ИИ ассистентов.docx", "заметка.txt"]
+    )
+    monkeypatch.setattr(
+        coordinator, "select_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search"))
+    )
+    result = coordinator.run(
+        "Перечисли название всех документов, которые загружены в систему", "all"
+    )
     assert result["answer"] == "Идеи ИИ ассистентов.docx, заметка.txt"
 
 
@@ -98,9 +126,19 @@ def test_count_keeps_overview_after_a_rejected_example(monkeypatch):
         "chunk_index": 0,
         "section": "Потоки",
     }
-    _wire(monkeypatch, order, [_verdict(agents.UNCONFIRMED, feedback="a"), _verdict(agents.UNCONFIRMED, feedback="b")])
-    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: order.append("search") or [chunk])
-    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: order.append("answer") or "В библиотеке три потока [1].")
+    _wire(
+        monkeypatch,
+        order,
+        [_verdict(agents.UNCONFIRMED, feedback="a"), _verdict(agents.UNCONFIRMED, feedback="b")],
+    )
+    monkeypatch.setattr(
+        coordinator, "search_agent", lambda *_args: order.append("search") or [chunk]
+    )
+    monkeypatch.setattr(
+        coordinator,
+        "answer_agent",
+        lambda *_args: order.append("answer") or "В библиотеке три потока [1].",
+    )
     result = coordinator.run("Сколько интеграционных потоков между системами?", "count")
     assert result["status"] == agents.CONFIRMED_OVERVIEW
     assert result["answer"] == "4 ИД потока [1]."
@@ -109,23 +147,33 @@ def test_count_keeps_overview_after_a_rejected_example(monkeypatch):
 
 def test_catalog_keeps_only_names_mentioned_in_the_question(monkeypatch):
     monkeypatch.setattr(coordinator, "list_documents", lambda: ["ГОСТ_1.docx", "заметка.txt"])
-    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    monkeypatch.setattr(
+        coordinator, "select_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search"))
+    )
     result = coordinator.run("Какие ГОСТы загружены в систему?", "g")
     assert result["answer"] == "ГОСТ_1.docx"
     assert result["sources"] == []
 
 
 def test_catalog_keeps_every_file_when_the_question_only_says_documents(monkeypatch):
-    monkeypatch.setattr(coordinator, "list_documents", lambda: ["Документ.docx", "Паспорт насоса.docx"])
-    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    monkeypatch.setattr(
+        coordinator, "list_documents", lambda: ["Документ.docx", "Паспорт насоса.docx"]
+    )
+    monkeypatch.setattr(
+        coordinator, "select_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search"))
+    )
     result = coordinator.run("Какие документы загружены в систему?", "all-docs")
     assert result["status"] == agents.CONFIRMED
     assert result["answer"] == "Документ.docx, Паспорт насоса.docx"
 
 
 def test_catalog_still_narrows_to_a_named_kind_of_file(monkeypatch):
-    monkeypatch.setattr(coordinator, "list_documents", lambda: ["Паспорт насоса.docx", "Документ.docx"])
-    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    monkeypatch.setattr(
+        coordinator, "list_documents", lambda: ["Паспорт насоса.docx", "Документ.docx"]
+    )
+    monkeypatch.setattr(
+        coordinator, "select_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search"))
+    )
     result = coordinator.run("Какие паспорта загружены в систему?", "passports")
     assert result["answer"] == "Паспорт насоса.docx"
 
@@ -155,7 +203,9 @@ def test_loaded_document_question_is_not_answered_with_the_file_list(monkeypatch
     assert order[0] == "select"
     order.clear()
     _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
-    coordinator.run("Какие требования к испытаниям у документа, который загружен в систему?", "relative")
+    coordinator.run(
+        "Какие требования к испытаниям у документа, который загружен в систему?", "relative"
+    )
     assert order[0] == "select"
     order.clear()
     _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
@@ -166,7 +216,9 @@ def test_loaded_document_question_is_not_answered_with_the_file_list(monkeypatch
 def test_relative_inventory_question_still_lists_files(monkeypatch):
     names = ["Документ.docx", "Паспорт насоса.docx"]
     monkeypatch.setattr(coordinator, "list_documents", lambda: list(names))
-    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    monkeypatch.setattr(
+        coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search"))
+    )
     result = coordinator.run("Какие документы, которые загружены в систему?", "relative-list")
     assert result["status"] == agents.CONFIRMED
     assert result["answer"] == "Документ.docx, Паспорт насоса.docx"
@@ -236,8 +288,12 @@ def test_singular_question_word_does_not_narrow_the_file_list(monkeypatch):
 def test_relative_clause_keeps_a_three_letter_subject_on_search(monkeypatch):
     # Words shorter than three letters are inventory boilerplate. A three-letter
     # subject, including a number, is the document the question is about.
-    monkeypatch.setattr(coordinator, "list_documents", lambda: ["Документ.docx", "Паспорт насоса.docx"])
-    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    monkeypatch.setattr(
+        coordinator, "list_documents", lambda: ["Документ.docx", "Паспорт насоса.docx"]
+    )
+    monkeypatch.setattr(
+        coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search"))
+    )
     listed = coordinator.run("Какие из документов, которые загружены в систему?", "short-before")
     assert listed["status"] == agents.CONFIRMED
     assert listed["answer"] == "Документ.docx, Паспорт насоса.docx"
@@ -256,7 +312,11 @@ def test_relative_clause_keeps_a_three_letter_subject_on_search(monkeypatch):
 def test_finish_drops_citations_without_a_source(monkeypatch):
     order = []
     _wire(monkeypatch, order, [_verdict(agents.CONFIRMED, [SOURCE])])
-    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: order.append("answer") or "Факт в тексте [1] [2].")
+    monkeypatch.setattr(
+        coordinator,
+        "answer_agent",
+        lambda *_args: order.append("answer") or "Факт в тексте [1] [2].",
+    )
     result = coordinator.run("Какой номер у цеха?", "cite")
     assert result["answer"] == "Факт в тексте [1]."
     assert [source["number"] for source in result["sources"]] == [1]
@@ -280,12 +340,26 @@ def test_run_researches_when_list_is_incomplete(monkeypatch):
     feedback = _wire(
         monkeypatch,
         order,
-        [_verdict(agents.UNCONFIRMED, feedback=agents.LIST_GAP), _verdict(agents.CONFIRMED, [SOURCE])],
+        [
+            _verdict(agents.UNCONFIRMED, feedback=agents.LIST_GAP),
+            _verdict(agents.CONFIRMED, [SOURCE]),
+        ],
     )
     result = coordinator.run("Какие смены есть в цехе?", "d5")
-    assert order == ["select", "clarify", "search", "answer", "check", "search", "answer", "check", "save"]
+    assert order == [
+        "select",
+        "clarify",
+        "search",
+        "answer",
+        "check",
+        "search",
+        "answer",
+        "check",
+        "save",
+    ]
     assert feedback == [None, agents.LIST_GAP]
     assert result["status"] == agents.CONFIRMED
+
 
 def test_dependent_question_searches_only_previous_documents(monkeypatch):
     seen = []
@@ -305,10 +379,13 @@ def test_dependent_question_searches_only_previous_documents(monkeypatch):
 
     monkeypatch.setattr(coordinator, "search_agent", search)
     monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Смена длится 8 часов [1].")
-    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    monkeypatch.setattr(
+        coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE])
+    )
     result = coordinator.run("Сколько она длится?", "d6")
     assert result["status"] == agents.CONFIRMED
     assert seen == [["charter.txt"]]
+
 
 def test_new_question_is_not_limited_to_previous_documents(monkeypatch):
     seen = []
@@ -328,13 +405,20 @@ def test_new_question_is_not_limited_to_previous_documents(monkeypatch):
 
     monkeypatch.setattr(coordinator, "search_agent", search)
     monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Давление равно 6 бар [1].")
-    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    monkeypatch.setattr(
+        coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE])
+    )
     coordinator.run("Какое давление у насоса?", "d7")
     assert seen == [None]
 
+
 def test_dependent_question_without_documents_stays_unscoped(monkeypatch):
     seen = []
-    previous = {"query": "Какой номер у цеха?", "answer": "Цех имеет номер 4.", "document_names": []}
+    previous = {
+        "query": "Какой номер у цеха?",
+        "answer": "Цех имеет номер 4.",
+        "document_names": [],
+    }
     monkeypatch.setattr(coordinator, "get_dialog", lambda _id: [])
     monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
     monkeypatch.setattr(coordinator, "select_agent", lambda *_args: [previous])
@@ -346,21 +430,38 @@ def test_dependent_question_without_documents_stays_unscoped(monkeypatch):
 
     monkeypatch.setattr(coordinator, "search_agent", search)
     monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Смена длится 8 часов [1].")
-    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    monkeypatch.setattr(
+        coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE])
+    )
     coordinator.run("Сколько она длится?", "d8")
     assert seen == [None]
+
 
 def test_run_researches_when_feedback_names_a_document(monkeypatch):
     order = []
     feedback = _wire(
         monkeypatch,
         order,
-        [_verdict(agents.UNCONFIRMED, feedback="Возьми другой Документ."), _verdict(agents.CONFIRMED, [SOURCE])],
+        [
+            _verdict(agents.UNCONFIRMED, feedback="Возьми другой Документ."),
+            _verdict(agents.CONFIRMED, [SOURCE]),
+        ],
     )
     result = coordinator.run("Какое давление у насоса?", "d6")
-    assert order == ["select", "clarify", "search", "answer", "check", "search", "answer", "check", "save"]
+    assert order == [
+        "select",
+        "clarify",
+        "search",
+        "answer",
+        "check",
+        "search",
+        "answer",
+        "check",
+        "save",
+    ]
     assert feedback == [None, "Возьми другой Документ."]
     assert result["status"] == agents.CONFIRMED
+
 
 def test_run_scopes_search_to_the_previous_document_only_for_a_followup(monkeypatch):
     seen = []
@@ -368,7 +469,9 @@ def test_run_scopes_search_to_the_previous_document_only_for_a_followup(monkeypa
     monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
     monkeypatch.setattr(coordinator, "clarify_agent", lambda query, _work: query)
     monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Смена длится 8 часов [1].")
-    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    monkeypatch.setattr(
+        coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE])
+    )
 
     def search(clear, names=None):
         seen.append((clear, names))
@@ -379,13 +482,16 @@ def test_run_scopes_search_to_the_previous_document_only_for_a_followup(monkeypa
     monkeypatch.setattr(coordinator, "select_agent", lambda *_args: [previous])
     coordinator.run("Сколько она длится?", "d-follow")
     coordinator.run("Какое давление у насоса?", "d-new")
-    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: [{**previous, "document_names": []}])
+    monkeypatch.setattr(
+        coordinator, "select_agent", lambda *_args: [{**previous, "document_names": []}]
+    )
     coordinator.run("Сколько она длится?", "d-empty")
     assert seen == [
         ("Сколько она длится?", ["charter.txt"]),
         ("Какое давление у насоса?", None),
         ("Сколько она длится?", None),
     ]
+
 
 def test_run_stops_when_attempt_limit_is_one(monkeypatch):
     order = []
@@ -396,6 +502,7 @@ def test_run_stops_when_attempt_limit_is_one(monkeypatch):
     assert result["answer"] == agents.NO_ANSWER
     assert result["status"] == agents.MISSING
     assert result["sources"] == []
+
 
 def test_run_scopes_a_followup_to_the_previous_document(monkeypatch):
     seen = []
@@ -411,23 +518,32 @@ def test_run_scopes_a_followup_to_the_previous_document(monkeypatch):
     monkeypatch.setattr(coordinator, "clarify_agent", lambda *_args: "уточнение")
     monkeypatch.setattr(coordinator, "search_agent", search)
     monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Цех имеет номер 4 [1].")
-    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    monkeypatch.setattr(
+        coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE])
+    )
     coordinator.run("Сколько она длится?", "d7")
     coordinator.run("Какое давление у насоса?", "d8")
     assert seen == [["charter.txt"], None]
 
+
 def test_run_limits_follow_up_search_to_previous_documents(monkeypatch):
     seen = []
-    history = [{
-        "query": "Какой номер у цеха?",
-        "answer": "Смена длится 8 часов.",
-        "document_names": ["charter.txt"],
-    }]
+    history = [
+        {
+            "query": "Какой номер у цеха?",
+            "answer": "Смена длится 8 часов.",
+            "document_names": ["charter.txt"],
+        }
+    ]
     monkeypatch.setattr(coordinator, "get_dialog", lambda _id: history)
     monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
-    monkeypatch.setattr(coordinator, "search_agent", lambda clear, names=None: seen.append(names) or [CHUNK])
+    monkeypatch.setattr(
+        coordinator, "search_agent", lambda clear, names=None: seen.append(names) or [CHUNK]
+    )
     monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "8 часов [1].")
-    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    monkeypatch.setattr(
+        coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE])
+    )
     coordinator.run("Сколько она длится?", "d6")
     assert seen == [["charter.txt"]]
     seen.clear()
@@ -438,6 +554,7 @@ def test_run_limits_follow_up_search_to_previous_documents(monkeypatch):
     history[0] = {**history[0], "document_names": ["charter.txt"]}
     coordinator.run("Какое давление у насоса?", "d6")
     assert seen == [None]
+
 
 def _watch_search(monkeypatch, work):
     seen = []
@@ -452,8 +569,11 @@ def _watch_search(monkeypatch, work):
 
     monkeypatch.setattr(coordinator, "search_agent", search)
     monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Цех имеет номер 4 [1].")
-    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    monkeypatch.setattr(
+        coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE])
+    )
     return seen
+
 
 def test_run_limits_a_follow_up_to_the_previous_document(monkeypatch):
     turn = {"query": "Какой номер у цеха?", "answer": "4", "document_names": ["charter.txt"]}
@@ -464,16 +584,19 @@ def test_run_limits_a_follow_up_to_the_previous_document(monkeypatch):
     coordinator.run("Сколько она длится?", "d-follow")
     assert seen[-1] == ("ясный", None)
 
+
 def test_run_searches_every_document_for_a_new_question(monkeypatch):
     turn = {"query": "Какой номер у цеха?", "answer": "4", "document_names": ["charter.txt"]}
     seen = _watch_search(monkeypatch, [turn])
     coordinator.run("Какое давление у насоса?", "d-new")
     assert seen == [("ясный", None)]
 
+
 def test_run_does_not_scope_a_follow_up_without_history(monkeypatch):
     seen = _watch_search(monkeypatch, [])
     coordinator.run("Сколько она длится?", "d-empty")
     assert seen == [("ясный", None)]
+
 
 def test_run_stops_when_the_attempt_limit_is_one(monkeypatch):
     monkeypatch.setattr(coordinator, "_attempts", lambda: 1)
@@ -485,16 +608,25 @@ def test_run_stops_when_the_attempt_limit_is_one(monkeypatch):
     )
     result = coordinator.run("Какой номер у цеха?", "d7")
     assert order == ["select", "clarify", "search", "answer", "check", "save"]
-    assert result == {"answer": agents.NO_ANSWER, "status": agents.MISSING, "document_names": [], "sources": []}
+    assert result == {
+        "answer": agents.NO_ANSWER,
+        "status": agents.MISSING,
+        "document_names": [],
+        "sources": [],
+    }
+
 
 def test_run_scopes_a_follow_up_and_not_a_new_question(monkeypatch):
     seen = []
     dialog.reset()
-    dialog.add_turn("d", {
-        "query": "Какое давление у насоса?",
-        "answer": "6 бар",
-        "document_names": ["pump.md"],
-    })
+    dialog.add_turn(
+        "d",
+        {
+            "query": "Какое давление у насоса?",
+            "answer": "6 бар",
+            "document_names": ["pump.md"],
+        },
+    )
 
     def search(clear, names=None):
         seen.append((names, clear))
@@ -502,17 +634,22 @@ def test_run_scopes_a_follow_up_and_not_a_new_question(monkeypatch):
 
     monkeypatch.setattr(coordinator, "search_agent", search)
     monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "6 бар [1].")
-    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    monkeypatch.setattr(
+        coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE])
+    )
     monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
     coordinator.run("Сколько оно составляет?", "d")
     coordinator.run("Какое давление у насоса на складе?", "d")
     coordinator.run("А?", "d")
     dialog.reset()
-    dialog.add_turn("e", {
-        "query": "Какое давление у насоса?",
-        "answer": "6 бар",
-        "document_names": [],
-    })
+    dialog.add_turn(
+        "e",
+        {
+            "query": "Какое давление у насоса?",
+            "answer": "6 бар",
+            "document_names": [],
+        },
+    )
     coordinator.run("Сколько оно составляет?", "e")
     dialog.reset()
     assert seen == [
@@ -521,6 +658,7 @@ def test_run_scopes_a_follow_up_and_not_a_new_question(monkeypatch):
         (["pump.md"], "Какое давление у насоса? А? 6"),
         (None, "Какое давление у насоса? Сколько оно составляет? 6"),
     ]
+
 
 def test_run_scopes_a_follow_up_to_the_previous_document(monkeypatch):
     dialog.reset()
@@ -532,11 +670,14 @@ def test_run_scopes_a_follow_up_to_the_previous_document(monkeypatch):
 
     monkeypatch.setattr(coordinator, "search_agent", search)
     monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Цех имеет номер 4 [1].")
-    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    monkeypatch.setattr(
+        coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE])
+    )
     coordinator.run("Какой номер у цеха?", "d-scope")
     coordinator.run("Сколько она длится?", "d-scope")
     coordinator.run("Какое давление у насоса?", "d-scope")
     assert seen == [None, ["charter.txt"], None]
+
 
 def test_run_searches_again_when_feedback_names_a_document(monkeypatch):
     order = []
@@ -549,7 +690,17 @@ def test_run_searches_again_when_feedback_names_a_document(monkeypatch):
         ],
     )
     result = coordinator.run("Какой номер у цеха?", "d-doc")
-    assert order == ["select", "clarify", "search", "answer", "check", "search", "answer", "check", "save"]
+    assert order == [
+        "select",
+        "clarify",
+        "search",
+        "answer",
+        "check",
+        "search",
+        "answer",
+        "check",
+        "save",
+    ]
     assert result["status"] == agents.UNCONFIRMED
     assert result["answer"] == "Цех имеет номер 4 [1]."
     assert result["sources"] == []
@@ -589,18 +740,23 @@ def test_catalog_keeps_a_short_code_and_ignores_a_short_word(monkeypatch):
 
 def test_overview_source_skips_a_number_outside_the_fragments():
     chunk = {"document_name": "library.txt", "section": "Залы", "chunk_index": 2}
-    assert coordinator._overview_sources("2 Зал [99] [1].", [chunk]) == [{
-        "number": 1,
-        "document_name": "library.txt",
-        "section": "Залы",
-        "chunk_index": 2,
-    }]
+    assert coordinator._overview_sources("2 Зал [99] [1].", [chunk]) == [
+        {
+            "number": 1,
+            "document_name": "library.txt",
+            "section": "Залы",
+            "chunk_index": 2,
+        }
+    ]
     assert coordinator._overview_sources("2 Зал [1].", []) == []
+
 
 def test_catalog_says_nothing_is_loaded_without_searching(monkeypatch):
     dialog.reset()
     monkeypatch.setattr(coordinator, "list_documents", lambda: [])
-    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    monkeypatch.setattr(
+        coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search"))
+    )
     result = coordinator.run("Какие документы загружены в систему?", "empty-catalog")
     assert result == {
         "answer": agents.NO_ANSWER,
@@ -610,18 +766,24 @@ def test_catalog_says_nothing_is_loaded_without_searching(monkeypatch):
     }
     assert dialog.get_dialog("empty-catalog")[0]["answer"] == agents.NO_ANSWER
 
+
 def test_catalog_lists_every_file_when_the_names_do_not_overlap(monkeypatch):
     monkeypatch.setattr(coordinator, "list_documents", lambda: ["ГОСТ_1.docx", "насос.md"])
-    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    monkeypatch.setattr(
+        coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search"))
+    )
     result = coordinator.run("Какие ГОСТ и насосы загружены в систему?", "both-names")
     assert result["status"] == agents.CONFIRMED
     assert result["answer"] == "ГОСТ_1.docx, насос.md"
     assert result["sources"] == []
 
+
 def test_catalog_accepts_each_finite_loaded_form(monkeypatch):
     names = ["Паспорт насоса.docx", "Руководство.docx", "Пособие.docx"]
     monkeypatch.setattr(coordinator, "list_documents", lambda: list(names))
-    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
+    monkeypatch.setattr(
+        coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search"))
+    )
     listed = ", ".join(names)
     passport = coordinator.run("Какой паспорт загружен в систему?", "finite-m")
     assert passport["status"] == agents.CONFIRMED
@@ -666,7 +828,9 @@ def test_loaded_clause_and_negation_stay_on_search(monkeypatch):
 def test_catalog_skips_a_negated_or_prefixed_load_and_accepts_yo(monkeypatch):
     # «не загружены» and «перезагружен» are not the inventory phrase.
     # «загружёны» is the same phrase with ё and still lists every file.
-    monkeypatch.setattr(coordinator, "list_documents", lambda: ["Документ.docx", "Паспорт насоса.docx"])
+    monkeypatch.setattr(
+        coordinator, "list_documents", lambda: ["Документ.docx", "Паспорт насоса.docx"]
+    )
     for query, dialog_id in (
         ("Какие документы не загружены в систему?", "negated-load"),
         ("Какой модуль перезагружен в систему?", "prefixed-load"),
@@ -690,13 +854,18 @@ def test_catalog_short_skip_matches_only_the_whole_token(monkeypatch):
     rules = dict(coordinator.routing())
     rules["catalog_skip"] = ["api"]
     monkeypatch.setattr(coordinator, "routing", lambda: rules)
-    monkeypatch.setattr(coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search")))
-    monkeypatch.setattr(coordinator, "list_documents", lambda: ["api.txt", "apis.txt", "заметка.txt"])
+    monkeypatch.setattr(
+        coordinator, "search_agent", lambda *_args: (_ for _ in ()).throw(AssertionError("search"))
+    )
+    monkeypatch.setattr(
+        coordinator, "list_documents", lambda: ["api.txt", "apis.txt", "заметка.txt"]
+    )
     exact = coordinator.run("Какие api загружены в систему?", "short-skip")
     assert exact["status"] == agents.CONFIRMED
     assert exact["answer"] == "api.txt, apis.txt, заметка.txt"
     longer = coordinator.run("Какие apis загружены в систему?", "longer-code")
     assert longer["answer"] == "apis.txt"
+
 
 def test_code_only_followup_searches_the_latest_document(monkeypatch):
     dialog.reset()
@@ -713,9 +882,15 @@ def test_code_only_followup_searches_the_latest_document(monkeypatch):
     dialog.set_dialog("code-follow", [pump, shift])
     seen = []
     monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
-    monkeypatch.setattr(coordinator, "search_agent", lambda clear, names=None: seen.append((clear, names)) or [CHUNK])
+    monkeypatch.setattr(
+        coordinator,
+        "search_agent",
+        lambda clear, names=None: seen.append((clear, names)) or [CHUNK],
+    )
     monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Смена длится 8 часов [1].")
-    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    monkeypatch.setattr(
+        coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE])
+    )
     coordinator.run("Н-12?", "code-follow")
     coordinator.run("Какое у него давление на Н-12?", "code-follow")
     assert seen == [
@@ -799,10 +974,14 @@ def test_run_writes_trace_steps_to_scope(monkeypatch):
 
 def test_run_finish_step_has_heuristic_flag(monkeypatch):
     order = []
-    _wire(monkeypatch, order, [
-        _verdict(agents.UNCONFIRMED, feedback="a"),
-        _verdict(agents.UNCONFIRMED, feedback="b"),
-    ])
+    _wire(
+        monkeypatch,
+        order,
+        [
+            _verdict(agents.UNCONFIRMED, feedback="a"),
+            _verdict(agents.UNCONFIRMED, feedback="b"),
+        ],
+    )
     scope = type("Scope", (), {})()
     scope.kbs = ["kb"]
     scope.trace = []
@@ -821,7 +1000,9 @@ def _scope_with_search(monkeypatch, seen, results):
     monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
     monkeypatch.setattr(coordinator, "clarify_agent", lambda query, _work: query)
     monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Смена длится 8 часов [1].")
-    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE]))
+    monkeypatch.setattr(
+        coordinator, "check_agent", lambda *_args: _verdict(agents.CONFIRMED, [SOURCE])
+    )
 
     def search(_clear, _limit, places):
         seen.append(places)

@@ -1,4 +1,5 @@
 """Допуск к индексу. Модуль не читает людей и не открывает каталог."""
+
 import hashlib
 import hmac
 import secrets

@@ -43,7 +43,9 @@ def found(item):
 
 def cases(split):
     keys = ("evidence", "evidence_any", "together")
-    return [item for item in QUESTIONS if item["split"] == split and any(item.get(key) for key in keys)]
+    return [
+        item for item in QUESTIONS if item["split"] == split and any(item.get(key) for key in keys)
+    ]
 
 
 @pytest.mark.parametrize("item", cases("dev"), ids=lambda item: item["id"])

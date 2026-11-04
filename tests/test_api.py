@@ -1,6 +1,7 @@
 import asyncio
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,6 @@ import api
 import dialog
 import workspace
 from api import app
-import time
 
 SOURCE = {"number": 1, "document_name": "pump.md", "section": ""}
 
@@ -28,11 +28,13 @@ def ui_store(tmp_path, monkeypatch):
     monkeypatch.setenv("CONFIG_DIR", str(repo / "config"))
     monkeypatch.setenv("PROMPTS_DIR", str(repo / "data" / "prompts"))
     import settings
+
     settings.reload()
     import access
     import auth
     import kb
     import store
+
     monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
     auth.ensure()
     if auth.count_users() == 0:
@@ -49,7 +51,9 @@ def _doc_names(payload):
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_api_routes(tmp_path, monkeypatch):
@@ -57,9 +61,15 @@ def test_api_routes(tmp_path, monkeypatch):
     saved = []
     monkeypatch.setattr("api.INBOX", tmp_path)
     monkeypatch.setattr("api.upsert_chunks", saved.extend)
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "Давление равно 6 бар [1].", "status": "подтверждён", "document_names": ["pump.md"], "sources": [SOURCE]
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "Давление равно 6 бар [1].",
+            "status": "подтверждён",
+            "document_names": ["pump.md"],
+            "sources": [SOURCE],
+        },
+    )
     client = TestClient(app)
     assert client.post("/documents", json={"directory": str(tmp_path)}).status_code == 200
     assert saved[0]["document_name"] == "pump.md"
@@ -93,7 +103,9 @@ def test_upload_indexes_other_files_when_one_is_unreadable(tmp_path, monkeypatch
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_upload_lists_document(tmp_path, monkeypatch):
@@ -106,7 +118,11 @@ def test_upload_lists_document(tmp_path, monkeypatch):
     monkeypatch.setattr("api.upsert_chunks", remember)
     monkeypatch.setattr("api.list_documents", lambda: saved)
     client = TestClient(app)
-    response = client.post("/upload", data={"kb_id": "00000000-0000-4000-8000-000000000001"}, files=[("files", ("note.txt", "Цех имеет номер 4.", "text/plain"))])
+    response = client.post(
+        "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
+        files=[("files", ("note.txt", "Цех имеет номер 4.", "text/plain"))],
+    )
     assert response.status_code == 200
     assert _doc_names(client.get("/documents").json()) == ["note.txt"]
     page = client.get("/")
@@ -130,7 +146,10 @@ def test_upload_lists_document(tmp_path, monkeypatch):
 
 def test_list_and_preview_stop_when_the_second_check_fails(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["secret.txt"])
-    monkeypatch.setattr("api.chunks_for_document", lambda name: [{"text": "секрет", "chunk_index": 0, "section": ""}])
+    monkeypatch.setattr(
+        "api.chunks_for_document",
+        lambda name: [{"text": "секрет", "chunk_index": 0, "section": ""}],
+    )
     monkeypatch.setattr("permit.Permit.confirm", lambda self: False)
     client = TestClient(app)
     assert client.get("/documents").json()["documents"] == []
@@ -161,7 +180,10 @@ def test_upload_replaces_readable_file(tmp_path, monkeypatch):
     )
     assert response.status_code == 200
     assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "новое значение 8"
-    assert any(chunk["document_name"] == "note.txt" and "новое значение 8" in chunk["text"] for chunk in saved)
+    assert any(
+        chunk["document_name"] == "note.txt" and "новое значение 8" in chunk["text"]
+        for chunk in saved
+    )
     cache.cache_clear()
 
 
@@ -211,7 +233,16 @@ def test_upload_keeps_previous_docx_when_replacement_is_corrupt(tmp_path, monkey
     response = TestClient(app).post(
         "/upload",
         data={"kb_id": "00000000-0000-4000-8000-000000000001"},
-        files=[("files", ("note.docx", b"not a docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))],
+        files=[
+            (
+                "files",
+                (
+                    "note.docx",
+                    b"not a docx",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                ),
+            )
+        ],
     )
     assert response.status_code == 400
     assert "note.docx" in response.json()["detail"]
@@ -223,7 +254,11 @@ def test_upload_drops_an_empty_new_file(tmp_path, monkeypatch):
     monkeypatch.setattr("api.INBOX", tmp_path)
     called = []
     monkeypatch.setattr("api.upsert_chunks", called.append)
-    response = TestClient(app).post("/upload", data={"kb_id": "00000000-0000-4000-8000-000000000001"}, files=[("files", ("empty.txt", b"\n", "text/plain"))])
+    response = TestClient(app).post(
+        "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
+        files=[("files", ("empty.txt", b"\n", "text/plain"))],
+    )
     assert response.status_code == 400
     assert called == []
     assert not (tmp_path / "empty.txt").exists()
@@ -277,14 +312,20 @@ def test_upload_rejects_a_parent_directory_name(tmp_path, monkeypatch):
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     monkeypatch.setattr("api.INBOX", inbox)
-    response = TestClient(app).post("/upload", data={"kb_id": "00000000-0000-4000-8000-000000000001"}, files=[("files", ("..", b"x", "text/plain"))])
+    response = TestClient(app).post(
+        "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
+        files=[("files", ("..", b"x", "text/plain"))],
+    )
     assert response.status_code == 400
     assert list(tmp_path.iterdir()) == [inbox]
     assert list(inbox.iterdir()) == []
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_ready(tmp_path, monkeypatch):
@@ -299,15 +340,24 @@ def test_preview_listed_document(monkeypatch):
     rows = [{"text": "абзац", "section": "Введение", "chunk_index": 0}]
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
     monkeypatch.setattr("api.chunks_for_document", lambda name: rows if name == "note.txt" else [])
-    response = TestClient(app).get("/kb/00000000-0000-4000-8000-000000000001/documents/note.txt/preview")
+    response = TestClient(app).get(
+        "/kb/00000000-0000-4000-8000-000000000001/documents/note.txt/preview"
+    )
     assert response.status_code == 200
     assert response.json() == {"document_name": "note.txt", "chunks": rows}
 
 
 def test_preview_unknown_document(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
-    monkeypatch.setattr("api.chunks_for_document", lambda name: (_ for _ in ()).throw(AssertionError(name)))
-    assert TestClient(app).get("/kb/00000000-0000-4000-8000-000000000001/documents/missing.txt/preview").status_code == 404
+    monkeypatch.setattr(
+        "api.chunks_for_document", lambda name: (_ for _ in ()).throw(AssertionError(name))
+    )
+    assert (
+        TestClient(app)
+        .get("/kb/00000000-0000-4000-8000-000000000001/documents/missing.txt/preview")
+        .status_code
+        == 404
+    )
 
 
 def test_preview_stays_inside_listed_names(tmp_path, monkeypatch):
@@ -334,7 +384,12 @@ def test_delete_document_stays_inside_inbox(tmp_path, monkeypatch):
     (inbox / "note.txt").write_text("текст", encoding="utf-8")
     outside = tmp_path / "outside.txt"
     outside.write_text("чужой файл", encoding="utf-8")
-    assert TestClient(app).delete("/kb/00000000-0000-4000-8000-000000000001/documents/note.txt").status_code == 200
+    assert (
+        TestClient(app)
+        .delete("/kb/00000000-0000-4000-8000-000000000001/documents/note.txt")
+        .status_code
+        == 200
+    )
     api.documents_delete("../outside.txt")
     assert removed == ["note.txt", "outside.txt"]
     assert not (inbox / "note.txt").exists()
@@ -342,7 +397,9 @@ def test_delete_document_stays_inside_inbox(tmp_path, monkeypatch):
 
 
 def test_ui_returns_saved_dialogs_before_index_is_ready(monkeypatch):
-    monkeypatch.setattr("api.list_documents", lambda: (_ for _ in ()).throw(AssertionError("chroma")))
+    monkeypatch.setattr(
+        "api.list_documents", lambda: (_ for _ in ()).throw(AssertionError("chroma"))
+    )
     saved = workspace.create_dialog()
     saved["title"] = "сохранённый"
     data = workspace.load()
@@ -360,12 +417,17 @@ def test_ui_returns_saved_dialogs_before_index_is_ready(monkeypatch):
 
 def test_ui_dialogs_and_ratings(tmp_path, monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "Цех имеет номер 4 [1].",
-        "status": "подтверждён",
-        "document_names": ["note.txt"],
-        "sources": [{"number": 1, "document_name": "note.txt", "section": "", "chunk_index": 0}],
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "Цех имеет номер 4 [1].",
+            "status": "подтверждён",
+            "document_names": ["note.txt"],
+            "sources": [
+                {"number": 1, "document_name": "note.txt", "section": "", "chunk_index": 0}
+            ],
+        },
+    )
     client = TestClient(app)
     created = client.post("/ui/dialogs").json()
     assert created["title"] == "Новый диалог"
@@ -381,7 +443,12 @@ def test_ui_dialogs_and_ratings(tmp_path, monkeypatch):
     assert row["turns"][0]["answer"] == "Цех имеет номер 4 [1]."
     patched = client.patch(
         "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
-        json={"answer_complete": 4, "answer_correct": 5, "links": {"1": 3}, "documents": {"note.txt": 2}},
+        json={
+            "answer_complete": 4,
+            "answer_correct": 5,
+            "links": {"1": 3},
+            "documents": {"note.txt": 2},
+        },
     )
     assert patched.status_code == 200
     assert patched.json()["ratings"]["answer_complete"] == 4
@@ -394,22 +461,29 @@ def test_ui_dialogs_and_ratings(tmp_path, monkeypatch):
 def test_ui_tree_drops_unknown_files(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
     client = TestClient(app)
-    response = client.put("/ui", json={
-        "tree": {
-            "id": "root",
-            "name": "",
-            "children": [
-                {"id": "folder", "name": "Папка", "children": [{"document_name": "note.txt"}]},
-                {"document_name": "missing.txt"},
-            ],
-        }
-    })
+    response = client.put(
+        "/ui",
+        json={
+            "tree": {
+                "id": "root",
+                "name": "",
+                "children": [
+                    {"id": "folder", "name": "Папка", "children": [{"document_name": "note.txt"}]},
+                    {"document_name": "missing.txt"},
+                ],
+            }
+        },
+    )
     assert response.status_code == 200
     names = []
     for child in response.json()["tree"]["children"]:
         if "document_name" in child:
             names.append(child["document_name"])
-        names.extend(item.get("document_name") for item in child.get("children") or [] if item.get("document_name"))
+        names.extend(
+            item.get("document_name")
+            for item in child.get("children") or []
+            if item.get("document_name")
+        )
     assert "note.txt" in names
     assert "missing.txt" not in names
 
@@ -425,10 +499,14 @@ def test_tree_keeps_inbox_file_missing_from_the_index(tmp_path, monkeypatch):
         "id": "root",
         "name": "",
         "children": [
-            {"id": "folder", "name": "Папка", "children": [
-                {"document_name": "note.txt"},
-                {"document_name": "gone.txt"},
-            ]},
+            {
+                "id": "folder",
+                "name": "Папка",
+                "children": [
+                    {"document_name": "note.txt"},
+                    {"document_name": "gone.txt"},
+                ],
+            },
         ],
     }
     saved = client.put("/ui", json={"tree": tree}).json()["tree"]
@@ -445,24 +523,38 @@ def test_query_reloads_saved_history_after_memory_is_cleared(monkeypatch):
     seen = []
 
     def run(query, dialog_id, scope=None):
-        seen.append([
-            (turn["query"], turn["document_names"])
-            for turn in dialog.get_dialog(dialog_id)
-        ])
-        return {"answer": "ответ", "status": "подтверждён", "document_names": ["note.txt"], "sources": []}
+        seen.append(
+            [(turn["query"], turn["document_names"]) for turn in dialog.get_dialog(dialog_id)]
+        )
+        return {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": ["note.txt"],
+            "sources": [],
+        }
 
     monkeypatch.setattr("api.run", run)
     dialog.reset()
     client = TestClient(app)
     created = client.post("/ui/dialogs").json()
-    assert client.post("/query", json={"query": "первый", "dialog_id": created["id"]}).status_code == 200
-    dialog.add_turn(created["id"], {"query": "устарело", "answer": "x", "document_names": ["other.md"]})
-    assert client.post("/query", json={"query": "второй", "dialog_id": created["id"]}).status_code == 200
+    assert (
+        client.post("/query", json={"query": "первый", "dialog_id": created["id"]}).status_code
+        == 200
+    )
+    dialog.add_turn(
+        created["id"], {"query": "устарело", "answer": "x", "document_names": ["other.md"]}
+    )
+    assert (
+        client.post("/query", json={"query": "второй", "dialog_id": created["id"]}).status_code
+        == 200
+    )
     assert seen == [[], [("первый", ["note.txt"])]]
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_upload_keeps_the_file_inside_inbox(tmp_path, monkeypatch):
@@ -513,15 +605,21 @@ def test_query_error_does_not_store_a_turn(monkeypatch):
 
 def test_rating_outside_one_to_five_is_stored_empty(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "Цех имеет номер 4 [1].",
-        "status": "подтверждён",
-        "document_names": ["note.txt"],
-        "sources": [],
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "Цех имеет номер 4 [1].",
+            "status": "подтверждён",
+            "document_names": ["note.txt"],
+            "sources": [],
+        },
+    )
     client = TestClient(app)
     created = client.post("/ui/dialogs").json()
-    assert client.post("/query", json={"query": "номер", "dialog_id": created["id"]}).status_code == 200
+    assert (
+        client.post("/query", json={"query": "номер", "dialog_id": created["id"]}).status_code
+        == 200
+    )
     patched = client.patch(
         "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
         json={"answer_complete": 6, "answer_correct": 0, "documents": {"../secret/note.txt": 3}},
@@ -554,7 +652,12 @@ def test_query_does_not_restore_a_dialog_deleted_while_answering(monkeypatch):
 
     def run(query, dialog_id, scope=None):
         workspace.delete_dialog(dialog_id.split(":", 1)[-1])
-        return {"answer": "Цех имеет номер 4 [1].", "status": "подтверждён", "document_names": [], "sources": []}
+        return {
+            "answer": "Цех имеет номер 4 [1].",
+            "status": "подтверждён",
+            "document_names": [],
+            "sources": [],
+        }
 
     monkeypatch.setattr("api.run", run)
     client = TestClient(app)
@@ -566,8 +669,11 @@ def test_query_does_not_restore_a_dialog_deleted_while_answering(monkeypatch):
     assert all(row["id"] != created["id"] for row in saved)
     assert all(turn.get("query") != "номер" for row in saved for turn in row.get("turns") or [])
 
+
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_upload_writes_only_the_file_name(tmp_path, monkeypatch):
@@ -588,15 +694,22 @@ def test_upload_writes_only_the_file_name(tmp_path, monkeypatch):
         async def read(self):
             return self.payload
 
-    result = asyncio.run(api.upload(None, [
-        FakeUpload("../outside.txt", "Цех имеет номер 4.".encode()),
-        FakeUpload("subdir/note.txt", "Насос Н-12.".encode()),
-    ], "00000000-0000-4000-8000-000000000001"))
+    result = asyncio.run(
+        api.upload(
+            None,
+            [
+                FakeUpload("../outside.txt", "Цех имеет номер 4.".encode()),
+                FakeUpload("subdir/note.txt", "Насос Н-12.".encode()),
+            ],
+            "00000000-0000-4000-8000-000000000001",
+        )
+    )
     assert (inbox / "outside.txt").read_text(encoding="utf-8") == "Цех имеет номер 4."
     assert (inbox / "note.txt").read_text(encoding="utf-8") == "Насос Н-12."
     assert not (inbox / "subdir").exists()
     assert outside.read_text(encoding="utf-8") == "чужой файл"
     assert _doc_names(result) == ["outside.txt", "note.txt"]
+
 
 def test_delete_document_keeps_the_saved_answer(tmp_path, monkeypatch):
     inbox = tmp_path / "inbox"
@@ -610,23 +723,32 @@ def test_delete_document_keeps_the_saved_answer(tmp_path, monkeypatch):
             known.remove(name)
 
     monkeypatch.setattr("api.delete_document", forget)
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "ответ",
-        "status": "подтверждён",
-        "document_names": ["gone.txt"],
-        "sources": [],
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": ["gone.txt"],
+            "sources": [],
+        },
+    )
     (inbox / "gone.txt").write_text("текст", encoding="utf-8")
     client = TestClient(app)
     created = client.post("/ui/dialogs").json()
-    assert client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]}).status_code == 200
-    placed = client.put("/ui", json={
-        "tree": {
-            "id": "root",
-            "name": "",
-            "children": [{"document_name": "gone.txt"}, {"document_name": "note.txt"}],
+    assert (
+        client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]}).status_code
+        == 200
+    )
+    placed = client.put(
+        "/ui",
+        json={
+            "tree": {
+                "id": "root",
+                "name": "",
+                "children": [{"document_name": "gone.txt"}, {"document_name": "note.txt"}],
+            },
         },
-    })
+    )
     assert placed.status_code == 200
     response = client.delete("/kb/00000000-0000-4000-8000-000000000001/documents/gone.txt")
     assert response.status_code == 200
@@ -638,6 +760,7 @@ def test_delete_document_keeps_the_saved_answer(tmp_path, monkeypatch):
     assert "gone.txt" not in workspace.iter_files(workspace.load()["tree"])
     assert not (inbox / "gone.txt").exists()
 
+
 def test_missing_dialog_and_turn_are_not_found():
     client = TestClient(app)
     assert client.get("/ui/dialogs/missing").status_code == 404
@@ -647,10 +770,14 @@ def test_missing_dialog_and_turn_are_not_found():
         json={"answer_complete": 3},
     )
     assert missing_turn.status_code == 404
-    assert client.patch(
-        "/ui/dialogs/missing/turns/0/ratings",
-        json={"answer_complete": 3},
-    ).status_code == 404
+    assert (
+        client.patch(
+            "/ui/dialogs/missing/turns/0/ratings",
+            json={"answer_complete": 3},
+        ).status_code
+        == 404
+    )
+
 
 def test_query_failure_does_not_save_a_turn(monkeypatch):
     def run(query, dialog_id, scope=None):
@@ -664,17 +791,24 @@ def test_query_failure_does_not_save_a_turn(monkeypatch):
     assert response.json()["detail"] == "Ошибка сервера"
     assert workspace.get_dialog_row(created["id"])["turns"] == []
 
+
 def test_ratings_reject_out_of_range_and_missing_turns(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "Цех имеет номер 4 [1].",
-        "status": "подтверждён",
-        "document_names": ["note.txt"],
-        "sources": [SOURCE],
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "Цех имеет номер 4 [1].",
+            "status": "подтверждён",
+            "document_names": ["note.txt"],
+            "sources": [SOURCE],
+        },
+    )
     client = TestClient(app)
     created = client.post("/ui/dialogs").json()
-    assert client.post("/query", json={"query": "номер", "dialog_id": created["id"]}).status_code == 200
+    assert (
+        client.post("/query", json={"query": "номер", "dialog_id": created["id"]}).status_code
+        == 200
+    )
     ok = client.patch(
         "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
         json={"answer_correct": 5, "links": {"1": 4}},
@@ -698,8 +832,11 @@ def test_ratings_reject_out_of_range_and_missing_turns(monkeypatch):
     unknown = client.patch("/ui/dialogs/missing/turns/0/ratings", json={"answer_complete": 1})
     assert unknown.status_code == 404
 
+
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_upload_strips_directory_from_filename(tmp_path, monkeypatch):
@@ -717,6 +854,7 @@ def test_upload_strips_directory_from_filename(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert (inbox / "outside.txt").read_text(encoding="utf-8") == "чужой файл"
     assert not (tmp_path / "outside.txt").exists()
+
 
 def test_query_ignores_memory_for_an_unsaved_dialog(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: [])
@@ -737,20 +875,32 @@ def test_query_ignores_memory_for_an_unsaved_dialog(monkeypatch):
     assert saved["turns"][0]["query"] == "новый"
     assert saved["turns"][0]["document_names"] == []
 
+
 def test_rating_rejects_out_of_range_and_missing_turn(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "ответ",
-        "status": "подтверждён",
-        "document_names": ["note.txt"],
-        "sources": [],
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": ["note.txt"],
+            "sources": [],
+        },
+    )
     client = TestClient(app)
     created = client.post("/ui/dialogs").json()
-    assert client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]}).status_code == 200
+    assert (
+        client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]}).status_code
+        == 200
+    )
     patched = client.patch(
         "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
-        json={"answer_complete": 9, "answer_correct": 1, "documents": {"../note.txt": 4}, "links": {"1": 0}},
+        json={
+            "answer_complete": 9,
+            "answer_correct": 1,
+            "documents": {"../note.txt": 4},
+            "links": {"1": 0},
+        },
     )
     assert patched.status_code == 200
     ratings = patched.json()["ratings"]
@@ -758,11 +908,15 @@ def test_rating_rejects_out_of_range_and_missing_turn(monkeypatch):
     assert ratings["answer_correct"] == 1
     assert ratings["documents"] == {"note.txt": 4}
     assert ratings["links"] == {"1": None}
-    assert client.patch(
-        "/ui/dialogs/" + created["id"] + "/turns/3/ratings",
-        json={"answer_complete": 2},
-    ).status_code == 404
+    assert (
+        client.patch(
+            "/ui/dialogs/" + created["id"] + "/turns/3/ratings",
+            json={"answer_complete": 2},
+        ).status_code
+        == 404
+    )
     assert client.get("/ui/dialogs/missing").status_code == 404
+
 
 def test_query_after_delete_does_not_reuse_the_answer_memory(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: [])
@@ -771,7 +925,9 @@ def test_query_after_delete_does_not_reuse_the_answer_memory(monkeypatch):
     def run(query, dialog_id, scope=None):
         if query == "первый":
             workspace.delete_dialog(dialog_id.split(":", 1)[-1])
-            dialog.add_turn(dialog_id, {"query": query, "answer": "хвост", "document_names": ["note.txt"]})
+            dialog.add_turn(
+                dialog_id, {"query": query, "answer": "хвост", "document_names": ["note.txt"]}
+            )
         seen.append([turn["query"] for turn in dialog.get_dialog(dialog_id)])
         return {"answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []}
 
@@ -779,23 +935,36 @@ def test_query_after_delete_does_not_reuse_the_answer_memory(monkeypatch):
     dialog.reset()
     client = TestClient(app)
     created = client.post("/ui/dialogs").json()
-    assert client.post("/query", json={"query": "первый", "dialog_id": created["id"]}).status_code == 200
-    assert client.post("/query", json={"query": "второй", "dialog_id": created["id"]}).status_code == 200
+    assert (
+        client.post("/query", json={"query": "первый", "dialog_id": created["id"]}).status_code
+        == 200
+    )
+    assert (
+        client.post("/query", json={"query": "второй", "dialog_id": created["id"]}).status_code
+        == 200
+    )
     assert seen == [["первый"], []]
     saved = workspace.load()["dialogs"]
     assert [turn.get("query") for row in saved for turn in row.get("turns") or []] == ["второй"]
 
+
 def test_ratings_drop_out_of_range_scores_and_path_keys(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "Цех имеет номер 4 [1].",
-        "status": "подтверждён",
-        "document_names": ["note.txt"],
-        "sources": [SOURCE],
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "Цех имеет номер 4 [1].",
+            "status": "подтверждён",
+            "document_names": ["note.txt"],
+            "sources": [SOURCE],
+        },
+    )
     client = TestClient(app)
     created = client.post("/ui/dialogs").json()
-    assert client.post("/query", json={"query": "номер", "dialog_id": created["id"]}).status_code == 200
+    assert (
+        client.post("/query", json={"query": "номер", "dialog_id": created["id"]}).status_code
+        == 200
+    )
     saved = client.patch(
         "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
         json={"answer_complete": 4, "answer_correct": 5, "links": {"1": 3}},
@@ -812,8 +981,11 @@ def test_ratings_drop_out_of_range_scores_and_path_keys(monkeypatch):
     assert ratings["links"]["1"] == 3
     assert ratings["documents"] == {"note.txt": 2, "other.txt": None}
 
+
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_upload_keeps_the_file_inside_the_inbox(tmp_path, monkeypatch):
@@ -837,23 +1009,33 @@ def test_upload_keeps_the_file_inside_the_inbox(tmp_path, monkeypatch):
         (inbox / "note.txt").resolve(),
     }
 
+
 def test_ready_waits_until_the_model_file_is_present(tmp_path, monkeypatch):
     monkeypatch.setenv("LLM_MODEL_PATH", str(tmp_path / "missing.gguf"))
     response = TestClient(app).get("/ready")
     assert response.status_code == 503
     assert isinstance(response.json()["elapsed_sec"], int)
 
+
 def test_rating_patch_keeps_fields_the_body_omits(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "Цех имеет номер 4 [1].",
-        "status": "подтверждён",
-        "document_names": ["note.txt"],
-        "sources": [{"number": 1, "document_name": "note.txt", "section": "", "chunk_index": 0}],
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "Цех имеет номер 4 [1].",
+            "status": "подтверждён",
+            "document_names": ["note.txt"],
+            "sources": [
+                {"number": 1, "document_name": "note.txt", "section": "", "chunk_index": 0}
+            ],
+        },
+    )
     client = TestClient(app)
     created = client.post("/ui/dialogs").json()
-    assert client.post("/query", json={"query": "номер", "dialog_id": created["id"]}).status_code == 200
+    assert (
+        client.post("/query", json={"query": "номер", "dialog_id": created["id"]}).status_code
+        == 200
+    )
     base = "/ui/dialogs/" + created["id"] + "/turns/"
     assert client.patch(base + "0/ratings", json={"answer_complete": 4}).status_code == 200
     second = client.patch(base + "0/ratings", json={"answer_correct": 5, "links": {"1": 3}})
@@ -868,8 +1050,11 @@ def test_rating_patch_keeps_fields_the_body_omits(monkeypatch):
     assert stored["turns"][0]["ratings"]["answer_correct"] == 5
     assert stored["turns"][0]["answer"] == "Цех имеет номер 4 [1]."
 
+
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_upload_keeps_the_name_inside_inbox(tmp_path, monkeypatch):
@@ -883,21 +1068,21 @@ def test_upload_keeps_the_name_inside_inbox(tmp_path, monkeypatch):
 
     def ingest(folder):
         seen.append(folder)
-        return [
-            {"document_name": path.name}
-            for path in sorted(folder.iterdir())
-            if path.is_file()
-        ]
+        return [{"document_name": path.name} for path in sorted(folder.iterdir()) if path.is_file()]
 
     monkeypatch.setattr("api.upsert_chunks", remember)
     monkeypatch.setattr("api.ingest_dir", ingest)
     monkeypatch.setattr("api.list_documents", lambda: saved)
     outside = tmp_path / "outside.txt"
     client = TestClient(app)
-    response = client.post("/upload", data={"kb_id": "00000000-0000-4000-8000-000000000001"}, files=[
-        ("files", ("../outside.txt", "Секретный текст.", "text/plain")),
-        ("files", ("nested/secret.txt", "Второй текст.", "text/plain")),
-    ])
+    response = client.post(
+        "/upload",
+        data={"kb_id": "00000000-0000-4000-8000-000000000001"},
+        files=[
+            ("files", ("../outside.txt", "Секретный текст.", "text/plain")),
+            ("files", ("nested/secret.txt", "Второй текст.", "text/plain")),
+        ],
+    )
     assert response.status_code == 200
     assert seen == [inbox]
     assert not outside.exists()
@@ -906,15 +1091,20 @@ def test_upload_keeps_the_name_inside_inbox(tmp_path, monkeypatch):
     assert (inbox / "secret.txt").read_text(encoding="utf-8") == "Второй текст."
     assert saved == ["outside.txt", "secret.txt"]
 
+
 def test_rating_patch_keeps_unsent_scores(monkeypatch):
     monkeypatch.setattr("api.list_documents", lambda: ["note.txt"])
     client = TestClient(app)
     created = client.post("/ui/dialogs").json()
-    workspace.append_turn(created["id"], "номер", {
-        "answer": "4",
-        "sources": [{"document_name": "note.txt"}],
-        "document_names": ["note.txt"],
-    })
+    workspace.append_turn(
+        created["id"],
+        "номер",
+        {
+            "answer": "4",
+            "sources": [{"document_name": "note.txt"}],
+            "document_names": ["note.txt"],
+        },
+    )
     first = client.patch(
         "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
         json={"answer_complete": 4, "links": {"1": 3}, "documents": {"note.txt": 2}},
@@ -936,34 +1126,48 @@ def test_rating_patch_keeps_unsent_scores(monkeypatch):
     assert cleared.status_code == 200
     assert cleared.json()["ratings"]["answer_complete"] is None
     assert cleared.json()["ratings"]["answer_correct"] == 5
-    assert client.patch(
-        "/ui/dialogs/" + created["id"] + "/turns/3/ratings",
-        json={"answer_complete": 1},
-    ).status_code == 404
-    assert client.patch(
-        "/ui/dialogs/missing/turns/0/ratings",
-        json={"answer_complete": 1},
-    ).status_code == 404
+    assert (
+        client.patch(
+            "/ui/dialogs/" + created["id"] + "/turns/3/ratings",
+            json={"answer_complete": 1},
+        ).status_code
+        == 404
+    )
+    assert (
+        client.patch(
+            "/ui/dialogs/missing/turns/0/ratings",
+            json={"answer_complete": 1},
+        ).status_code
+        == 404
+    )
     assert client.get("/ui/dialogs/missing").status_code == 404
+
 
 def test_delete_document_drops_tree_node_and_keeps_dialog(tmp_path, monkeypatch):
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     names = ["note.txt", "keep.txt"]
     monkeypatch.setattr("api.INBOX", inbox)
-    monkeypatch.setattr("api.delete_document", lambda name: names.remove(name) if name in names else None)
+    monkeypatch.setattr(
+        "api.delete_document", lambda name: names.remove(name) if name in names else None
+    )
     monkeypatch.setattr("api.list_documents", lambda: list(names))
     (inbox / "note.txt").write_text("текст", encoding="utf-8")
     (inbox / "keep.txt").write_text("остаётся", encoding="utf-8")
     client = TestClient(app)
-    client.put("/ui", json={"tree": {
-        "id": "root",
-        "name": "",
-        "children": [
-            {"id": "folder", "name": "Папка", "children": [{"document_name": "note.txt"}]},
-            {"document_name": "keep.txt"},
-        ],
-    }})
+    client.put(
+        "/ui",
+        json={
+            "tree": {
+                "id": "root",
+                "name": "",
+                "children": [
+                    {"id": "folder", "name": "Папка", "children": [{"document_name": "note.txt"}]},
+                    {"document_name": "keep.txt"},
+                ],
+            }
+        },
+    )
     created = client.post("/ui/dialogs").json()
     workspace.append_turn(created["id"], "вопрос", _answer_row())
     response = client.delete("/kb/00000000-0000-4000-8000-000000000001/documents/note.txt")
@@ -976,13 +1180,23 @@ def test_delete_document_drops_tree_node_and_keeps_dialog(tmp_path, monkeypatch)
     assert not (inbox / "note.txt").exists()
     assert (inbox / "keep.txt").read_text(encoding="utf-8") == "остаётся"
 
+
 def test_ratings_out_of_range_are_cleared_and_missing_turns_are_404(monkeypatch):
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "ответ", "status": "подтверждён", "document_names": [], "sources": [],
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": [],
+            "sources": [],
+        },
+    )
     client = TestClient(app)
     created = client.post("/ui/dialogs").json()
-    assert client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]}).status_code == 200
+    assert (
+        client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]}).status_code
+        == 200
+    )
     patched = client.patch(
         "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
         json={"answer_complete": 0, "answer_correct": 6},
@@ -990,13 +1204,17 @@ def test_ratings_out_of_range_are_cleared_and_missing_turns_are_404(monkeypatch)
     assert patched.status_code == 200
     assert patched.json()["ratings"]["answer_complete"] is None
     assert patched.json()["ratings"]["answer_correct"] is None
-    assert client.patch(
-        "/ui/dialogs/" + created["id"] + "/turns/4/ratings",
-        json={"answer_complete": 3},
-    ).status_code == 404
+    assert (
+        client.patch(
+            "/ui/dialogs/" + created["id"] + "/turns/4/ratings",
+            json={"answer_complete": 3},
+        ).status_code
+        == 404
+    )
     dialog.add_turn("ghost", {"query": "жив", "answer": "a", "document_names": []})
     assert client.get("/ui/dialogs/ghost").status_code == 404
     assert dialog.get_dialog("ghost")[0]["query"] == "жив"
+
 
 def test_delete_document_keeps_the_dialog(tmp_path, monkeypatch):
     inbox = tmp_path / "inbox"
@@ -1005,23 +1223,35 @@ def test_delete_document_keeps_the_dialog(tmp_path, monkeypatch):
     monkeypatch.setattr("api.INBOX", inbox)
     monkeypatch.setattr("api.list_documents", lambda: list(listed["names"]))
     monkeypatch.setattr("api.delete_document", lambda name: listed.update(names=["kept.txt"]))
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "ответ", "status": "подтверждён", "document_names": ["note.txt"], "sources": [],
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": ["note.txt"],
+            "sources": [],
+        },
+    )
     (inbox / "note.txt").write_text("текст", encoding="utf-8")
     client = TestClient(app)
     created = client.post("/ui/dialogs").json()
-    assert client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]}).status_code == 200
-    client.put("/ui", json={
-        "tree": {
-            "id": "root",
-            "name": "",
-            "children": [
-                {"id": "folder", "name": "Папка", "children": [{"document_name": "note.txt"}]},
-                {"document_name": "kept.txt"},
-            ],
-        }
-    })
+    assert (
+        client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]}).status_code
+        == 200
+    )
+    client.put(
+        "/ui",
+        json={
+            "tree": {
+                "id": "root",
+                "name": "",
+                "children": [
+                    {"id": "folder", "name": "Папка", "children": [{"document_name": "note.txt"}]},
+                    {"document_name": "kept.txt"},
+                ],
+            }
+        },
+    )
     response = client.delete("/kb/00000000-0000-4000-8000-000000000001/documents/note.txt")
     assert response.status_code == 200
     assert _doc_names(response.json()) == ["kept.txt"]
@@ -1040,9 +1270,15 @@ def test_delete_during_upload_is_not_indexed_again(tmp_path, monkeypatch):
     monkeypatch.setattr(api, "INBOX", inbox)
     monkeypatch.setattr(api, "delete_document", lambda name: indexed.discard(name))
     monkeypatch.setattr(api, "list_documents", lambda: sorted(indexed))
-    monkeypatch.setattr(api, "upsert_chunks", lambda chunks: indexed.update(chunk["document_name"] for chunk in chunks))
+    monkeypatch.setattr(
+        api,
+        "upsert_chunks",
+        lambda chunks: indexed.update(chunk["document_name"] for chunk in chunks),
+    )
     monkeypatch.setattr(api, "_blocks", lambda path: [{"kind": "p", "text": "новый"}])
-    monkeypatch.setattr(api, "chunks_from_blocks", lambda blocks, name: [{"document_name": name}] if blocks else [])
+    monkeypatch.setattr(
+        api, "chunks_from_blocks", lambda blocks, name: [{"document_name": name}] if blocks else []
+    )
     started = threading.Event()
     release = threading.Event()
 
@@ -1112,7 +1348,11 @@ def test_startup_index_does_not_restore_a_document_deleted_while_it_runs(tmp_pat
     monkeypatch.setattr(api.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(api, "delete_document", lambda name: indexed.discard(name))
     monkeypatch.setattr(api, "list_documents", lambda: sorted(indexed))
-    monkeypatch.setattr(api, "upsert_chunks", lambda chunks: indexed.update(chunk["document_name"] for chunk in chunks))
+    monkeypatch.setattr(
+        api,
+        "upsert_chunks",
+        lambda chunks: indexed.update(chunk["document_name"] for chunk in chunks),
+    )
     monkeypatch.setattr("store._embed", lambda _texts: None)
     monkeypatch.setattr("llm.load", lambda: None)
     started = threading.Event()
@@ -1181,7 +1421,11 @@ def test_reindex_does_not_restore_a_document_deleted_while_it_runs(tmp_path, mon
     monkeypatch.setattr(api, "INBOX", inbox)
     monkeypatch.setattr(api, "delete_document", lambda name: indexed.discard(name))
     monkeypatch.setattr(api, "list_documents", lambda: sorted(indexed))
-    monkeypatch.setattr(api, "upsert_chunks", lambda chunks: indexed.update(chunk["document_name"] for chunk in chunks))
+    monkeypatch.setattr(
+        api,
+        "upsert_chunks",
+        lambda chunks: indexed.update(chunk["document_name"] for chunk in chunks),
+    )
     started = threading.Event()
     release = threading.Event()
 
@@ -1264,6 +1508,7 @@ def test_upload_rejects_a_directory_and_restores_the_earlier_file(tmp_path, monk
     assert (occupied / "secret.txt").read_text(encoding="utf-8") == "секрет"
     cache.cache_clear()
 
+
 def test_ready_ignores_a_corrupt_load_time(tmp_path, monkeypatch):
     previous = dict(api._state)
     monkeypatch.setattr(api, "LOAD_TIME", tmp_path / "load_time.txt")
@@ -1280,6 +1525,7 @@ def test_ready_ignores_a_corrupt_load_time(tmp_path, monkeypatch):
     finally:
         api._state.clear()
         api._state.update(previous)
+
 
 def test_rollback_continues_after_one_file_fails(tmp_path):
     restored = tmp_path / "restored.txt"
@@ -1302,6 +1548,7 @@ def test_rollback_continues_after_one_file_fails(tmp_path):
     api._rollback_upload([(Restored(), "старое".encode()), (Locked(), None)])
     assert restored.read_text(encoding="utf-8") == "старое"
 
+
 def test_upload_keeps_the_file_when_indexing_fails(tmp_path, monkeypatch):
     monkeypatch.setattr("api.INBOX", tmp_path)
     cache = _token_count(monkeypatch)
@@ -1320,6 +1567,7 @@ def test_upload_keeps_the_file_when_indexing_fails(tmp_path, monkeypatch):
     assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "Цех имеет номер 4."
     cache.cache_clear()
 
+
 def test_upload_restores_the_file_when_the_parser_is_missing(tmp_path, monkeypatch):
     monkeypatch.setattr("api.INBOX", tmp_path)
     original = b"previous-docx"
@@ -1335,7 +1583,16 @@ def test_upload_restores_the_file_when_the_parser_is_missing(tmp_path, monkeypat
     response = TestClient(app).post(
         "/upload",
         data={"kb_id": "00000000-0000-4000-8000-000000000001"},
-        files=[("files", ("note.docx", b"new-docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))],
+        files=[
+            (
+                "files",
+                (
+                    "note.docx",
+                    b"new-docx",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                ),
+            )
+        ],
     )
     assert response.status_code == 500
     assert called == []
@@ -1355,7 +1612,11 @@ def test_reindex_does_not_restore_a_document_deleted_while_it_runs(tmp_path, mon
     monkeypatch.setattr(api, "INBOX", inbox)
     monkeypatch.setattr(api, "delete_document", lambda name: indexed.discard(name))
     monkeypatch.setattr(api, "list_documents", lambda: sorted(indexed))
-    monkeypatch.setattr(api, "upsert_chunks", lambda chunks: indexed.update(chunk["document_name"] for chunk in chunks))
+    monkeypatch.setattr(
+        api,
+        "upsert_chunks",
+        lambda chunks: indexed.update(chunk["document_name"] for chunk in chunks),
+    )
     started = threading.Event()
     release = threading.Event()
 
@@ -1410,6 +1671,7 @@ def test_reindex_does_not_restore_a_document_deleted_while_it_runs(tmp_path, mon
     assert not (inbox / "keep.txt").exists()
     assert (inbox / "stay.txt").read_text(encoding="utf-8") == "остается"
 
+
 def test_upload_without_a_base_is_refused(monkeypatch):
     monkeypatch.delenv("RAG_TEST_USER", raising=False)
     client = TestClient(app)
@@ -1445,7 +1707,14 @@ def test_query_writes_the_chunk_and_a_failure_keeps_the_fields(monkeypatch):
             "answer": "фраза из куска",
             "status": "подтверждён",
             "document_names": ["note.txt"],
-            "sources": [{"number": 1, "document_name": "note.txt", "chunk_index": 0, "text": "фраза из куска"}],
+            "sources": [
+                {
+                    "number": 1,
+                    "document_name": "note.txt",
+                    "chunk_index": 0,
+                    "text": "фраза из куска",
+                }
+            ],
         }
 
     monkeypatch.setattr("api.run", run)
@@ -1473,9 +1742,15 @@ def test_openapi_has_query_response():
 
 
 def test_v1_query_returns_request_id(monkeypatch):
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": [],
+            "sources": [],
+        },
+    )
     client = TestClient(app)
     response = client.post("/v1/query", json={"query": "вопрос", "dialog_id": "d"})
     assert response.status_code == 200
@@ -1486,9 +1761,15 @@ def test_v1_query_returns_request_id(monkeypatch):
 
 
 def test_query_response_has_request_id(monkeypatch):
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": [],
+            "sources": [],
+        },
+    )
     client = TestClient(app)
     response = client.post("/query", json={"query": "вопрос", "dialog_id": "d"})
     assert response.status_code == 200
@@ -1501,9 +1782,15 @@ def test_trace_json_disabled(monkeypatch):
     import audit
 
     monkeypatch.setattr("api.runtime", lambda: {"audit": {"trace_json": False}})
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": [],
+            "sources": [],
+        },
+    )
     client = TestClient(app)
     response = client.post("/query", json={"query": "вопрос", "dialog_id": "d"})
     assert response.status_code == 200
@@ -1515,9 +1802,15 @@ def test_trace_json_disabled(monkeypatch):
 def test_query_request_id_in_audit(monkeypatch):
     import audit
 
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": [],
+            "sources": [],
+        },
+    )
     client = TestClient(app)
     response = client.post("/query", json={"query": "вопрос", "dialog_id": "d"})
     saved = audit.list_events(kind="query")[0]
@@ -1545,9 +1838,15 @@ def test_query_error_has_request_id_header(monkeypatch):
 
 def test_query_rate_limit(monkeypatch):
     """#147: 11-й запрос одной сессии → 429. Другая сессия идёт со своего нуля."""
-    monkeypatch.setattr("api.run", lambda query, dialog_id, scope=None: {
-        "answer": "ответ", "status": "подтверждён", "document_names": [], "sources": []
-    })
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": [],
+            "sources": [],
+        },
+    )
     api.limiter.reset()
     first = TestClient(app)
     first.cookies.set("session", "session-a")

@@ -6,9 +6,8 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-from ingest import TOKENS, VERSION, _docx_blocks, count_tokens, ingest_dir, load_text, split_chunks
 import ingest
-from ingest import TOKENS, VERSION, count_tokens, ingest_dir, load_text, split_chunks
+from ingest import TOKENS, VERSION, _docx_blocks, count_tokens, ingest_dir, load_text, split_chunks
 
 
 def _toc_style(document):
@@ -27,7 +26,9 @@ def _set_outline(element, level):
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_txt_and_md(tmp_path):
@@ -40,7 +41,9 @@ def test_txt_and_md(tmp_path):
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_docx_keeps_order_sections_and_skips_toc(tmp_path):
@@ -51,7 +54,9 @@ def test_docx_keeps_order_sections_and_skips_toc(tmp_path):
     document.add_paragraph("Температура склада равна 18 градусам.")
     document.add_paragraph("Таблица 1 – Состав склада")
     table = document.add_table(rows=3, cols=2)
-    for row, (key, value) in zip(table.rows, [("Показатель", "Значение"), ("Площадь", "120 м²"), ("Этаж", "2")]):
+    for row, (key, value) in zip(
+        table.rows, [("Показатель", "Значение"), ("Площадь", "120 м²"), ("Этаж", "2")]
+    ):
         row.cells[0].text, row.cells[1].text = key, value
     document.add_paragraph("Склад закрыт по воскресеньям.")
     document.save(path)
@@ -62,7 +67,11 @@ def test_docx_keeps_order_sections_and_skips_toc(tmp_path):
     assert [chunk["section"] for chunk in rows] == ["Склад", "Склад"]
     assert all("Таблица 1 – Состав склада" in chunk["text"] for chunk in rows)
     assert "Площадь: 120 м²" in rows[0]["text"]
-    order = [text for text in texts if "18 градусам" in text or "Площадь" in text or "воскресеньям" in text]
+    order = [
+        text
+        for text in texts
+        if "18 градусам" in text or "Площадь" in text or "воскресеньям" in text
+    ]
     assert "18 градусам" in order[0] and "воскресеньям" in order[-1]
     intro = next(chunk for chunk in chunks if chunk["kind"] == "intro")
     assert "18 градусам" in intro["text"] and intro["group"] == rows[0]["group"]
@@ -75,14 +84,18 @@ def test_overview_list_keeps_every_value(monkeypatch):
     from ingest import _word_tokens, chunks_from_blocks
 
     _word_tokens.cache_clear()
-    values = [f"Наименование характеристики номер {number} очень длинное" for number in range(1, 41)]
-    blocks = [{
-        "kind": "table",
-        "caption": "Таблица 1 – Перечень",
-        "labels": ["Статус", "Описание"],
-        "width": 2,
-        "rows": [[("Статус", "Да"), ("Описание", value)] for value in values],
-    }]
+    values = [
+        f"Наименование характеристики номер {number} очень длинное" for number in range(1, 41)
+    ]
+    blocks = [
+        {
+            "kind": "table",
+            "caption": "Таблица 1 – Перечень",
+            "labels": ["Статус", "Описание"],
+            "width": 2,
+            "rows": [[("Статус", "Да"), ("Описание", value)] for value in values],
+        }
+    ]
     chunks = chunks_from_blocks(blocks, "list.txt")
     overview = next(chunk["text"] for chunk in chunks if chunk["kind"] == "overview")
     assert "Разных значений в столбце «Описание»: 40." in overview
@@ -90,13 +103,19 @@ def test_overview_list_keeps_every_value(monkeypatch):
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_large_table_gets_overview(tmp_path):
     document = Document()
     table = document.add_table(rows=41, cols=3)
-    table.rows[0].cells[0].text, table.rows[0].cells[1].text, table.rows[0].cells[2].text = "Код", "Описание", "Статус"
+    table.rows[0].cells[0].text, table.rows[0].cells[1].text, table.rows[0].cells[2].text = (
+        "Код",
+        "Описание",
+        "Статус",
+    )
     for number, row in enumerate(table.rows[1:], 1):
         row.cells[0].text = f"K_{number}"
         row.cells[1].text = f"Описание позиции номер {number} в длинном перечне склада"
@@ -109,7 +128,9 @@ def test_large_table_gets_overview(tmp_path):
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_merged_cells_are_not_repeated(tmp_path):
@@ -129,6 +150,7 @@ def test_merged_cells_are_not_repeated(tmp_path):
 def test_table_row_that_starts_late_keeps_its_columns(tmp_path):
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
+
     from ingest import _docx_blocks
 
     document = Document()
@@ -176,6 +198,7 @@ def test_key_value_row_that_starts_late_keeps_the_measurement(tmp_path):
 def test_late_row_overview_counts_the_column_that_holds_the_value(tmp_path, monkeypatch):
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
+
     from ingest import _word_tokens
 
     monkeypatch.setattr("ingest.count_tokens", lambda text: max(1, len(str(text).split())))
@@ -222,11 +245,13 @@ def test_two_level_header_keeps_each_column_name(tmp_path):
     document.save(tmp_path / "header.docx")
     block = _docx_blocks(tmp_path / "header.docx")[0]
     assert block["labels"] == ["Показатель", "Диапазон / Минимум", "Диапазон / Максимум"]
-    assert block["rows"] == [[
-        ("Показатель", "Давление"),
-        ("Диапазон / Минимум", "6 бар"),
-        ("Диапазон / Максимум", "10 бар"),
-    ]]
+    assert block["rows"] == [
+        [
+            ("Показатель", "Давление"),
+            ("Диапазон / Минимум", "6 бар"),
+            ("Диапазон / Максимум", "10 бар"),
+        ]
+    ]
     assert _row_line(block["rows"][0], False) == (
         "Показатель: Давление; Диапазон / Минимум: 6 бар; Диапазон / Максимум: 10 бар"
     )
@@ -340,7 +365,9 @@ def test_empty_key_uses_the_value_header_and_keeps_a_blank_cell(tmp_path):
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_chunks_fit_tokens_and_overlap():
@@ -432,7 +459,9 @@ def test_docx_joins_a_hyphen_split_by_a_line_break(tmp_path):
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_docx_joins_hyphen_line_break(tmp_path):
@@ -498,7 +527,9 @@ def test_nested_table_keeps_the_cell_value(tmp_path):
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_paragraph_with_section_number_is_kept():
@@ -612,7 +643,9 @@ def test_docx_keeps_an_inserted_table_cell(tmp_path):
     table.rows[1].cells[0].text = "Давление"
     table.rows[1].cells[1].paragraphs[0]._p.append(_word_mark("w:ins", _word_run("10 бар")))
     _save(document, tmp_path / "table.docx")
-    table = next(block for block in _docx_blocks(tmp_path / "table.docx") if block["kind"] == "table")
+    table = next(
+        block for block in _docx_blocks(tmp_path / "table.docx") if block["kind"] == "table"
+    )
     values = [value for row in table["rows"] for _, value in row]
     assert "Давление" in values
     assert "10 бар" in values
@@ -724,14 +757,20 @@ def test_doc_via_libreoffice(tmp_path):
     document.add_paragraph("Год выпуска равен 2019.")
     document.save(source)
     import subprocess
-    subprocess.run([str(soffice), "--headless", "--convert-to", "doc", "--outdir", str(tmp_path), str(source)], check=True)
+
+    subprocess.run(
+        [str(soffice), "--headless", "--convert-to", "doc", "--outdir", str(tmp_path), str(source)],
+        check=True,
+    )
     source.unlink()
     assert "2019" in load_text(tmp_path / "d.doc")
     assert sorted(path.name for path in tmp_path.iterdir()) == ["d.doc"]
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_numbered_line_becomes_section(tmp_path):
@@ -739,12 +778,18 @@ def test_numbered_line_becomes_section(tmp_path):
     document = Document()
     document.add_paragraph("3 Перечень испытаний")
     document.add_paragraph("Опытная эксплуатация проверяет работу.")
-    document.add_paragraph("2.1. В разделе Введение указывают наименование программы и объекта, в котором используют программу.")
+    document.add_paragraph(
+        "2.1. В разделе Введение указывают наименование программы и объекта, в котором используют программу."
+    )
     document.save(path)
     chunks = ingest_dir(tmp_path)
     assert chunks[0]["section"] == "3 Перечень испытаний"
     assert "Опытная эксплуатация" in chunks[0]["text"]
-    assert all(chunk["section"] != "2.1. В разделе Введение указывают наименование программы и объекта, в котором используют программу." for chunk in chunks)
+    assert all(
+        chunk["section"]
+        != "2.1. В разделе Введение указывают наименование программы и объекта, в котором используют программу."
+        for chunk in chunks
+    )
 
 
 def test_outline_and_inherited_heading_keep_the_section_path(tmp_path, monkeypatch):
@@ -838,7 +883,9 @@ def test_numbered_sentence_stays_in_the_section(tmp_path, monkeypatch):
         document.add_paragraph("1 " + cited)
         document.add_paragraph("После ссылки.")
         document.save(tmp_path / "numbered.docx")
-        chunks = ingest.chunks_from_blocks(_docx_blocks(tmp_path / "numbered.docx"), "numbered.docx")
+        chunks = ingest.chunks_from_blocks(
+            _docx_blocks(tmp_path / "numbered.docx"), "numbered.docx"
+        )
         assert {chunk["section"] for chunk in chunks} == {"1 " + title}
         body = "\n".join(chunk["text"] for chunk in chunks)
         assert "Текст раздела." in body
@@ -866,8 +913,10 @@ def test_docx_does_not_join_a_capitalized_line(tmp_path):
         "Мента приведены отдельно.",
     ]
 
+
 def _token_count(text):
     return max(1, len(str(text or "").split()))
+
 
 def test_long_line_does_not_split_a_hyphenated_word(monkeypatch):
     monkeypatch.setattr("ingest.count_tokens", _token_count)
@@ -881,6 +930,7 @@ def test_long_line_does_not_split_a_hyphenated_word(monkeypatch):
         assert all(not piece.startswith("мента") for piece in pieces)
     finally:
         _word_tokens.cache_clear()
+
 
 def test_heading_path_resets_and_does_not_repeat_the_caption(monkeypatch):
     monkeypatch.setattr("ingest.count_tokens", _token_count)
@@ -922,6 +972,7 @@ def test_heading_path_resets_and_does_not_repeat_the_caption(monkeypatch):
     finally:
         _word_tokens.cache_clear()
 
+
 def test_long_paragraph_before_a_table_stays_text(monkeypatch):
     monkeypatch.setattr("ingest.count_tokens", _token_count)
     monkeypatch.setattr(ingest, "runtime", lambda: {"tokens": 80, "overlap": 0, "intro": 5})
@@ -947,6 +998,7 @@ def test_long_paragraph_before_a_table_stays_text(monkeypatch):
     finally:
         _word_tokens.cache_clear()
 
+
 def test_wide_table_row_keeps_the_lead_columns(monkeypatch):
     monkeypatch.setattr("ingest.count_tokens", _token_count)
     monkeypatch.setattr(ingest, "runtime", lambda: {"tokens": 40, "overlap": 0, "intro": 5})
@@ -954,27 +1006,37 @@ def test_wide_table_row_keeps_the_lead_columns(monkeypatch):
 
     _word_tokens.cache_clear()
     try:
+
         def column(prefix):
             return " ".join(f"{prefix}{number}" for number in range(40))
 
-        blocks = [{
-            "kind": "table",
-            "caption": "Таблица 1",
-            "labels": ["Код", "Имя", "Цех", "Примечание"],
-            "width": 4,
-            "rows": [[
-                ("Код", "A1"),
-                ("Имя", column("имя")),
-                ("Цех", column("цех")),
-                ("Примечание", column("хвост")),
-            ]],
-        }]
-        tables = [chunk["text"] for chunk in ingest.chunks_from_blocks(blocks, "wide.txt") if chunk["kind"] == "table"]
+        blocks = [
+            {
+                "kind": "table",
+                "caption": "Таблица 1",
+                "labels": ["Код", "Имя", "Цех", "Примечание"],
+                "width": 4,
+                "rows": [
+                    [
+                        ("Код", "A1"),
+                        ("Имя", column("имя")),
+                        ("Цех", column("цех")),
+                        ("Примечание", column("хвост")),
+                    ]
+                ],
+            }
+        ]
+        tables = [
+            chunk["text"]
+            for chunk in ingest.chunks_from_blocks(blocks, "wide.txt")
+            if chunk["kind"] == "table"
+        ]
         assert len(tables) == 3
         assert all("Код: A1" in text for text in tables)
         assert "имя0" in tables[0] and "цех0" in tables[1] and "хвост39" in tables[2]
     finally:
         _word_tokens.cache_clear()
+
 
 def test_docx_does_not_join_a_new_sentence_a_heading_or_text_after_a_table(tmp_path):
     document = Document()
@@ -1003,6 +1065,7 @@ def test_docx_does_not_join_a_new_sentence_a_heading_or_text_after_a_table(tmp_p
     assert "дефи-Новый" not in joined
     assert "таблицей" not in joined
 
+
 def test_ingest_dir_indexes_only_supported_files(tmp_path, monkeypatch):
     monkeypatch.setattr("ingest.count_tokens", _token_count)
     from ingest import _word_tokens
@@ -1019,6 +1082,7 @@ def test_ingest_dir_indexes_only_supported_files(tmp_path, monkeypatch):
         assert "Первая строка." in chunks[0]["text"]
     finally:
         _word_tokens.cache_clear()
+
 
 def test_docx_keeps_a_hyphen_before_a_heading_or_a_capital(tmp_path):
     document = Document()
@@ -1044,6 +1108,7 @@ def test_docx_keeps_a_hyphen_before_a_heading_or_a_capital(tmp_path):
         ("p", "словопродолжение в том же слове."),
     ]
 
+
 def test_overview_skips_a_column_of_plain_numbers(monkeypatch):
     monkeypatch.setattr(ingest, "count_tokens", lambda text: max(1, len(str(text).split())))
     monkeypatch.setattr(ingest, "runtime", lambda: {"tokens": 30, "overlap": 0, "intro": 5})
@@ -1051,14 +1116,17 @@ def test_overview_skips_a_column_of_plain_numbers(monkeypatch):
 
     _word_tokens.cache_clear()
     try:
+
         def table(labels, rows):
-            return [{
-                "kind": "table",
-                "caption": "Таблица 1",
-                "labels": labels,
-                "width": len(labels),
-                "rows": rows,
-            }]
+            return [
+                {
+                    "kind": "table",
+                    "caption": "Таблица 1",
+                    "labels": labels,
+                    "width": len(labels),
+                    "rows": rows,
+                }
+            ]
 
         named = [[("Код", str(number)), ("Имя", f"Насос{number}")] for number in range(1, 21)]
         chunks = ingest.chunks_from_blocks(table(["Код", "Имя"], named), "meters.txt")
@@ -1098,13 +1166,15 @@ def test_empty_key_keeps_the_value_under_its_column(monkeypatch):
 
     _word_tokens.cache_clear()
     try:
-        blocks = [{
-            "kind": "table",
-            "caption": "",
-            "labels": ["Показатель", "Давление"],
-            "width": 2,
-            "rows": [[("Показатель", ""), ("Давление", "6 бар")]],
-        }]
+        blocks = [
+            {
+                "kind": "table",
+                "caption": "",
+                "labels": ["Показатель", "Давление"],
+                "width": 2,
+                "rows": [[("Показатель", ""), ("Давление", "6 бар")]],
+            }
+        ]
         text = ingest.chunks_from_blocks(blocks, "pressure.txt")[0]["text"]
         assert "Давление: 6 бар" in text
         assert text.replace("Давление: 6 бар", "").count(": 6 бар") == 0
@@ -1119,13 +1189,17 @@ def test_numeric_columns_do_not_become_an_overview(monkeypatch):
 
     _word_tokens.cache_clear()
     try:
-        blocks = [{
-            "kind": "table",
-            "caption": "Замеры",
-            "labels": ["Точка", "Давление"],
-            "width": 2,
-            "rows": [[("Точка", str(number)), ("Давление", f"{number},0")] for number in range(1, 12)],
-        }]
+        blocks = [
+            {
+                "kind": "table",
+                "caption": "Замеры",
+                "labels": ["Точка", "Давление"],
+                "width": 2,
+                "rows": [
+                    [("Точка", str(number)), ("Давление", f"{number},0")] for number in range(1, 12)
+                ],
+            }
+        ]
         chunks = ingest.chunks_from_blocks(blocks, "meters.txt")
         assert chunks
         assert all(chunk["kind"] != "overview" for chunk in chunks)
@@ -1143,14 +1217,20 @@ def test_wide_row_keeps_short_lead_columns(monkeypatch):
     try:
         name = " ".join(f"имя{number}" for number in range(40))
         tail = " ".join(f"хвост{number}" for number in range(40))
-        blocks = [{
-            "kind": "table",
-            "caption": "Таблица 1",
-            "labels": ["Код", "Цех", "Имя", "Хвост"],
-            "width": 4,
-            "rows": [[("Код", "A1"), ("Цех", "4"), ("Имя", name), ("Хвост", tail)]],
-        }]
-        tables = [chunk["text"] for chunk in ingest.chunks_from_blocks(blocks, "wide.txt") if chunk["kind"] == "table"]
+        blocks = [
+            {
+                "kind": "table",
+                "caption": "Таблица 1",
+                "labels": ["Код", "Цех", "Имя", "Хвост"],
+                "width": 4,
+                "rows": [[("Код", "A1"), ("Цех", "4"), ("Имя", name), ("Хвост", tail)]],
+            }
+        ]
+        tables = [
+            chunk["text"]
+            for chunk in ingest.chunks_from_blocks(blocks, "wide.txt")
+            if chunk["kind"] == "table"
+        ]
         assert len(tables) > 1
         assert all("Код: A1" in text and "Цех: 4" in text for text in tables)
         assert "имя0" in tables[0] and "хвост39" in tables[-1]
@@ -1181,6 +1261,7 @@ def test_long_paragraph_is_split_to_the_budget(monkeypatch):
     finally:
         _word_tokens.cache_clear()
 
+
 def test_docx_keeps_text_moved_by_a_revision(tmp_path):
     document = Document()
     body = document.element.body
@@ -1210,6 +1291,7 @@ def test_docx_keeps_text_moved_by_a_revision(tmp_path):
     assert "Давление равно 6 бар." not in text
     assert "10 бар" in text
     assert "6 бар" not in text
+
 
 def test_docx_joins_yo_and_a_second_hyphen_break(tmp_path):
     document = Document()
@@ -1387,7 +1469,7 @@ def test_pdf_text_two_pages(tmp_path, monkeypatch):
 def test_pdf_table_two_rows(tmp_path):
     """#165: PDF с таблицей 2x2 → блок kind='table', group=pdf:name:page:idx."""
     from pypdf import PdfWriter
-    from pypdf.generic import NameObject, DictionaryObject, DecodedStreamObject
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
     pdf_path = tmp_path / "with_table.pdf"
     writer = PdfWriter()
@@ -1567,9 +1649,9 @@ def test_pdf_table_chunks_from_blocks(tmp_path, monkeypatch):
     chunks = ingest.chunks_from_blocks(blocks, "with_table.pdf")
     table_chunks = [chunk for chunk in chunks if chunk.get("kind") == "table"]
     assert table_chunks, f"expected table chunks, got {[chunk.get('kind') for chunk in chunks]}"
-    assert all(chunk["group"].startswith("pdf:") for chunk in table_chunks), (
-        f"group: {[chunk.get('group') for chunk in table_chunks]}"
-    )
+    assert all(
+        chunk["group"].startswith("pdf:") for chunk in table_chunks
+    ), f"group: {[chunk.get('group') for chunk in table_chunks]}"
     assert any(chunk.get("head") for chunk in table_chunks), "expected non-empty head"
     intros = [chunk for chunk in chunks if chunk.get("kind") == "intro"]
     assert len(intros) == 1
@@ -1595,11 +1677,16 @@ def _write_xlsx(path, sheets):
 def test_xlsx_one_sheet_with_head(tmp_path):
     """#167: один лист → таблица с labels и rows (пары)."""
     xlsx_path = tmp_path / "one.xlsx"
-    _write_xlsx(xlsx_path, {"Sheet1": [
-        ["Name", "Value"],
-        ["Pressure", 6],
-        ["Temp", 40],
-    ]})
+    _write_xlsx(
+        xlsx_path,
+        {
+            "Sheet1": [
+                ["Name", "Value"],
+                ["Pressure", 6],
+                ["Temp", 40],
+            ]
+        },
+    )
     blocks = ingest._xlsx_blocks(xlsx_path)
     assert len(blocks) == 1
     table = blocks[0]
@@ -1616,10 +1703,13 @@ def test_xlsx_one_sheet_with_head(tmp_path):
 def test_xlsx_two_sheets_two_groups(tmp_path):
     """#167: два листа → две таблицы с разными group."""
     xlsx_path = tmp_path / "two.xlsx"
-    _write_xlsx(xlsx_path, {
-        "First": [["Col"], ["a"], ["b"]],
-        "Second": [["Col"], ["c"], ["d"]],
-    })
+    _write_xlsx(
+        xlsx_path,
+        {
+            "First": [["Col"], ["a"], ["b"]],
+            "Second": [["Col"], ["c"], ["d"]],
+        },
+    )
     blocks = ingest._xlsx_blocks(xlsx_path)
     assert len(blocks) == 2
     assert {block["group"] for block in blocks} == {"sheet:First:0", "sheet:Second:0"}
@@ -1628,10 +1718,13 @@ def test_xlsx_two_sheets_two_groups(tmp_path):
 def test_xlsx_empty_sheet_skipped(tmp_path):
     """#167: пустой лист → без блоков."""
     xlsx_path = tmp_path / "empty.xlsx"
-    _write_xlsx(xlsx_path, {
-        "Empty": [],
-        "Data": [["Col"], ["x"]],
-    })
+    _write_xlsx(
+        xlsx_path,
+        {
+            "Empty": [],
+            "Data": [["Col"], ["x"]],
+        },
+    )
     blocks = ingest._xlsx_blocks(xlsx_path)
     assert len(blocks) == 1
     assert blocks[0]["group"] == "sheet:Data:0"
@@ -1670,7 +1763,8 @@ def test_ingest_dir_skips_large_file(tmp_path, monkeypatch):
     assert any("small content" in chunk["text"] for chunk in chunks)
     assert large.stat().st_size == 60 * 1024 * 1024
     refused = [
-        payload for kind, payload, ok in events
+        payload
+        for kind, payload, ok in events
         if kind == "upload" and payload.get("error") == "file_too_large" and ok is False
     ]
     assert len(refused) == 1
@@ -1710,7 +1804,8 @@ def test_chunks_truncated_per_doc(tmp_path, monkeypatch):
     assert by_name["many.txt"][0]["id"] == "c0"
     assert by_name["many.txt"][-1]["id"] == "c4999"
     warnings = [
-        payload for kind, payload, ok in events
+        payload
+        for kind, payload, ok in events
         if kind == "upload" and payload.get("warning") == "too_many_chunks" and ok is True
     ]
     assert {item["file"] for item in warnings} == {"many.txt", "other.txt"}
@@ -1740,18 +1835,21 @@ def test_docx_no_header_numeric_first_row(tmp_path):
 def test_pdf_no_header_numeric_first_row(tmp_path):
     """#140: PDF-таблица из чисел сохраняет первую строку."""
     pdf_path = tmp_path / "numbers.pdf"
-    _write_pdf_page(pdf_path, (
-        b"100 500 m 100 400 l S\n"
-        b"200 500 m 200 400 l S\n"
-        b"300 500 m 300 400 l S\n"
-        b"100 500 m 300 500 l S\n"
-        b"100 450 m 300 450 l S\n"
-        b"100 400 m 300 400 l S\n"
-        b"BT /F1 10 Tf 110 470 Td (6) Tj ET\n"
-        b"BT /F1 10 Tf 210 470 Td (8) Tj ET\n"
-        b"BT /F1 10 Tf 110 420 Td (10) Tj ET\n"
-        b"BT /F1 10 Tf 210 420 Td (12) Tj ET\n"
-    ))
+    _write_pdf_page(
+        pdf_path,
+        (
+            b"100 500 m 100 400 l S\n"
+            b"200 500 m 200 400 l S\n"
+            b"300 500 m 300 400 l S\n"
+            b"100 500 m 300 500 l S\n"
+            b"100 450 m 300 450 l S\n"
+            b"100 400 m 300 400 l S\n"
+            b"BT /F1 10 Tf 110 470 Td (6) Tj ET\n"
+            b"BT /F1 10 Tf 210 470 Td (8) Tj ET\n"
+            b"BT /F1 10 Tf 110 420 Td (10) Tj ET\n"
+            b"BT /F1 10 Tf 210 420 Td (12) Tj ET\n"
+        ),
+    )
     tables = [block for block in ingest._pdf_blocks(pdf_path) if block.get("kind") == "table"]
     assert len(tables) == 1
     assert tables[0]["labels"] == ["", ""]

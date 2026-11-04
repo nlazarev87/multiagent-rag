@@ -2,6 +2,7 @@
 
 Схема создаётся при первом обращении, не при импорте. В сессии только id человека.
 """
+
 import hashlib
 import hmac
 import os
@@ -10,7 +11,6 @@ import secrets
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
 
 from settings import _root
@@ -296,7 +296,9 @@ def user_by_session(session_id):
         ).fetchone()
         if row is None:
             return None
-        expires = datetime.strptime(row["expires"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        expires = datetime.strptime(row["expires"], "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
         if expires <= _now():
             conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             conn.commit()
@@ -337,7 +339,9 @@ def change_password(user_id, old, new, session_id=None):
         if row is None or not password_ok(old, row["salt"], row["password"]):
             raise PermissionError("old")
         salt, digest = hash_password(new)
-        conn.execute("UPDATE users SET salt = ?, password = ? WHERE id = ?", (salt, digest, user_id))
+        conn.execute(
+            "UPDATE users SET salt = ?, password = ? WHERE id = ?", (salt, digest, user_id)
+        )
         conn.commit()
     finally:
         conn.close()
@@ -438,11 +442,18 @@ def update_user(user_id, *, role_id=None, blocked=None):
                 raise LookupError("user")
             new_role = role_id if role_id is not None else row["role_id"]
             new_blocked = int(row["blocked"] if blocked is None else blocked)
-            if role_id is not None and conn.execute("SELECT id FROM roles WHERE id = ?", (new_role,)).fetchone() is None:
+            if (
+                role_id is not None
+                and conn.execute("SELECT id FROM roles WHERE id = ?", (new_role,)).fetchone()
+                is None
+            ):
                 raise LookupError("role")
             if not _would_keep(conn, user_id, new_role, new_blocked):
                 raise PermissionError("keeper")
-            conn.execute("UPDATE users SET role_id = ?, blocked = ? WHERE id = ?", (new_role, new_blocked, user_id))
+            conn.execute(
+                "UPDATE users SET role_id = ?, blocked = ? WHERE id = ?",
+                (new_role, new_blocked, user_id),
+            )
             if new_blocked:
                 conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
             conn.commit()
@@ -460,7 +471,9 @@ def delete_user(user_id):
                 raise PermissionError("keeper")
             conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM user_kb WHERE user_id = ?", (user_id,))
-            conn.execute("DELETE FROM kb_acl WHERE subject_type = 'user' AND subject_id = ?", (user_id,))
+            conn.execute(
+                "DELETE FROM kb_acl WHERE subject_type = 'user' AND subject_id = ?", (user_id,)
+            )
             conn.execute("DELETE FROM group_user WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
             conn.commit()
@@ -474,19 +487,23 @@ def list_roles():
     try:
         roles = []
         for row in conn.execute("SELECT * FROM roles ORDER BY name").fetchall():
-            roles.append({
-                "id": row["id"],
-                "name": row["name"],
-                "actions": _role_actions(conn, row["id"]),
-                "kb_actions": _kb_actions(conn, "role_kb", "role_id", row["id"]),
-            })
+            roles.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "actions": _role_actions(conn, row["id"]),
+                    "kb_actions": _kb_actions(conn, "role_kb", "role_id", row["id"]),
+                }
+            )
         return roles
     finally:
         conn.close()
 
 
 def _kb_actions(conn, table, column, owner):
-    rows = conn.execute(f"SELECT kb_id, action FROM {table} WHERE {column} = ?", (owner,)).fetchall()
+    rows = conn.execute(
+        f"SELECT kb_id, action FROM {table} WHERE {column} = ?", (owner,)
+    ).fetchall()
     found: dict[Any, list[Any]] = {}
     for row in rows:
         found.setdefault(row["kb_id"], []).append(row["action"])
@@ -533,7 +550,10 @@ def update_role(role_id, *, name=None, actions=None, kb_actions=None):
                 if set(KEEPER) <= current and not set(KEEPER) <= proposed:
                     others = [
                         user["id"]
-                        for user in conn.execute("SELECT id, role_id FROM users WHERE blocked = 0 AND role_id != ?", (role_id,)).fetchall()
+                        for user in conn.execute(
+                            "SELECT id, role_id FROM users WHERE blocked = 0 AND role_id != ?",
+                            (role_id,),
+                        ).fetchall()
                         if set(KEEPER) <= set(_role_actions(conn, user["role_id"]))
                     ]
                     if not others:
@@ -541,7 +561,10 @@ def update_role(role_id, *, name=None, actions=None, kb_actions=None):
                 conn.execute("DELETE FROM role_global WHERE role_id = ?", (role_id,))
                 for action in proposed:
                     if action in GLOBAL_ACTIONS:
-                        conn.execute("INSERT INTO role_global (role_id, action) VALUES (?, ?)", (role_id, action))
+                        conn.execute(
+                            "INSERT INTO role_global (role_id, action) VALUES (?, ?)",
+                            (role_id, action),
+                        )
             if kb_actions is not None:
                 conn.execute("DELETE FROM role_kb WHERE role_id = ?", (role_id,))
                 for kb_id, names in kb_actions.items():
@@ -566,7 +589,9 @@ def delete_role(role_id):
         conn.execute("DELETE FROM role_global WHERE role_id = ?", (role_id,))
         conn.execute("DELETE FROM role_kb WHERE role_id = ?", (role_id,))
         conn.execute("DELETE FROM group_role WHERE role_id = ?", (role_id,))
-        conn.execute("DELETE FROM kb_acl WHERE subject_type = 'role' AND subject_id = ?", (role_id,))
+        conn.execute(
+            "DELETE FROM kb_acl WHERE subject_type = 'role' AND subject_id = ?", (role_id,)
+        )
         conn.execute("DELETE FROM roles WHERE id = ?", (role_id,))
         conn.commit()
     finally:
@@ -579,9 +604,21 @@ def list_groups():
     try:
         groups = []
         for row in conn.execute("SELECT * FROM groups ORDER BY name").fetchall():
-            users = [item["user_id"] for item in conn.execute("SELECT user_id FROM group_user WHERE group_id = ?", (row["id"],))]
-            roles = [item["role_id"] for item in conn.execute("SELECT role_id FROM group_role WHERE group_id = ?", (row["id"],))]
-            groups.append({"id": row["id"], "name": row["name"], "user_ids": users, "role_ids": roles})
+            users = [
+                item["user_id"]
+                for item in conn.execute(
+                    "SELECT user_id FROM group_user WHERE group_id = ?", (row["id"],)
+                )
+            ]
+            roles = [
+                item["role_id"]
+                for item in conn.execute(
+                    "SELECT role_id FROM group_role WHERE group_id = ?", (row["id"],)
+                )
+            ]
+            groups.append(
+                {"id": row["id"], "name": row["name"], "user_ids": users, "role_ids": roles}
+            )
         return groups
     finally:
         conn.close()
@@ -614,9 +651,13 @@ def set_group_members(group_id, user_ids, role_ids):
         conn.execute("DELETE FROM group_user WHERE group_id = ?", (group_id,))
         conn.execute("DELETE FROM group_role WHERE group_id = ?", (group_id,))
         for user_id in user_ids or []:
-            conn.execute("INSERT INTO group_user (group_id, user_id) VALUES (?, ?)", (group_id, user_id))
+            conn.execute(
+                "INSERT INTO group_user (group_id, user_id) VALUES (?, ?)", (group_id, user_id)
+            )
         for role_id in role_ids or []:
-            conn.execute("INSERT INTO group_role (group_id, role_id) VALUES (?, ?)", (group_id, role_id))
+            conn.execute(
+                "INSERT INTO group_role (group_id, role_id) VALUES (?, ?)", (group_id, role_id)
+            )
         conn.commit()
     finally:
         conn.close()
@@ -628,7 +669,9 @@ def delete_group(group_id):
     try:
         conn.execute("DELETE FROM group_user WHERE group_id = ?", (group_id,))
         conn.execute("DELETE FROM group_role WHERE group_id = ?", (group_id,))
-        conn.execute("DELETE FROM kb_acl WHERE subject_type = 'group' AND subject_id = ?", (group_id,))
+        conn.execute(
+            "DELETE FROM kb_acl WHERE subject_type = 'group' AND subject_id = ?", (group_id,)
+        )
         conn.execute("DELETE FROM groups WHERE id = ?", (group_id,))
         conn.commit()
     finally:
@@ -639,8 +682,18 @@ def group_ids_for(user):
     ensure()
     conn = _connect()
     try:
-        direct = {row["group_id"] for row in conn.execute("SELECT group_id FROM group_user WHERE user_id = ?", (user["id"],))}
-        via = {row["group_id"] for row in conn.execute("SELECT group_id FROM group_role WHERE role_id = ?", (user["role_id"],))}
+        direct = {
+            row["group_id"]
+            for row in conn.execute(
+                "SELECT group_id FROM group_user WHERE user_id = ?", (user["id"],)
+            )
+        }
+        via = {
+            row["group_id"]
+            for row in conn.execute(
+                "SELECT group_id FROM group_role WHERE role_id = ?", (user["role_id"],)
+            )
+        }
         return direct | via
     finally:
         conn.close()
@@ -660,7 +713,10 @@ def meta_set(key, value):
     ensure()
     conn = _connect()
     try:
-        conn.execute("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -670,7 +726,9 @@ def role_content(role_id, kb_id):
     ensure()
     conn = _connect()
     try:
-        rows = conn.execute("SELECT action FROM role_kb WHERE role_id = ? AND kb_id = ?", (role_id, kb_id)).fetchall()
+        rows = conn.execute(
+            "SELECT action FROM role_kb WHERE role_id = ? AND kb_id = ?", (role_id, kb_id)
+        ).fetchall()
         return {row["action"] for row in rows}
     finally:
         conn.close()
@@ -680,7 +738,9 @@ def user_content(user_id, kb_id):
     ensure()
     conn = _connect()
     try:
-        rows = conn.execute("SELECT action FROM user_kb WHERE user_id = ? AND kb_id = ?", (user_id, kb_id)).fetchall()
+        rows = conn.execute(
+            "SELECT action FROM user_kb WHERE user_id = ? AND kb_id = ?", (user_id, kb_id)
+        ).fetchall()
         return {row["action"] for row in rows}
     finally:
         conn.close()
@@ -693,7 +753,10 @@ def set_user_content(user_id, kb_id, actions):
         conn.execute("DELETE FROM user_kb WHERE user_id = ? AND kb_id = ?", (user_id, kb_id))
         for action in actions or []:
             if action in CONTENT_ACTIONS:
-                conn.execute("INSERT INTO user_kb (user_id, kb_id, action) VALUES (?, ?, ?)", (user_id, kb_id, action))
+                conn.execute(
+                    "INSERT INTO user_kb (user_id, kb_id, action) VALUES (?, ?, ?)",
+                    (user_id, kb_id, action),
+                )
         conn.commit()
     finally:
         conn.close()

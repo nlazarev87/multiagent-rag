@@ -3,6 +3,7 @@
 Два файла с одним текстом не схлопываются в одну запись. Удаление документа
 во время поиска не роняет уже идущий запрос.
 """
+
 import concurrent.futures
 import contextvars
 import hashlib
@@ -14,9 +15,10 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Literal, overload
 
-from settings import runtime, where as route_where
 from pipeline_types import Chunk
 from pipeline_utils import is_code
+from settings import runtime
+from settings import where as route_where
 
 CHROMA = Path(os.environ.get("CHROMA_PATH", "data/chroma"))
 MODEL = Path(os.environ.get("EMBED_PATH", "data/models/multilingual-e5-small"))
@@ -76,7 +78,9 @@ _import_lock = threading.Lock()
 # it opened. A delete or an upload clears the global when it finishes, and
 # that must not crash the request that is already reading it.
 _index_lock = threading.RLock()
-_dense_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="chroma-timeout")
+_dense_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=2, thread_name_prefix="chroma-timeout"
+)
 _WORD = re.compile(r"[0-9a-zа-я]+(?:[._/-][0-9a-zа-я]+)*")
 _NAME = re.compile(r"[0-9A-Za-zА-Яа-яЁё]+(?:[._/-][0-9A-Za-zА-Яа-яЁё]+)*")
 _STOP = set(
@@ -95,6 +99,7 @@ def _embed(texts):
         with _import_lock:
             if _model is None:
                 from sentence_transformers import SentenceTransformer
+
                 _model = SentenceTransformer(str(MODEL))
     return _model.encode(texts, normalize_embeddings=True, batch_size=16).tolist()
 
@@ -109,6 +114,7 @@ def _client_for(path):
     client = _pool.get(key)
     if client is None:
         import chromadb
+
         client = chromadb.PersistentClient(path=key)
         _pool[key] = client
     _client = client
@@ -123,8 +129,12 @@ def collection():
                 _client_for(CHROMA)
                 client = _client
                 if client is None:
-                    raise AttributeError("'NoneType' object has no attribute 'get_or_create_collection'")
-                _collection = client.get_or_create_collection("fragments", metadata={"hnsw:space": "cosine"})
+                    raise AttributeError(
+                        "'NoneType' object has no attribute 'get_or_create_collection'"
+                    )
+                _collection = client.get_or_create_collection(
+                    "fragments", metadata={"hnsw:space": "cosine"}
+                )
     return _collection
 
 
@@ -148,10 +158,12 @@ def reset():
                     pass
         try:
             from chromadb.api.shared_system_client import SharedSystemClient
+
             SharedSystemClient.clear_system_cache()
         except Exception:
             pass
         import gc
+
         gc.collect()
 
 
@@ -189,27 +201,38 @@ def upsert_chunks(chunks):
         for name, items in groups.items():
             found = col.get(where={"document_name": name}, include=["metadatas"])
             metas = found["metadatas"] or []
-            if len(metas) == len(items) and all(meta.get("checksum") == items[0]["checksum"] for meta in metas):
+            if len(metas) == len(items) and all(
+                meta.get("checksum") == items[0]["checksum"] for meta in metas
+            ):
                 continue
             if found["ids"]:
                 col.delete(ids=found["ids"])
             for start in range(0, len(items), 64):
-                batch = items[start:start + 64]
+                batch = items[start : start + 64]
                 col.add(
                     ids=[_chunk_id(chunk) for chunk in batch],
                     documents=[chunk["text"] for chunk in batch],
-                    embeddings=_embed(["passage: " + chunk.get("embed", chunk["text"]) for chunk in batch]),
-                    metadatas=[{
-                        "document_name": chunk["document_name"],
-                        "chunk_index": chunk["chunk_index"],
-                        "checksum": chunk["checksum"],
-                        "section": chunk.get("section", ""),
-                        "kind": chunk.get("kind", "text"),
-                        "group": chunk.get("group", ""),
-                        "head": chunk.get("head", ""),
-                        "version": chunk.get("version", 0),
-                        **({"collection": chunk["collection"]} if chunk.get("collection") else {}),
-                    } for chunk in batch],
+                    embeddings=_embed(
+                        ["passage: " + chunk.get("embed", chunk["text"]) for chunk in batch]
+                    ),
+                    metadatas=[
+                        {
+                            "document_name": chunk["document_name"],
+                            "chunk_index": chunk["chunk_index"],
+                            "checksum": chunk["checksum"],
+                            "section": chunk.get("section", ""),
+                            "kind": chunk.get("kind", "text"),
+                            "group": chunk.get("group", ""),
+                            "head": chunk.get("head", ""),
+                            "version": chunk.get("version", 0),
+                            **(
+                                {"collection": chunk["collection"]}
+                                if chunk.get("collection")
+                                else {}
+                            ),
+                        }
+                        for chunk in batch
+                    ],
                 )
         _index = None
 
@@ -255,6 +278,7 @@ def _stem(word):
     language = "english" if word.isascii() else "russian"
     if language not in _stemmers:
         import snowballstemmer
+
         _stemmers[language] = snowballstemmer.stemmer(language)
     return _stemmers[language].stemWord(word)
 
@@ -380,7 +404,9 @@ def scope(index, query):
     names = _names(query)
     marks = {doc: _doc_markers(doc) for doc in documents}
     file_stems = {
-        doc: {_stem(word) for word in _words(Path(doc).stem) if len(word) >= 4 and word not in _STOP}
+        doc: {
+            _stem(word) for word in _words(Path(doc).stem) if len(word) >= 4 and word not in _STOP
+        }
         for doc in documents
     }
     query_stems = []
@@ -445,7 +471,7 @@ def _lexical(index, query, allowed):
         if score > 0:
             scored.append((score, number))
     scored.sort(key=lambda item: (-item[0], item[1]))
-    return [index["ids"][number] for _, number in scored[:_candidates()]]
+    return [index["ids"][number] for _, number in scored[: _candidates()]]
 
 
 def _dense_query(col, embedding, allowed, total):
@@ -481,7 +507,13 @@ def _dense(col, query, allowed, total):
     timeout_s = (runtime().get("timeouts") or {}).get("chroma_ms", 10000) / 1000
     ctx = contextvars.copy_context()
     future = _dense_executor.submit(
-        ctx.run, _dense_sync, col, embedding, allowed, total, _foreign_read.get(),
+        ctx.run,
+        _dense_sync,
+        col,
+        embedding,
+        allowed,
+        total,
+        _foreign_read.get(),
     )
     try:
         return future.result(timeout=timeout_s)
@@ -516,21 +548,31 @@ def _focus(query, allowed):
 def _body(index, number):
     text = index["texts"][number]
     head = index["metas"][number].get("head", "")
-    return text[len(head) + 1:] if head and text.startswith(head) else text
+    return text[len(head) + 1 :] if head and text.startswith(head) else text
 
 
 def _render(index, numbers, features=None):
     from ingest import count_tokens
+
     first = index["metas"][numbers[0]]
     if not first.get("group"):
         return "\n".join(index["texts"][number] for number in numbers)
     members = index["groups"][(first["document_name"], first["group"])]
-    head = next((index["metas"][number].get("head") for number in members if index["metas"][number].get("head")), "")
+    head = next(
+        (
+            index["metas"][number].get("head")
+            for number in members
+            if index["metas"][number].get("head")
+        ),
+        "",
+    )
     _show_overview = features is None or features.get("overview_rows", True)
     _kinds = ("overview", "intro") if _show_overview else ("intro",)
     always = {number for number in members if index["metas"][number].get("kind") in _kinds}
     chosen = set(numbers) | always
-    size = (count_tokens(head) if head else 0) + sum(count_tokens(_body(index, number)) for number in chosen)
+    size = (count_tokens(head) if head else 0) + sum(
+        count_tokens(_body(index, number)) for number in chosen
+    )
     places = [members.index(number) for number in numbers if number in members]
     _show_neighbors = features is None or features.get("table_neighbors", True)
     if _show_neighbors:
@@ -539,7 +581,10 @@ def _render(index, numbers, features=None):
                 for neighbour in (place - distance, place + distance):
                     if 0 <= neighbour < len(members) and members[neighbour] not in chosen:
                         # Сосед-обзор иначе возвращает строку «Разных значений» в слот.
-                        if not _show_overview and index["metas"][members[neighbour]].get("kind") == "overview":
+                        if (
+                            not _show_overview
+                            and index["metas"][members[neighbour]].get("kind") == "overview"
+                        ):
                             continue
                         cost = count_tokens(_body(index, members[neighbour]))
                         if size + cost <= _context():
@@ -548,7 +593,9 @@ def _render(index, numbers, features=None):
     kinds = {number: index["metas"][number].get("kind") for number in members}
     ordered = []
     for kind in ("table", "intro", "overview"):
-        ordered += [number for number in members if number in chosen and (kinds[number] or "table") == kind]
+        ordered += [
+            number for number in members if number in chosen and (kinds[number] or "table") == kind
+        ]
     lines = []
     for text in [head] + [_body(index, number) for number in ordered]:
         for line in text.split("\n"):
@@ -583,7 +630,8 @@ def _context_row(index, numbers, features=None):
 def _contexts(index, ranked, limit, features=None):
     if features and not features.get("overview_rows", True):
         ranked = [
-            key for key in ranked
+            key
+            for key in ranked
             if index["metas"][index["position"][key]].get("kind") != "overview"
         ]
     slots: dict[Any, list[int]] = {}
@@ -621,7 +669,12 @@ def _elsewhere(path, fn):
             globals()["_index"] = None
             return fn()
         finally:
-            globals()["CHROMA"], globals()["_client"], globals()["_collection"], globals()["_index"] = saved
+            (
+                globals()["CHROMA"],
+                globals()["_client"],
+                globals()["_collection"],
+                globals()["_index"],
+            ) = saved
 
 
 _foreign_read = contextvars.ContextVar("store_foreign_read", default=False)
@@ -674,7 +727,9 @@ def known_at(path, term):
 
 def search_permit(permit, clear_query, limit=4, document_names=None):
     """Поиск только после повторной проверки допуска. Чужой путь не читается."""
-    return _read_permit(permit, lambda: search_at(permit.chroma, clear_query, limit, document_names))
+    return _read_permit(
+        permit, lambda: search_at(permit.chroma, clear_query, limit, document_names)
+    )
 
 
 def list_permit(permit):
@@ -693,7 +748,8 @@ def known_permit(permit, term):
 
 
 _search_notes: contextvars.ContextVar[list[dict[str, Any]] | None] = contextvars.ContextVar(
-    "store_search_notes", default=None,
+    "store_search_notes",
+    default=None,
 )
 
 
@@ -720,13 +776,15 @@ def _remember_search(focused_query, allowed, ranked_count, slots):
         name = slot.get("document_name")
         if name and name not in docs:
             docs.append(name)
-    notes.append({
-        "focused_query": focused_query,
-        "allowed": allowed,
-        "ranked_count": ranked_count,
-        "top_ids": [slot.get("id") for slot in slots or [] if isinstance(slot, dict)],
-        "top_docs": docs,
-    })
+    notes.append(
+        {
+            "focused_query": focused_query,
+            "allowed": allowed,
+            "ranked_count": ranked_count,
+            "top_ids": [slot.get("id") for slot in slots or [] if isinstance(slot, dict)],
+            "top_docs": docs,
+        }
+    )
 
 
 def _collapse_copies(index, ranked_ids, expected_document):
@@ -798,21 +856,33 @@ def _collapse_copies(index, ranked_ids, expected_document):
 
 @overload
 def search_chunks(
-    clear_query, limit=4, document_names=None, debug: Literal[False] = False,
-    features=None, expected_document=None,
+    clear_query,
+    limit=4,
+    document_names=None,
+    debug: Literal[False] = False,
+    features=None,
+    expected_document=None,
 ) -> list[Chunk]: ...
 
 
 @overload
 def search_chunks(
-    clear_query, limit=4, document_names=None, debug: Literal[True] = ...,
-    features=None, expected_document=None,
+    clear_query,
+    limit=4,
+    document_names=None,
+    debug: Literal[True] = ...,
+    features=None,
+    expected_document=None,
 ) -> dict[str, Any]: ...
 
 
 def search_chunks(
-    clear_query, limit=4, document_names=None, debug=False,
-    features=None, expected_document=None,
+    clear_query,
+    limit=4,
+    document_names=None,
+    debug=False,
+    features=None,
+    expected_document=None,
 ) -> list[Chunk] | dict[str, Any]:
     """Вернуть не больше limit кусков. Имена ограничивают поиск уже выбранными файлами.
 
@@ -876,14 +946,16 @@ def search_chunks(
             if pos is None:
                 continue
             meta = index["metas"][pos]
-            out.append({
-                "id": key,
-                "text": index["texts"][pos],
-                "document_name": meta.get("document_name"),
-                "chunk_index": meta.get("chunk_index"),
-                "section": meta.get("section"),
-                "kind": meta.get("kind"),
-            })
+            out.append(
+                {
+                    "id": key,
+                    "text": index["texts"][pos],
+                    "document_name": meta.get("document_name"),
+                    "chunk_index": meta.get("chunk_index"),
+                    "section": meta.get("section"),
+                    "kind": meta.get("kind"),
+                }
+            )
         return out
 
     return {

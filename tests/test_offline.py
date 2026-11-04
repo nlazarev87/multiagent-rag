@@ -1,12 +1,14 @@
-import pytest
+import socket
 from pathlib import Path
 
-import socket
+import pytest
 
 from ingest import split_chunks
 
 pytestmark = pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 

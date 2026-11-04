@@ -2,6 +2,7 @@
 
 Без --user команда не работает. Пароль берётся из CLI_PASSWORD и никуда не печатается.
 """
+
 import os
 import sys
 import uuid
@@ -26,12 +27,15 @@ def _person(argv):
         print("Нужен --user", file=sys.stderr)
         return None, argv
     login = argv[index + 1]
-    rest = argv[:index] + argv[index + 2:]
+    rest = argv[:index] + argv[index + 2 :]
     password = os.environ.get("CLI_PASSWORD", "")
     user, error = auth.authenticate(login, password)
     if user is None or error:
         audit.write("login_fail", None if error != "blocked" else user, {"login": login}, ok=False)
-        print("Неверный логин или пароль" if error != "blocked" else "Учётная запись заблокирована", file=sys.stderr)
+        print(
+            "Неверный логин или пароль" if error != "blocked" else "Учётная запись заблокирована",
+            file=sys.stderr,
+        )
         return None, rest
     return user, rest
 
@@ -101,12 +105,17 @@ def main(argv=None):
                 upsert_chunks(chunks)
             else:
                 from store import upsert_at
+
                 upsert_at(row["chroma"], chunks)
         except Exception:
             audit.write("upload", user, {"kb_id": kb_id}, ok=False)
             print("Не удалось записать файл", file=sys.stderr)
             return None
-        audit.write("upload", user, {"kb_id": kb_id, "names": [item.get("document_name") for item in chunks]})
+        audit.write(
+            "upload",
+            user,
+            {"kb_id": kb_id, "names": [item.get("document_name") for item in chunks]},
+        )
         return None
     words = argv[1:] if argv[0] == "ask" else argv
     if not words:
@@ -123,30 +132,44 @@ def main(argv=None):
 
     try:
         if not scope.kbs:
-            result = {"answer": NO_ANSWER, "status": "нет ответа", "document_names": [], "sources": []}
+            result = {
+                "answer": NO_ANSWER,
+                "status": "нет ответа",
+                "document_names": [],
+                "sources": [],
+            }
         else:
             result = run(" ".join(words), "cli", scope)
     except Exception as exc:
-        audit.write("query", user, _record(
-            query=" ".join(words),
-            answer="",
-            status="нет",
-            dialog_id="cli",
-            sources=[],
-            attempts=getattr(scope, "attempts", 0) or 0,
-            error=type(exc).__name__,
-        ), ok=False)
+        audit.write(
+            "query",
+            user,
+            _record(
+                query=" ".join(words),
+                answer="",
+                status="нет",
+                dialog_id="cli",
+                sources=[],
+                attempts=getattr(scope, "attempts", 0) or 0,
+                error=type(exc).__name__,
+            ),
+            ok=False,
+        )
         print("Ошибка сервера", file=sys.stderr)
         return None
-    audit.write("query", user, _record(
-        query=" ".join(words),
-        answer=result.get("answer", ""),
-        status=result.get("status", ""),
-        dialog_id="cli",
-        sources=source_rows(result, getattr(scope, "found", None) or []),
-        attempts=getattr(scope, "attempts", 0) or 0,
-        feedback=getattr(scope, "feedback", "") or "",
-    ))
+    audit.write(
+        "query",
+        user,
+        _record(
+            query=" ".join(words),
+            answer=result.get("answer", ""),
+            status=result.get("status", ""),
+            dialog_id="cli",
+            sources=source_rows(result, getattr(scope, "found", None) or []),
+            attempts=getattr(scope, "attempts", 0) or 0,
+            feedback=getattr(scope, "feedback", "") or "",
+        ),
+    )
     print(result["answer"], result["status"], " ".join(result["document_names"]))
     return result
 

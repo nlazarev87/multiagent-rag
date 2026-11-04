@@ -3,20 +3,18 @@
 Фактов из загруженных документов здесь нет: пороги и словарь единиц читаются
 из config и prompts. Проверка не вызывает модель.
 """
+
 import contextvars
 import re
 from typing import Any
 
-from llm import complete, count_tokens
-from settings import NO_ANSWER, fewshot, lexicon, prompts, runtime
-from store import chunks_for_document, search_chunks
-from pipeline_types import CheckResult, Chunk, SelectResult, Turn
 import pipeline_utils
+from llm import complete, count_tokens
+from pipeline_types import CheckResult, Chunk, SelectResult, Turn
 from pipeline_utils import (
     _PRONOUNS,
     _TOKEN,
     _codes,
-    is_code,
     _count_ask,
     _dependent,
     _extra_rows,
@@ -25,7 +23,10 @@ from pipeline_utils import (
     _list_ask,
     _trace,
     _words,
+    is_code,
 )
+from settings import NO_ANSWER, fewshot, lexicon, prompts, runtime
+from store import chunks_for_document, search_chunks
 
 _latin_not_found_var = contextvars.ContextVar("latin_not_found", default=False)
 
@@ -171,7 +172,10 @@ def _with_cite(answer, chunks):
         return answer
     if re.search(r"\[\d+\]", answer):
         return answer
-    best = max(range(1, len(chunks) + 1), key=lambda number: _chunk_score(answer, chunks[number - 1].get("text", "")))
+    best = max(
+        range(1, len(chunks) + 1),
+        key=lambda number: _chunk_score(answer, chunks[number - 1].get("text", "")),
+    )
     return answer.rstrip() + f" [{best}]"
 
 
@@ -299,7 +303,11 @@ def _as_chunk(name, row):
 def _cover_latin(query, chunks):
     if not _latin_missing_from_chunks(query, chunks):
         return chunks
-    missing = [token for token in _latin_tokens(query) if token not in _flat(" ".join(chunk.get("text") or "" for chunk in chunks))]
+    missing = [
+        token
+        for token in _latin_tokens(query)
+        if token not in _flat(" ".join(chunk.get("text") or "" for chunk in chunks))
+    ]
     found = []
     for name in _document_names(chunks):
         for row in _rows(name, _kb_of(chunks, name)):
@@ -339,7 +347,9 @@ def _prefer_name(query, chunks):
 
 
 def _dangling_list(answer):
-    body = re.sub(r"\s*\[[\d\s,]+\]", "", answer or "").strip().rstrip(".").lower().replace("ё", "е")
+    body = (
+        re.sub(r"\s*\[[\d\s,]+\]", "", answer or "").strip().rstrip(".").lower().replace("ё", "е")
+    )
     return body.endswith(":") or body.endswith("следующие") or body.endswith("следующее")
 
 
@@ -359,11 +369,19 @@ def _drop_repeat_cite(answer):
     last = int(groups[-1].group(1))
     prior = {int(group.group(1)) for group in groups[:-1]}
     if last in prior:
-        return text[:groups[-1].start()].rstrip()
+        return text[: groups[-1].start()].rstrip()
     return text
 
 
-def answer_agent(query: str, clear_query: str, chunks: list[Chunk], work_turns: list[Turn], feedback: str | None = None, features: dict | None = None, usage_sink: dict | None = None) -> str:
+def answer_agent(
+    query: str,
+    clear_query: str,
+    chunks: list[Chunk],
+    work_turns: list[Turn],
+    feedback: str | None = None,
+    features: dict | None = None,
+    usage_sink: dict | None = None,
+) -> str:
     """Текст ответа. Пустые куски дают отказ, обзор таблицы может обойтись без модели."""
     if not chunks:
         _latin_not_found_var.set(False)
@@ -397,7 +415,11 @@ def answer_agent(query: str, clear_query: str, chunks: list[Chunk], work_turns: 
 
 
 def _pure_number(token):
-    return bool(token) and any(ch.isdigit() for ch in token) and all(ch.isdigit() or ch in " ,." for ch in token)
+    return (
+        bool(token)
+        and any(ch.isdigit() for ch in token)
+        and all(ch.isdigit() or ch in " ,." for ch in token)
+    )
 
 
 def _whole_number(text, start):
@@ -435,7 +457,9 @@ def _hits(text, token):
     raw = text or ""
     text = _signs(raw)
     token = _signs(token)
-    signed = token[1:].lstrip() if token.startswith("-") and _pure_number(token[1:].lstrip()) else ""
+    signed = (
+        token[1:].lstrip() if token.startswith("-") and _pure_number(token[1:].lstrip()) else ""
+    )
     if signed:
         # The magnitude alone is a different measurement. «минус 12» and «−12»
         # are the same value as «-12».
@@ -475,8 +499,8 @@ def _facts(answer):
             if match.start() < covered:
                 continue
             token = match.group(0)
-            before = sentence[:match.start()].rstrip()
-            start = not before or before[-1] in ".!?:\n«\"("
+            before = sentence[: match.start()].rstrip()
+            start = not before or before[-1] in '.!?:\n«"('
             if any(ch.isdigit() for ch in token):
                 origin = match.start()
                 finish = match.end()
@@ -504,7 +528,11 @@ def _facts(answer):
                 # «равно 50 ± 0,2» claims 50, and 0,2 only as its half-width.
                 # «равно 0,2» is a different claim: there the half-width is the value.
                 base = _number_before_tolerance(sentence, origin)
-                attached = bool(base) and previous >= len(base) and sentence[previous - len(base):previous] == base
+                attached = (
+                    bool(base)
+                    and previous >= len(base)
+                    and sentence[previous - len(base) : previous] == base
+                )
                 previous = finish
                 if attached:
                     parent = context
@@ -550,7 +578,7 @@ def _specific(query):
         token = match.group(0)
         latin = any("a" <= ch.lower() <= "z" for ch in token)
         upper = sum(ch.isupper() for ch in token) >= 2
-        before = (query or "")[:match.start()].rstrip()
+        before = (query or "")[: match.start()].rstrip()
         sentence_start = position == 0 or not before or before[-1] in ".?!…:"
         named = (not sentence_start) and token[:1].isupper()
         if latin or upper or named or any(ch.isdigit() for ch in token):
@@ -570,7 +598,12 @@ def _bounds(text, start):
         char = text[index]
         if char not in ".!?,;\n":
             return False
-        decimal = char in ",." and 0 < index < len(text) - 1 and text[index - 1].isdigit() and text[index + 1].isdigit()
+        decimal = (
+            char in ",."
+            and 0 < index < len(text) - 1
+            and text[index - 1].isdigit()
+            and text[index + 1].isdigit()
+        )
         if decimal:
             return False
         # «в 14 ч. 30 мин. составляет 6» is one clause. The dot is the
@@ -620,13 +653,37 @@ def _plain_number(text):
 
 # Verbs and adverbs that sit next to any measurement. They are not its name.
 _LINKS = {
-    "равно", "равна", "равен", "равны", "равняется",
-    "составляет", "составляют", "имеет", "имеют", "иметь", "имел", "имела", "имело", "имели",
-    "должен", "должна", "должно", "должны",
-    "около", "примерно", "порядка",
-    "достигает", "достигают", "превышает", "превышают",
-    "соответствует", "соответствуют",
-    "держится", "держатся", "находится", "находятся",
+    "равно",
+    "равна",
+    "равен",
+    "равны",
+    "равняется",
+    "составляет",
+    "составляют",
+    "имеет",
+    "имеют",
+    "иметь",
+    "имел",
+    "имела",
+    "имело",
+    "имели",
+    "должен",
+    "должна",
+    "должно",
+    "должны",
+    "около",
+    "примерно",
+    "порядка",
+    "достигает",
+    "достигают",
+    "превышает",
+    "превышают",
+    "соответствует",
+    "соответствуют",
+    "держится",
+    "держатся",
+    "находится",
+    "находятся",
 }
 
 
@@ -657,15 +714,75 @@ def _case_endings():
 _BRIDGES = ("уров", "значен", "показател", "величин")
 # Prepositions, conjunctions and units. They stand next to a number without naming it.
 _GLUE = {
-    "от", "до", "из", "за", "по", "на", "при", "для", "или", "над", "под", "без", "про",
-    "не", "ни", "но", "да", "же", "ко", "об", "со", "во", "то", "как", "это", "либо",
-    "между", "через", "после", "перед", "около", "свыше", "менее", "более",
-    "бар", "мпа", "кпа", "атм", "мм", "см", "дм", "кг", "гц", "квт", "мвт",
-    "мин", "сек", "час", "шт", "рад", "град", "мл", "вт", "па",
+    "от",
+    "до",
+    "из",
+    "за",
+    "по",
+    "на",
+    "при",
+    "для",
+    "или",
+    "над",
+    "под",
+    "без",
+    "про",
+    "не",
+    "ни",
+    "но",
+    "да",
+    "же",
+    "ко",
+    "об",
+    "со",
+    "во",
+    "то",
+    "как",
+    "это",
+    "либо",
+    "между",
+    "через",
+    "после",
+    "перед",
+    "около",
+    "свыше",
+    "менее",
+    "более",
+    "бар",
+    "мпа",
+    "кпа",
+    "атм",
+    "мм",
+    "см",
+    "дм",
+    "кг",
+    "гц",
+    "квт",
+    "мвт",
+    "мин",
+    "сек",
+    "час",
+    "шт",
+    "рад",
+    "град",
+    "мл",
+    "вт",
+    "па",
 }
 _ASKED = {
-    "какой", "какая", "какое", "какие", "какова", "каков", "каком", "сколько",
-    "такое", "такой", "такая", "такие", "этом",
+    "какой",
+    "какая",
+    "какое",
+    "какие",
+    "какова",
+    "каков",
+    "каком",
+    "сколько",
+    "такое",
+    "такой",
+    "такая",
+    "такие",
+    "этом",
 }
 # Endings of adjectives. «рабочее» and «полезного» do not name a measurement.
 # «давление» and «действие» do not end this way.
@@ -688,10 +805,13 @@ def _kind_noun(word):
     # «температура» names the value; «температурных» only modifies another noun.
     if not _kind_word(word):
         return False
-    return re.search(
-        r"н(?:ый|ий|ой|ая|ое|ее|ые|ого|его|ому|ему|ым|им|ом|ем|ую|юю|ых|их|ыми|ими)$",
-        word,
-    ) is None
+    return (
+        re.search(
+            r"н(?:ый|ий|ой|ая|ое|ее|ые|ого|его|ому|ему|ым|им|ом|ем|ую|юю|ых|их|ыми|ими)$",
+            word,
+        )
+        is None
+    )
 
 
 # A condition after «при» can name its number with a word outside the kind list.
@@ -717,7 +837,7 @@ def _delta_word(word):
     if not word:
         return False
     for stem in _deltas():
-        if word.startswith(stem) and word[len(stem):] in _delta_endings():
+        if word.startswith(stem) and word[len(stem) :] in _delta_endings():
             return True
     return False
 
@@ -726,7 +846,7 @@ def _size_word(word):
     if not word:
         return False
     for stem in _sizes():
-        if word.startswith(stem) and word[len(stem):] in _case_endings():
+        if word.startswith(stem) and word[len(stem) :] in _case_endings():
             return True
     return False
 
@@ -769,7 +889,7 @@ def _name_before(span, number_start):
     # Stop at another digit, so «от 6 до 10» does not walk back to давление.
     pos = number_start
     for _ in range(6):
-        prefix = span[:pos].rstrip(" \t:;—–-\u2212()«»\",")
+        prefix = span[:pos].rstrip(' \t:;—–-\u2212()«»",')
         found = re.search(r"([a-zа-яё]{2,})$", prefix)
         if not found:
             return ""
@@ -792,7 +912,7 @@ def _inflected(word, stem):
     longer, shorter = (word, stem) if len(word) >= len(stem) else (stem, word)
     if not longer.startswith(shorter):
         return False
-    extra = longer[len(shorter):]
+    extra = longer[len(shorter) :]
     return _brief(extra) and extra != ""
 
 
@@ -808,13 +928,21 @@ def _other_name(span, number_start, stem):
 
 def _split_gap(middle):
     # «давление и ток: 80» coordinates two names. «давление на выходе: 6» does not.
-    return re.search(r"(?<![0-9a-zа-яё])(?:или|либо|но|и|а)(?![0-9a-zа-яё])", middle or "") is not None
+    return (
+        re.search(r"(?<![0-9a-zа-яё])(?:или|либо|но|и|а)(?![0-9a-zа-яё])", middle or "") is not None
+    )
 
 
 def _stems_in(region):
     stems = []
     for word in re.findall(r"[a-zа-яё]{3,}", (region or "").lower().replace("ё", "е")):
-        if word in _GLUE or word in _LINKS or word in _PRONOUNS or word in _ASKED or _bridge_word(word):
+        if (
+            word in _GLUE
+            or word in _LINKS
+            or word in _PRONOUNS
+            or word in _ASKED
+            or _bridge_word(word)
+        ):
             continue
         stem = word[:5]
         if stem not in stems:
@@ -840,7 +968,7 @@ def _number_window(sentence, previous, start, finish):
         inherited = _tail_label(sentence[:previous])
         if _stems_in(inherited):
             return inherited
-    return sentence[finish:_next_number_at(sentence, finish)]
+    return sentence[finish : _next_number_at(sentence, finish)]
 
 
 def _trailing_name(sentence, finish):
@@ -858,7 +986,13 @@ def _names_measurement(region):
     # «давление», «ход», «радиус» and «перепад» name the number beside them.
     # «выпущен», «год» and «фонд» do not, so a bare year can still match exactly.
     for word in re.findall(r"[a-zа-яё]{2,}", _case(region)):
-        if word in _GLUE or word in _LINKS or word in _PRONOUNS or word in _ASKED or _bridge_word(word):
+        if (
+            word in _GLUE
+            or word in _LINKS
+            or word in _PRONOUNS
+            or word in _ASKED
+            or _bridge_word(word)
+        ):
             continue
         if _kind_noun(word) or _measure_noun(word) or _size_word(word) or _delta_word(word):
             return True
@@ -875,7 +1009,7 @@ def _restates_earlier_kind(span, start, stem):
             continue
         if not _kind_word(word):
             return False
-        return _plain_number(span[found.end():start]) is None
+        return _plain_number(span[found.end() : start]) is None
     return False
 
 
@@ -929,11 +1063,15 @@ def _numeric_date(text, start, end):
     after = text[end:]
     if re.fullmatch(r"(?:19|20)\d{2}", token) and re.search(r"(?<!\d)\d{1,2}\.\d{1,2}\.$", before):
         return True
-    if re.fullmatch(r"\d{1,2}", token) and re.search(r"(?<!\d)\d{1,2}\.$", before) and re.match(
-        r"\.(?:19|20)\d{2}(?!\d)", after
+    if (
+        re.fullmatch(r"\d{1,2}", token)
+        and re.search(r"(?<!\d)\d{1,2}\.$", before)
+        and re.match(r"\.(?:19|20)\d{2}(?!\d)", after)
     ):
         return True
-    return bool(re.fullmatch(r"\d{1,2}", token) and re.match(r"\.\d{1,2}\.(?:19|20)\d{2}(?!\d)", after))
+    return bool(
+        re.fullmatch(r"\d{1,2}", token) and re.match(r"\.\d{1,2}\.(?:19|20)\d{2}(?!\d)", after)
+    )
 
 
 def _date_number(text, start, end):
@@ -975,7 +1113,10 @@ def _date_number(text, start, end):
         return False
     if _month_word(_word_before(before)):
         return True
-    return re.search(r"(?<![0-9a-zа-яё])(?:в|во|с|со|до|от|к|ко|по)\s*$", before, re.IGNORECASE) is not None
+    return (
+        re.search(r"(?<![0-9a-zа-яё])(?:в|во|с|со|до|от|к|ко|по)\s*$", before, re.IGNORECASE)
+        is not None
+    )
 
 
 # «в 6 часов», «в 14 ч», «в 14 ч.», «к 8 часам», «по 18 часов».
@@ -1006,10 +1147,13 @@ def _hour_range_after(after):
 def _hour_range_before(before):
     # «с 8 часов до», «от 6 ч по», «с 8 ч. до»: the unit sits on the start,
     # so the end number has no hour word after it.
-    return re.search(
-        rf"(?<![0-9a-zа-яё])(?:от|с|со)\s+\d{{1,2}}\s+{_HOUR_WORD.pattern}\s+(?:до|по)\s*$",
-        _case(before),
-    ) is not None
+    return (
+        re.search(
+            rf"(?<![0-9a-zа-яё])(?:от|с|со)\s+\d{{1,2}}\s+{_HOUR_WORD.pattern}\s+(?:до|по)\s*$",
+            _case(before),
+        )
+        is not None
+    )
 
 
 def _hour_range_end_unit(after):
@@ -1059,7 +1203,7 @@ def _clock_number(text, start, end):
     if not re.fullmatch(r"\d{1,2}", token) or int(token) > 24:
         return False
     if _hour_range_after(after) and re.search(
-        rf"(?<![0-9a-zа-яё])(?:от|с|со)\s*$", before, re.IGNORECASE
+        r"(?<![0-9a-zа-яё])(?:от|с|со)\s*$", before, re.IGNORECASE
     ):
         return True
     if _hour_range_before(before) and not _hour_range_end_unit(after):
@@ -1076,7 +1220,7 @@ def _clock_dot(text, index):
     # «ч. 12 насосов» and «мин. давление» stay separate facts.
     if re.search(r"(?<![0-9a-zа-яё])(?:час|мин|сек|ч)$", _case(text[:index])) is None:
         return False
-    rest = _case(text[index + 1:])
+    rest = _case(text[index + 1 :])
     links = "|".join(re.escape(word) for word in sorted(_LINKS, key=len, reverse=True))
     if re.match(rf"\s*(?:{links})(?![0-9a-zа-яё])", rest):
         return True
@@ -1112,7 +1256,9 @@ def _clock_unit(word):
     # «часов» and «минут» sit inside «с 8 часов до 18» and «с 8 ч 30 мин до 18».
     # They are the unit, not the noun that owns the duration. «часового» is not.
     folded = _case(word)
-    return _HOUR_WORD.fullmatch(folded) is not None or _CLOCK_PART_WORD.fullmatch(folded) is not None
+    return (
+        _HOUR_WORD.fullmatch(folded) is not None or _CLOCK_PART_WORD.fullmatch(folded) is not None
+    )
 
 
 def _hour_owner(span, start):
@@ -1122,7 +1268,7 @@ def _hour_owner(span, start):
     # «наработка с 8 часов до 18» also walks past the hour unit.
     pos = start
     for _ in range(8):
-        prefix = span[:pos].rstrip(" \t:;—–-\u2212()«»\",")
+        prefix = span[:pos].rstrip(' \t:;—–-\u2212()«»",')
         number = re.search(r"\d+(?:[,.]\d+)?$", prefix)
         if number:
             pos = number.start()
@@ -1176,7 +1322,9 @@ def _reading(text, follow=""):
         return None
     whole = text + (follow or "")
     for match in re.finditer(r"(?<![0-9a-zа-я_\-])\d+(?![0-9a-zа-я_\-])", text):
-        if _date_number(whole, match.start(), match.end()) or _clock_number(whole, match.start(), match.end()):
+        if _date_number(whole, match.start(), match.end()) or _clock_number(
+            whole, match.start(), match.end()
+        ):
             continue
         return match
     return None
@@ -1191,7 +1339,7 @@ def _other_label(span, number_start, stem_at):
     # both numbers follow the attribute. «1600 — давление с 2019 года» keeps
     # 1600: the year is not a second reading of давление.
     # These sit between a name and its number. They are not another measurement.
-    tail = span[stem_at.end():]
+    tail = span[stem_at.end() :]
     if _reading(tail) is None:
         return False
     stem = stem_at.group(0)
@@ -1202,7 +1350,7 @@ def _other_label(span, number_start, stem_at):
         labels.pop()
     if labels and not labels[-1].startswith(stem):
         return True
-    middle = re.sub(r"[a-zа-яё]+\s*$", "", span[number_start:stem_at.start()])
+    middle = re.sub(r"[a-zа-яё]+\s*$", "", span[number_start : stem_at.start()])
     return any(word not in _LINKS for word in re.findall(r"[a-zа-яё]{5,}", middle))
 
 
@@ -1228,11 +1376,11 @@ def _naming_nouns(span, number_start):
     dropped = []
     saw_verb = False
     for _ in range(8):
-        prefix = span[:pos].rstrip(" \t:;—–-\u2212()«»\",")
+        prefix = span[:pos].rstrip(' \t:;—–-\u2212()«»",')
         found = re.search(r"([a-zа-яё]{2,})$", prefix)
         if not found:
             break
-        between = prefix[found.end():]
+        between = prefix[found.end() :]
         if nouns and re.search(r"(?<![a-zа-яё])(?:и|а)(?![a-zа-яё])", between):
             break
         word = found.group(1)
@@ -1332,7 +1480,9 @@ def _stated_condition(middle):
     number = r"\d{1,3}(?: \d{3})+(?:[,.]\d+)?|\d+(?:[,.]\d+)?"
     links = "|".join(re.escape(word) for word in sorted(_LINKS, key=len, reverse=True))
     unit = r"(?:\s+[^\s]*[a-zа-яё°%][^\s]*){0,2}"
-    pattern = rf"\s*при(?:\s+[a-zа-яё]{{3,}}){{1,3}}\s+(?:{number}){unit}\s+(?:{links})\s*[:;—–\-]*\s*"
+    pattern = (
+        rf"\s*при(?:\s+[a-zа-яё]{{3,}}){{1,3}}\s+(?:{number}){unit}\s+(?:{links})\s*[:;—–\-]*\s*"
+    )
     return re.fullmatch(pattern, middle or "") is not None
 
 
@@ -1352,10 +1502,14 @@ def _number_before_tolerance(span, number_start):
         found = match
     if not found:
         return ""
-    tail = body[found.end():].strip()
+    tail = body[found.end() :].strip()
     if tail:
         words = re.findall(r"[0-9a-zа-яё°%./]+", tail.lower().replace("ё", "е"))
-        if not words or len(words) > 3 or any(_kind_word(word) or _measure_word(word) for word in words):
+        if (
+            not words
+            or len(words) > 3
+            or any(_kind_word(word) or _measure_word(word) for word in words)
+        ):
             return ""
     return found.group(0)
 
@@ -1421,8 +1575,8 @@ def _keeps(span, stem, token):
                 if 0 < left < number.start() and span[left - 1].isalpha() and span[left].isalpha():
                     while left < number.start() and span[left].isalpha():
                         left += 1
-                middle = span[left:number.start()]
-                follow = span[number.start():]
+                middle = span[left : number.start()]
+                follow = span[number.start() :]
                 # «на входе и 6»: the qualifier before «и» names the earlier
                 # value, so it must not confirm the later one. «давление 16 бар
                 # и 6» still keeps давление, because another number sits in the gap.
@@ -1441,12 +1595,14 @@ def _keeps(span, stem, token):
                         and not _delta_word(word)
                         and (
                             not _kind_stem(stem)
-                            or _plain_number(span[number.end():])
-                            or _plain_number(span[:found.start()])
+                            or _plain_number(span[number.end() :])
+                            or _plain_number(span[: found.start()])
                         )
                     ):
                         continue
-                    if _other_name(span, number.start(), stem) and (_reading(middle, follow) or _split_gap(middle)):
+                    if _other_name(span, number.start(), stem) and (
+                        _reading(middle, follow) or _split_gap(middle)
+                    ):
                         continue
             elif number.end() <= found.start():
                 if _other_label(span, number.start(), found):
@@ -1455,13 +1611,17 @@ def _keeps(span, stem, token):
                 # belongs to перепад, so the later давление does not take it.
                 if _foreign_phrase(span, number.start(), stem):
                     continue
-                middle = span[number.end():found.start()]
-                follow = span[found.start():]
+                middle = span[number.end() : found.start()]
+                follow = span[found.start() :]
             else:
                 continue
             other = _reading(middle, follow)
             label = re.search(r"[a-zа-яё]{5,}", middle)
-            if other and label and not (found.end() <= number.start() and _stated_condition(middle)):
+            if (
+                other
+                and label
+                and not (found.end() <= number.start() and _stated_condition(middle))
+            ):
                 continue
             # The stem has to be the noun that owns the number. A shared object
             # («масла», «насоса», «поршня»), a generic head («класс», «степень»,
@@ -1483,14 +1643,25 @@ def _from_question(fact, asked):
 # Declined units. «градусов» does not pick one pressure out of two; «бар» is
 # already glue, but the full word is not. «части» is not «час».
 _UNITS = (
-    "градус", "процент", "метр", "литр", "секунд", "минут", "час",
-    "килограмм", "ампер", "вольт", "ватт", "паскал", "герц",
+    "градус",
+    "процент",
+    "метр",
+    "литр",
+    "секунд",
+    "минут",
+    "час",
+    "килограмм",
+    "ампер",
+    "вольт",
+    "ватт",
+    "паскал",
+    "герц",
 )
 
 
 def _unit_word(word):
     for stem in _UNITS:
-        if word.startswith(stem) and word[len(stem):] in _case_endings():
+        if word.startswith(stem) and word[len(stem) :] in _case_endings():
             return True
     return False
 
@@ -1501,7 +1672,14 @@ def _content_words(region):
     # A unit, a preposition or a linking verb does not.
     words = []
     for word in re.findall(r"[a-zа-яё]{3,}", (region or "").lower().replace("ё", "е")):
-        if word in _GLUE or word in _LINKS or word in _PRONOUNS or word in _ASKED or _bridge_word(word) or _unit_word(word):
+        if (
+            word in _GLUE
+            or word in _LINKS
+            or word in _PRONOUNS
+            or word in _ASKED
+            or _bridge_word(word)
+            or _unit_word(word)
+        ):
             continue
         words.append(word)
     return words
@@ -1512,13 +1690,15 @@ def _gap_parts(region):
     # «2 бар и на выходе 6» — «на выходе» names 6. A comma does the same:
     # «2 бар, давление на выходе 6».
     found = re.search(
-        r"(?<![0-9a-zа-яё])(?:,|" + "|".join(sorted(_CONJUNCTIONS, key=len, reverse=True)) + r")(?![0-9a-zа-яё])",
+        r"(?<![0-9a-zа-яё])(?:,|"
+        + "|".join(sorted(_CONJUNCTIONS, key=len, reverse=True))
+        + r")(?![0-9a-zа-яё])",
         region or "",
         re.IGNORECASE,
     )
     if not found:
         return None
-    return region[:found.start()], region[found.end():]
+    return region[: found.start()], region[found.end() :]
 
 
 def _label_words(span, start, end):
@@ -1592,7 +1772,10 @@ def _answers_head(stem, heads):
 def _genitive_shape(word):
     # «масла» and «воды» are the object of a measurement whose name was left
     # out. «насос» and «выход» end on a consonant and name the number itself.
-    return any(word.endswith(ending) and len(word) > len(ending) + 2 for ending in ("а", "я", "ы", "и", "ов", "ев", "ей"))
+    return any(
+        word.endswith(ending) and len(word) > len(ending) + 2
+        for ending in ("а", "я", "ы", "и", "ов", "ев", "ей")
+    )
 
 
 def _qualifier_only(text, number_start):
@@ -1605,17 +1788,28 @@ def _qualifier_only(text, number_start):
     local = number_start - left
     for match in re.finditer(r"[a-zа-яё]{3,}", span):
         word = match.group(0)
-        if word in _GLUE or word in _LINKS or word in _PRONOUNS or word in _ASKED or _bridge_word(word) or _unit_word(word):
+        if (
+            word in _GLUE
+            or word in _LINKS
+            or word in _PRONOUNS
+            or word in _ASKED
+            or _bridge_word(word)
+            or _unit_word(word)
+        ):
             continue
         if _head_key(word):
             return False
         if _ADJECTIVE.search(word) and not _kind_noun(word):
             continue
-        preceded = span[:match.start()].rstrip(" \t:;—–-\u2212()«»\",")
+        preceded = span[: match.start()].rstrip(' \t:;—–-\u2212()«»",')
         prev = re.search(r"([a-zа-яё]+)$", preceded)
         if prev and prev.group(1) in _PREPOSITIONS:
             continue
-        if match.end() <= local and _genitive_shape(word) and not re.search(r"[a-zа-яё]", span[match.end():local]):
+        if (
+            match.end() <= local
+            and _genitive_shape(word)
+            and not re.search(r"[a-zа-яё]", span[match.end() : local])
+        ):
             continue
         return False
     return True
@@ -1681,13 +1875,16 @@ def _qualifier_conflict(text, start, answer_stems, end=None):
             continue
         other_heads = {key for word in other_words if (key := _head_key(word))}
         shared = {
-            head for head in here_heads | other_heads
+            head
+            for head in here_heads | other_heads
             if _keeps(span, head, token) and _keeps(other_span, head, other_token)
         }
         # «давление: 2 бар; на выходе: 6». The break drops the repeated name,
         # so the outlet is invisible unless the first head is carried over.
         if not shared and span != other_span:
-            first, second = (current, other_item) if current_at < other_start else (other_item, current)
+            first, second = (
+                (current, other_item) if current_at < other_start else (other_item, current)
+            )
             shared = _carried_heads(signed, first, second)
         # «давление на входе 2 бар и на выходе 6» leaves the second value
         # without its own head. Those words still belong to the same measurement.
@@ -1722,7 +1919,9 @@ def _borrowed(text, start, end, stems):
         span = signed[left:right]
         words = _label_words(span, match.start() - left, match.end() - left)
         labels.append((match.start(), match.end(), {word[:5] for word in words}))
-    current = next((keys for pos, stop, keys in labels if pos <= start < stop or start <= pos < end), None)
+    current = next(
+        (keys for pos, stop, keys in labels if pos <= start < stop or start <= pos < end), None
+    )
     if current is None:
         return False
     wanted = {stem[:5] for stem in stems if len(stem) >= 3}
@@ -1787,14 +1986,23 @@ def _source(number, chunk):
 def _copied(text, flats):
     words = _flat(re.sub(r"\[[\d,\s]+\]", " ", text)).split()
     span = pipeline_utils.SPAN
-    spans = {" ".join(words[start:start + span]) for start in range(len(words) - span + 1)}
-    grams = [" ".join(words[start:start + 4]) for start in range(len(words) - 3)]
+    spans = {" ".join(words[start : start + span]) for start in range(len(words) - span + 1)}
+    grams = [" ".join(words[start : start + 4]) for start in range(len(words) - 3)]
     repeated = any(grams.count(gram) >= 3 for gram in set(grams))
-    return text.strip().count("\n") >= 2 or repeated or any(span in flat for span in spans for flat in flats)
+    return (
+        text.strip().count("\n") >= 2
+        or repeated
+        or any(span in flat for span in spans for flat in flats)
+    )
 
 
 def _verdict(status, missing=(), feedback="", sources=()):
-    return {"status": status, "missing": list(missing), "feedback": feedback, "sources": list(sources)}
+    return {
+        "status": status,
+        "missing": list(missing),
+        "feedback": feedback,
+        "sources": list(sources),
+    }
 
 
 def _predicate(query):
@@ -1813,12 +2021,54 @@ def _clause(text, start):
         pos = text.find(mark, start)
         if pos != -1:
             right = min(right, pos)
-    return text[left + 1:right]
+    return text[left + 1 : right]
 
 
-_PREPOSITIONS = {"у", "в", "во", "на", "для", "от", "из", "с", "со", "к", "ко", "по", "о", "об", "при", "за", "до", "без", "под", "над", "про", "через"}
+_PREPOSITIONS = {
+    "у",
+    "в",
+    "во",
+    "на",
+    "для",
+    "от",
+    "из",
+    "с",
+    "со",
+    "к",
+    "ко",
+    "по",
+    "о",
+    "об",
+    "при",
+    "за",
+    "до",
+    "без",
+    "под",
+    "над",
+    "про",
+    "через",
+}
 _INFLECTION = {"ен", "на", "но", "ны", "ая", "ое", "ые", "ий", "ый", "ой", "яя", "ее"}
-_PREDICATE_ENDINGS = ("", "а", "о", "е", "ы", "и", "у", "я", "й", "н", "ен", "на", "но", "ны", "ный", "ная", "ное", "ные")
+_PREDICATE_ENDINGS = (
+    "",
+    "а",
+    "о",
+    "е",
+    "ы",
+    "и",
+    "у",
+    "я",
+    "й",
+    "н",
+    "ен",
+    "на",
+    "но",
+    "ны",
+    "ный",
+    "ная",
+    "ное",
+    "ные",
+)
 
 
 def _forms(word):
@@ -1846,7 +2096,7 @@ def _focus_stem(query):
     tokens = re.findall(r"[а-яёa-z]+", _flat(query))
     if "ли" not in tokens:
         return ""
-    for token in tokens[tokens.index("ли") + 1:]:
+    for token in tokens[tokens.index("ли") + 1 :]:
         if token in _PREPOSITIONS or len(token) <= 2:
             continue
         return token[:5]
@@ -1921,7 +2171,11 @@ def _list_gap(query, answer, flats, cited=None):
         if not listed and not numbered:
             continue
         saw = True
-        items = [part.strip(" .;") for part in re.split(r",| и ", listed.group(1)) if part.strip(" .;")] if listed else []
+        items = (
+            [part.strip(" .;") for part in re.split(r",| и ", listed.group(1)) if part.strip(" .;")]
+            if listed
+            else []
+        )
         count = numbered.group(1) if numbered else None
         items_hit = bool(items and all(_flat(item) in body for item in items))
         count_hit = bool(count and re.search(rf"(?<!\d){re.escape(count)}(?!\d)", body))
@@ -1984,7 +2238,11 @@ def _keep_cited(used, scores, facts, bodies, chunks=None):
             break
         weak = best and scores[number - 1] * 2 < best
         other = _other_file(chunks, number, kept)
-        grounds = any(_grounded(fact, bodies[number - 1]) for fact in facts) if facts else bool(scores[number - 1])
+        grounds = (
+            any(_grounded(fact, bodies[number - 1]) for fact in facts)
+            if facts
+            else bool(scores[number - 1])
+        )
         if weak and not (other and grounds):
             continue
         owned = []
@@ -2033,14 +2291,18 @@ def _query_in_found(query, chunks, skip_latin=False):
         marks = [mark for mark in marks if mark not in latin]
     if not marks:
         return True
-    blob = _case(" ".join(
-        " ".join([
-            chunk.get("text") or "",
-            chunk.get("document_name") or "",
-            (chunk.get("document_name") or "").rsplit(".", 1)[0],
-        ])
-        for chunk in chunks or []
-    ))
+    blob = _case(
+        " ".join(
+            " ".join(
+                [
+                    chunk.get("text") or "",
+                    chunk.get("document_name") or "",
+                    (chunk.get("document_name") or "").rsplit(".", 1)[0],
+                ]
+            )
+            for chunk in chunks or []
+        )
+    )
     parts = re.findall(r"[0-9a-zа-яё]{3,}", blob)
     return any(_mark_in(blob, parts, mark) for mark in marks)
 
@@ -2066,7 +2328,9 @@ def check_agent(answer: str, chunks: list[Chunk], query: str = "", known=None) -
         return _verdict(UNCONFIRMED, feedback="contradiction_detected: true")
     flats = [_flat(chunk["text"]) for chunk in chunks]
     bodies = [_case(chunk["text"]) for chunk in chunks]
-    asked = " ".join(word for word in _flat(query).replace("?", " ").split() if known(word.strip(".,:;«»()")))
+    asked = " ".join(
+        word for word in _flat(query).replace("?", " ").split() if known(word.strip(".,:;«»()"))
+    )
     if _copied(text, flats):
         return _verdict(UNCONFIRMED, feedback=COPIED)
     if _inverted(query, text, flats):
@@ -2076,7 +2340,10 @@ def check_agent(answer: str, chunks: list[Chunk], query: str = "", known=None) -
         for number in re.findall(r"\d+", group):
             number = int(number)
             if not 1 <= number <= len(chunks):
-                return _verdict(UNCONFIRMED, feedback=f"Ссылайся только на номера фрагментов от 1 до {len(chunks)}.")
+                return _verdict(
+                    UNCONFIRMED,
+                    feedback=f"Ссылайся только на номера фрагментов от 1 до {len(chunks)}.",
+                )
             if number not in cited:
                 cited.append(number)
     if _list_gap(query, text, flats, cited):
@@ -2089,30 +2356,40 @@ def check_agent(answer: str, chunks: list[Chunk], query: str = "", known=None) -
     missing = []
     facts = _facts(text)
     for fact in facts:
-        if _from_question(fact, asked) or any(_grounded(fact, bodies[number - 1]) for number in used):
+        if _from_question(fact, asked) or any(
+            _grounded(fact, bodies[number - 1]) for number in used
+        ):
             continue
-        holders = [number for number in range(1, len(chunks) + 1) if _grounded(fact, bodies[number - 1])]
+        holders = [
+            number for number in range(1, len(chunks) + 1) if _grounded(fact, bodies[number - 1])
+        ]
         if holders:
             used.append(holders[0])
         elif fact[1] not in missing:
             missing.append(fact[1])
     if missing:
-        feedback = "В прошлом ответе были данные, которых нет во фрагментах: " + ", ".join(missing) + ". Ответь заново только по фрагментам."
+        feedback = (
+            "В прошлом ответе были данные, которых нет во фрагментах: "
+            + ", ".join(missing)
+            + ". Ответь заново только по фрагментам."
+        )
         return _verdict(UNCONFIRMED, missing, feedback)
-    words = [("stem", word) for word in _words(re.sub(r"\[[\d,\s]+\]", " ", text)) if len(word) >= 5]
+    words = [
+        ("stem", word) for word in _words(re.sub(r"\[[\d,\s]+\]", " ", text)) if len(word) >= 5
+    ]
     asked_stems = {word[:5] for word in _words(asked) if len(word) >= 5}
     asked_stems.update(word[:5] for word in _words(query) if len(word) >= 5)
     extra = [word for word in words if word[1][:5] not in asked_stems]
     example_stems = {
-        word[:5]
-        for item in fewshot()
-        for word in _words(item.get("reply", ""))
-        if len(word) >= 5
+        word[:5] for item in fewshot() for word in _words(item.get("reply", "")) if len(word) >= 5
     }
     # Слово из примера короче 8 букв ответ не бракует. Иначе отказ ловит обычные слова вроде «равно».
     borrowed = [
-        word for word in extra
-        if len(word[1]) >= 8 and word[1][:5] in example_stems and not any(_grounded(word, body) for body in bodies)
+        word
+        for word in extra
+        if len(word[1]) >= 8
+        and word[1][:5] in example_stems
+        and not any(_grounded(word, body) for body in bodies)
     ]
     if borrowed:
         return _verdict(UNCONFIRMED, feedback=RETRY)
@@ -2126,13 +2403,19 @@ def check_agent(answer: str, chunks: list[Chunk], query: str = "", known=None) -
     scores = [sum(_grounded(word, body) for word in scored) for body in bodies]
     if not any(scores):
         return _verdict(UNCONFIRMED, feedback=RETRY)
-    used = [number for number in used if scores[number - 1] or any(_grounded(fact, bodies[number - 1]) for fact in facts)]
+    used = [
+        number
+        for number in used
+        if scores[number - 1] or any(_grounded(fact, bodies[number - 1]) for fact in facts)
+    ]
     if not used:
         best = max(scores)
         used = [number for number, score in enumerate(scores, 1) if score == best][:2]
     wanted = set(_codes(re.sub(r"\[[\d,\s]+\]", " ", text)))
     if wanted:
-        coded = [number for number in used if not _section_code_conflict(chunks[number - 1], wanted)]
+        coded = [
+            number for number in used if not _section_code_conflict(chunks[number - 1], wanted)
+        ]
         if coded:
             used = coded
     used_files = {_file_key(chunks[number - 1]) for number in used} if used else set()

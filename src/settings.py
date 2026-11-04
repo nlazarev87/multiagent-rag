@@ -2,6 +2,7 @@
 
 Факты из загруженных документов живут в этих JSON, не в src. reload() заставляет прочитать файлы заново.
 """
+
 import json
 import os
 from pathlib import Path

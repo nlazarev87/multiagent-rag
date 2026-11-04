@@ -1,4 +1,5 @@
 """Журнал только дописывается. Цепочка хешей пишется под одним замком."""
+
 import hashlib
 import json
 import sqlite3
@@ -73,7 +74,9 @@ def _archive_rank(name):
 
 
 def _archives():
-    return sorted(path().parent.glob("log-*.sqlite"), key=lambda item: _archive_rank(item.name), reverse=True)
+    return sorted(
+        path().parent.glob("log-*.sqlite"), key=lambda item: _archive_rank(item.name), reverse=True
+    )
 
 
 def _files():
@@ -92,6 +95,7 @@ def _named(file):
 
 def _threshold_bytes():
     from settings import runtime
+
     raw = runtime().get("audit", {}).get("rotation_threshold_mb", 100)
     return int(float(raw) * 1024 * 1024)
 
@@ -185,7 +189,9 @@ def verify(file=None):
             return False
     conn = _connect(target)
     try:
-        rows = conn.execute("SELECT id, prev_hash, row_hash, body FROM events ORDER BY id").fetchall()
+        rows = conn.execute(
+            "SELECT id, prev_hash, row_hash, body FROM events ORDER BY id"
+        ).fetchall()
     finally:
         conn.close()
     prev = "0" * 64
@@ -207,7 +213,18 @@ def _load(row):
     return body
 
 
-def list_events(*, file=None, user_id="", role_id="", group_id="", kind="", after="", before="", before_id=0, limit=50):
+def list_events(
+    *,
+    file=None,
+    user_id="",
+    role_id="",
+    group_id="",
+    kind="",
+    after="",
+    before="",
+    before_id=0,
+    limit=50,
+):
     if file is None:
         ensure()
         target = path()
@@ -217,7 +234,9 @@ def list_events(*, file=None, user_id="", role_id="", group_id="", kind="", afte
             return []
     conn = _connect(target)
     try:
-        rows = conn.execute("SELECT id, prev_hash, row_hash, body FROM events ORDER BY id DESC").fetchall()
+        rows = conn.execute(
+            "SELECT id, prev_hash, row_hash, body FROM events ORDER BY id DESC"
+        ).fetchall()
     finally:
         conn.close()
     try:

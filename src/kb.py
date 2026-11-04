@@ -1,4 +1,5 @@
 """Реестр баз. «Документы» смотрит на текущие папку и индекс процесса, не на снимок при создании."""
+
 from pathlib import Path
 
 import auth
@@ -9,11 +10,13 @@ LEGACY_NAME = "Документы"
 
 def _inbox_default():
     import api
+
     return Path(api.INBOX)
 
 
 def _chroma_default():
     import store
+
     return Path(store.CHROMA)
 
 
@@ -71,6 +74,7 @@ def create(name):
     if not cleaned or "/" in cleaned or "\\" in cleaned:
         raise ValueError("name")
     import uuid
+
     kb_id = str(uuid.uuid4())
     root = auth.app_root() / "data" / "kbs" / kb_id
     inbox = root / "inbox"
@@ -94,6 +98,7 @@ def create(name):
 
 def is_uuid(value):
     import uuid
+
     try:
         uuid.UUID(str(value))
         return True

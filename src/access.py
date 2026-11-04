@@ -1,4 +1,5 @@
 """Открытие базы и действия. Закрытие человека, его роли или его группы перекрывает открытие."""
+
 from typing import Any
 
 import auth
@@ -6,7 +7,6 @@ import kb
 from permit import Permit, sign
 
 CONTENT = auth.CONTENT_ACTIONS
-
 
 
 def _subjects(user):
@@ -21,15 +21,23 @@ def opened(user, kb_id):
         return False
     rows = auth.acl_rows(kb_id)
     subjects = set(_subjects(user))
-    if any((row["subject_type"], row["subject_id"]) in subjects and row["effect"] == "deny" for row in rows):
+    if any(
+        (row["subject_type"], row["subject_id"]) in subjects and row["effect"] == "deny"
+        for row in rows
+    ):
         return False
-    return any((row["subject_type"], row["subject_id"]) in subjects and row["effect"] == "allow" for row in rows)
+    return any(
+        (row["subject_type"], row["subject_id"]) in subjects and row["effect"] == "allow"
+        for row in rows
+    )
 
 
 def actions_for(user, kb_id):
     if user is None:
         return set()
-    return set(auth.role_content(user["role_id"], kb_id)) | set(auth.user_content(user["id"], kb_id))
+    return set(auth.role_content(user["role_id"], kb_id)) | set(
+        auth.user_content(user["id"], kb_id)
+    )
 
 
 def can(user, kb_id, action):
@@ -82,6 +90,7 @@ def issue(user, kb_id, action):
 
 def Path_same(left, right):
     from pathlib import Path
+
     return Path(left).resolve() == Path(right).resolve()
 
 
@@ -91,6 +100,7 @@ def ask_kbs(user):
 
 def visible_documents(user):
     import store
+
     rows = []
     for item in kb.list_kbs():
         if not can_see(user, item["id"]):
@@ -124,7 +134,10 @@ def denied_by_role_or_group(user, kb_id):
     rows = auth.acl_rows(kb_id)
     subjects = set(_subjects(user))
     subjects.discard(("user", user["id"]))
-    return any((row["subject_type"], row["subject_id"]) in subjects and row["effect"] == "deny" for row in rows)
+    return any(
+        (row["subject_type"], row["subject_id"]) in subjects and row["effect"] == "deny"
+        for row in rows
+    )
 
 
 def _file_key(chunk):
@@ -132,22 +145,40 @@ def _file_key(chunk):
 
 
 def _content_blob(chunk):
-    return " ".join([
-        chunk.get("text") or "",
-        chunk.get("document_name") or "",
-    ]).lower().replace("ё", "е")
+    return (
+        " ".join(
+            [
+                chunk.get("text") or "",
+                chunk.get("document_name") or "",
+            ]
+        )
+        .lower()
+        .replace("ё", "е")
+    )
 
 
 def _query_marks(query):
     import re
+
     return re.findall(r"[0-9a-zа-яё]{5,}", (query or "").lower().replace("ё", "е"))
 
 
 def _binding_marks(query):
     import store
+
     skip = store._STOP | {
-        "является", "являться", "являясь", "являются", "являлся", "являлась",
-        "зачем", "почему", "отчего", "поэтому", "затем", "значит",
+        "является",
+        "являться",
+        "являясь",
+        "являются",
+        "являлся",
+        "являлась",
+        "зачем",
+        "почему",
+        "отчего",
+        "поэтому",
+        "затем",
+        "значит",
     }
     return [mark for mark in _query_marks(query) if mark not in skip]
 
@@ -236,10 +267,12 @@ def _spread_hits(chunks, limit, kbs=None, bound=None, rankings=None, marks=None)
     for seed in bound or []:
         key = _file_key(seed)
         pool = _file_chunks(rankings, key) or [seed]
-        pool.sort(key=lambda chunk: (
-            -_mark_weight(chunk, marks),
-            place.get((*_file_key(chunk), chunk.get("chunk_index") or 0), 10 ** 9),
-        ))
+        pool.sort(
+            key=lambda chunk: (
+                -_mark_weight(chunk, marks),
+                place.get((*_file_key(chunk), chunk.get("chunk_index") or 0), 10**9),
+            )
+        )
         for chunk in pool:
             if per_file.get(key, 0) >= 2:
                 break
@@ -285,6 +318,7 @@ def _spread_hits(chunks, limit, kbs=None, bound=None, rankings=None, marks=None)
 def _rrf_merge(rankings, limit, query=""):
     import store
     from settings import runtime
+
     width = runtime().get("rrf", store._rrf())
     score: dict[tuple[Any, ...], float] = {}
     meta = {}
@@ -298,7 +332,9 @@ def _rrf_merge(rankings, limit, query=""):
             )
             score[key] = score.get(key, 0) + 1 / (width + place)
             meta[key] = chunk
-    ordered = [meta[key] for key in sorted(score, key=lambda key: (-score[key], key[0], key[1], key[2]))]
+    ordered = [
+        meta[key] for key in sorted(score, key=lambda key: (-score[key], key[0], key[1], key[2]))
+    ]
     kbs = []
     for ranking in rankings:
         for chunk in ranking:
@@ -476,7 +512,11 @@ def source_rows(result, found):
             for chunk in found or []:
                 same_name = chunk.get("document_name") == item.get("document_name")
                 same_index = chunk.get("chunk_index") == item.get("chunk_index")
-                same_base = not item.get("kb_id") or not chunk.get("kb_id") or chunk.get("kb_id") == item.get("kb_id")
+                same_base = (
+                    not item.get("kb_id")
+                    or not chunk.get("kb_id")
+                    or chunk.get("kb_id") == item.get("kb_id")
+                )
                 if same_name and same_index and same_base:
                     item["text"] = chunk.get("text") or ""
                     item.setdefault("kb_id", chunk.get("kb_id") or "")
@@ -486,7 +526,9 @@ def source_rows(result, found):
     return sources
 
 
-def query_record(user, scope, *, query, answer, status, dialog_id, sources, attempts=0, feedback="", error=""):
+def query_record(
+    user, scope, *, query, answer, status, dialog_id, sources, attempts=0, feedback="", error=""
+):
     """Одна запись вопроса: открытые базы, отказ и пустой текст модели при сбое."""
     payload = {
         "query": query,

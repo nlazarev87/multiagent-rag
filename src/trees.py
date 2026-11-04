@@ -1,4 +1,5 @@
 """Папки одной базы лежат в её tree.json, рядом с папкой файлов."""
+
 import json
 import threading
 import uuid
@@ -28,6 +29,7 @@ def _base_names(row):
     if not folder.is_dir():
         return []
     from ingest import SUFFIXES
+
     return [
         path.name
         for path in folder.iterdir()
@@ -56,7 +58,9 @@ def write(path, tree):
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
         try:
-            tmp.write_text(json.dumps({"tree": tree}, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp.write_text(
+                json.dumps({"tree": tree}, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
             tmp.replace(path)
         except Exception:
             tmp.unlink(missing_ok=True)

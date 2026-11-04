@@ -2,6 +2,7 @@
 
 Этот файл не импортирует agents: иначе загрузка замыкается в круг.
 """
+
 import contextvars
 import re
 
@@ -10,12 +11,46 @@ _trace = contextvars.ContextVar("answer_trace", default=None)
 
 SPAN = 30
 
-_PRONOUNS = {"он", "она", "оно", "они", "его", "её", "ее", "их", "ему", "ей", "им", "него", "неё", "нее", "них", "это", "этот", "эта", "эти"}
+_PRONOUNS = {
+    "он",
+    "она",
+    "оно",
+    "они",
+    "его",
+    "её",
+    "ее",
+    "их",
+    "ему",
+    "ей",
+    "им",
+    "него",
+    "неё",
+    "нее",
+    "них",
+    "это",
+    "этот",
+    "эта",
+    "эти",
+}
 _TOKEN = re.compile(r"[0-9A-Za-zА-Яа-яЁё]+(?:[._/:\-][0-9A-Za-zА-Яа-яЁё]+)*")
 
 
 def _words(text):
-    skip = {"какой", "какая", "какое", "какие", "какова", "каков", "каком", "сколько", "такое", "такой", "такая", "такие", "этом"}
+    skip = {
+        "какой",
+        "какая",
+        "какое",
+        "какие",
+        "какова",
+        "каков",
+        "каком",
+        "сколько",
+        "такое",
+        "такой",
+        "такая",
+        "такие",
+        "этом",
+    }
     words = []
     for word in text.lower().replace("?", " ").split():
         for piece in word.split("-"):
@@ -63,15 +98,51 @@ def _dependent(query):
     return bool(tokens & _PRONOUNS) or not _words(query)
 
 
-_OVERVIEW_LINE = re.compile(r"Разных значений в столбце «([^»]+)»: (\d+)\. Список: (.+)", re.IGNORECASE)
+_OVERVIEW_LINE = re.compile(
+    r"Разных значений в столбце «([^»]+)»: (\d+)\. Список: (.+)", re.IGNORECASE
+)
 _LIST_MARK = re.compile(r"(?<![а-яёa-z])(скольк(?:о|их|ими|им)|какие|перечисли)", re.IGNORECASE)
 _COUNT_MARK = re.compile(r"(?<![а-яёa-z])скольк(?:о|их|ими|им)(?![а-яёa-z])", re.IGNORECASE)
 _ENDINGS = (
-    "иями", "ями", "ами", "ого", "его", "ому", "ему",
-    "ыми", "ими", "ой", "ий", "ый", "ая", "яя", "ое", "ее",
-    "ия", "ие", "ые", "ию", "ии", "ых", "их",
-    "ом", "ем", "ах", "ях", "ов", "ев", "ам", "ям",
-    "а", "я", "ы", "и", "у", "ю", "е", "о",
+    "иями",
+    "ями",
+    "ами",
+    "ого",
+    "его",
+    "ому",
+    "ему",
+    "ыми",
+    "ими",
+    "ой",
+    "ий",
+    "ый",
+    "ая",
+    "яя",
+    "ое",
+    "ее",
+    "ия",
+    "ие",
+    "ые",
+    "ию",
+    "ии",
+    "ых",
+    "их",
+    "ом",
+    "ем",
+    "ах",
+    "ях",
+    "ов",
+    "ев",
+    "ам",
+    "ям",
+    "а",
+    "я",
+    "ы",
+    "и",
+    "у",
+    "ю",
+    "е",
+    "о",
 )
 _ASIDE = {"есть", "между", "входят", "находится", "используется", "используются"}
 
@@ -87,7 +158,7 @@ def _count_ask(query):
 def _word_stem(word):
     for ending in _ENDINGS:
         if len(word) > len(ending) + 2 and word.endswith(ending):
-            return word[:len(word) - len(ending)]
+            return word[: len(word) - len(ending)]
     return word
 
 
@@ -141,14 +212,16 @@ def _from_overview(query, chunks):
             column_score = column_hits or label_hits
             if not section_hits and not column_score:
                 continue
-            ranked.append((
-                section_hits,
-                column_score,
-                number,
-                match.group(2),
-                match.group(3).rstrip(" ."),
-                match.group(1).strip(),
-            ))
+            ranked.append(
+                (
+                    section_hits,
+                    column_score,
+                    number,
+                    match.group(2),
+                    match.group(3).rstrip(" ."),
+                    match.group(1).strip(),
+                )
+            )
     if not ranked:
         return None
     ranked.sort(key=lambda item: (-item[0], -item[1], item[2]))

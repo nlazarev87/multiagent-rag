@@ -25,22 +25,49 @@ os.environ.setdefault(
 )
 
 HIGHER = {
-    "select_exact", "select_precision", "select_recall",
-    "clarify_passthrough", "clarify_rewrite", "clarify_anchor", "clarify_search_hit4",
-    "search_hit4_dev", "search_hit4_holdout", "search_hit1_dev", "search_mrr_dev",
-    "search_doc_p4_dev", "search_together_dev",
-    "answer_facts_dev", "answer_starts_dev", "answer_forbidden_dev", "answer_cite_dev",
+    "select_exact",
+    "select_precision",
+    "select_recall",
+    "clarify_passthrough",
+    "clarify_rewrite",
+    "clarify_anchor",
+    "clarify_search_hit4",
+    "search_hit4_dev",
+    "search_hit4_holdout",
+    "search_hit1_dev",
+    "search_mrr_dev",
+    "search_doc_p4_dev",
+    "search_together_dev",
+    "answer_facts_dev",
+    "answer_starts_dev",
+    "answer_forbidden_dev",
+    "answer_cite_dev",
     "answer_noanswer_dev",
-    "check_status_exact", "check_source_doc", "check_feedback_type",
-    "coord_order", "coord_retry_cap", "coord_empty_skip", "coord_retry_help", "coord_status_exact",
-    "e2e_dev", "e2e_holdout", "e2e_dialog",
-    "document_swap_pass_rate", "citation_coverage", "config_only_change_success",
-    "ingest_overview_complete", "ingest_table_intro_group", "ingest_version",
+    "check_status_exact",
+    "check_source_doc",
+    "check_feedback_type",
+    "coord_order",
+    "coord_retry_cap",
+    "coord_empty_skip",
+    "coord_retry_help",
+    "coord_status_exact",
+    "e2e_dev",
+    "e2e_holdout",
+    "e2e_dialog",
+    "document_swap_pass_rate",
+    "citation_coverage",
+    "config_only_change_success",
+    "ingest_overview_complete",
+    "ingest_table_intro_group",
+    "ingest_version",
 }
 LOWER = {
-    "select_false_attach", "select_false_drop",
+    "select_false_attach",
+    "select_false_drop",
     "clarify_overrewrite",
-    "check_false_confirm", "check_false_reject", "check_false_missing",
+    "check_false_confirm",
+    "check_false_reject",
+    "check_false_missing",
     "coord_discard_good",
     "code_knowledge_leakage",
 }
@@ -83,6 +110,7 @@ def _has(needle, text):
     if not flat:
         return False
     import re
+
     tail = f"(?![{EDGE}])" if flat[-1].isdigit() else ""
     return re.search(f"(?<![{EDGE}]){re.escape(flat)}{tail}", _flat(text)) is not None
 
@@ -234,7 +262,9 @@ def measure_check():
             reject_err += int(verdict["status"] != CONFIRMED)
             source_n += 1
             names = [source["document_name"] for source in verdict.get("sources") or []]
-            source_hits += int(verdict["status"] == CONFIRMED and case.get("gold_document") in names)
+            source_hits += int(
+                verdict["status"] == CONFIRMED and case.get("gold_document") in names
+            )
         else:
             confirm_n += 1
             confirm_err += int(verdict["status"] == CONFIRMED)
@@ -246,11 +276,19 @@ def measure_check():
     n = len(cases)
     cards = {}
     cards.update(card("check_status_exact", _rate(status_hits, n), n, hits=status_hits))
-    cards.update(card("check_false_confirm", _rate(confirm_err, confirm_n), confirm_n, hits=confirm_err))
+    cards.update(
+        card("check_false_confirm", _rate(confirm_err, confirm_n), confirm_n, hits=confirm_err)
+    )
     cards.update(card("check_false_reject", _rate(reject_err, reject_n), reject_n, hits=reject_err))
-    cards.update(card("check_false_missing", _rate(missing_err, missing_n), missing_n, hits=missing_err))
+    cards.update(
+        card("check_false_missing", _rate(missing_err, missing_n), missing_n, hits=missing_err)
+    )
     cards.update(card("check_source_doc", _rate(source_hits, source_n), source_n, hits=source_hits))
-    cards.update(card("check_feedback_type", _rate(feedback_hits, feedback_n), feedback_n, hits=feedback_hits))
+    cards.update(
+        card(
+            "check_feedback_type", _rate(feedback_hits, feedback_n), feedback_n, hits=feedback_hits
+        )
+    )
     return cards
 
 
@@ -331,7 +369,12 @@ def measure_search(holdout=True, existing=None, features=None):
         for split, suffix in (("dev", "dev"), ("holdout", "holdout")):
             if split == "holdout" and not holdout:
                 continue
-            rows = [item for item in items if item["split"] == split and any(item.get(key) for key in ("evidence", "evidence_any", "together"))]
+            rows = [
+                item
+                for item in items
+                if item["split"] == split
+                and any(item.get(key) for key in ("evidence", "evidence_any", "together"))
+            ]
             hit4 = hit1 = mrr = 0.0
             retrieval_hits = candidate_hits = fusion_hits_12 = fusion_hits_4 = 0
             doc_scores = []
@@ -344,7 +387,11 @@ def measure_search(holdout=True, existing=None, features=None):
                 if expected_doc in (None, "*"):
                     expected_doc = None
                 _result = store.search_chunks(
-                    item["query"], 4, debug=True, features=features, expected_document=expected_doc,
+                    item["query"],
+                    4,
+                    debug=True,
+                    features=features,
+                    expected_document=expected_doc,
                 )
                 chunks = _result["slots"]
                 _raw_lex = _result["raw_lexical"]
@@ -365,25 +412,36 @@ def measure_search(holdout=True, existing=None, features=None):
                 _doc_hit = None
                 if item.get("document") not in (None, "*"):
                     if chunks:
-                        _doc_hit = sum(chunk["document_name"] == item["document"] for chunk in chunks) / len(chunks)
+                        _doc_hit = sum(
+                            chunk["document_name"] == item["document"] for chunk in chunks
+                        ) / len(chunks)
                         doc_scores.append(_doc_hit)
                     else:
                         _doc_hit = 0.0
                 if item.get("together"):
                     together_n += 1
-                    together_hits += int(any(all(_flat(phrase) in _flat(chunk["text"]) for phrase in item["together"]) for chunk in chunks))
-                per_question.append({
-                    "id": item["id"],
-                    "split": split,
-                    "document": item.get("document"),
-                    "best_rank": rank,
-                    "is_hit1": rank == 1,
-                    "is_hit4": rank is not None and rank <= 4,
-                    "mrr_contribution": (1.0 / rank) if (rank and rank <= 4) else 0.0,
-                    "doc_p4": _doc_hit,
-                    "search_latency_ms": _latency,
-                    "ok": rank is not None and rank <= 4,
-                })
+                    together_hits += int(
+                        any(
+                            all(
+                                _flat(phrase) in _flat(chunk["text"]) for phrase in item["together"]
+                            )
+                            for chunk in chunks
+                        )
+                    )
+                per_question.append(
+                    {
+                        "id": item["id"],
+                        "split": split,
+                        "document": item.get("document"),
+                        "best_rank": rank,
+                        "is_hit1": rank == 1,
+                        "is_hit4": rank is not None and rank <= 4,
+                        "mrr_contribution": (1.0 / rank) if (rank and rank <= 4) else 0.0,
+                        "doc_p4": _doc_hit,
+                        "search_latency_ms": _latency,
+                        "ok": rank is not None and rank <= 4,
+                    }
+                )
                 _retrieval_pool = _raw_lex + _raw_dense
                 _retrieval_hit = _retrieval_ok_any(_retrieval_pool, item)
                 _candidate_pool = _ranked[:30]
@@ -427,51 +485,81 @@ def measure_search(holdout=True, existing=None, features=None):
                 per_question[-1]["features_active"] = sorted(
                     name for name, on in _active.items() if on
                 )
-                per_question[-1]["total_duration_ms"] = round((time.perf_counter() - _iter_start) * 1000, 2)
-            cards.update(card(f"search_hit4_{suffix}", _rate(hit4, len(rows)), len(rows), hits=int(hit4)))
-            cards.update(card(
-                f"search_hit1_{suffix}",
-                _rate(hit1, len(rows)),
-                len(rows), hits=int(hit1),
-            ))
-            cards.update(card(
-                f"search_mrr_{suffix}",
-                mrr / len(rows) if rows else 0.0,
-                len(rows),
-            ))
+                per_question[-1]["total_duration_ms"] = round(
+                    (time.perf_counter() - _iter_start) * 1000, 2
+                )
+            cards.update(
+                card(f"search_hit4_{suffix}", _rate(hit4, len(rows)), len(rows), hits=int(hit4))
+            )
+            cards.update(
+                card(
+                    f"search_hit1_{suffix}",
+                    _rate(hit1, len(rows)),
+                    len(rows),
+                    hits=int(hit1),
+                )
+            )
+            cards.update(
+                card(
+                    f"search_mrr_{suffix}",
+                    mrr / len(rows) if rows else 0.0,
+                    len(rows),
+                )
+            )
             if doc_scores:
-                cards.update(card(
-                    f"search_doc_p4_{suffix}",
-                    _mean(doc_scores),
-                    len(doc_scores),
-                ))
+                cards.update(
+                    card(
+                        f"search_doc_p4_{suffix}",
+                        _mean(doc_scores),
+                        len(doc_scores),
+                    )
+                )
             if split == "dev":
-                cards.update(card("search_together_dev", _rate(together_hits, together_n), together_n, hits=together_hits))
+                cards.update(
+                    card(
+                        "search_together_dev",
+                        _rate(together_hits, together_n),
+                        together_n,
+                        hits=together_hits,
+                    )
+                )
                 latency = _mean(times)
                 best = latency
                 if FLOORS.exists() and "search_latency_ms" in _load(FLOORS):
                     best = min(latency, _load(FLOORS)["search_latency_ms"]["best"])
                 cards.update(card("search_latency_ms", latency, len(rows), best=best))
-                cards.update(card(
-                    "search_retrieval_recall",
-                    _rate(retrieval_hits, len(rows)),
-                    len(rows), hits=int(retrieval_hits),
-                ))
-                cards.update(card(
-                    "search_fusion_recall_at_30",
-                    _rate(candidate_hits, len(rows)),
-                    len(rows), hits=int(candidate_hits),
-                ))
-                cards.update(card(
-                    "search_fusion_recall_at_12",
-                    _rate(fusion_hits_12, len(rows)),
-                    len(rows), hits=int(fusion_hits_12),
-                ))
-                cards.update(card(
-                    "search_fusion_recall_at_4",
-                    _rate(fusion_hits_4, len(rows)),
-                    len(rows), hits=int(fusion_hits_4),
-                ))
+                cards.update(
+                    card(
+                        "search_retrieval_recall",
+                        _rate(retrieval_hits, len(rows)),
+                        len(rows),
+                        hits=int(retrieval_hits),
+                    )
+                )
+                cards.update(
+                    card(
+                        "search_fusion_recall_at_30",
+                        _rate(candidate_hits, len(rows)),
+                        len(rows),
+                        hits=int(candidate_hits),
+                    )
+                )
+                cards.update(
+                    card(
+                        "search_fusion_recall_at_12",
+                        _rate(fusion_hits_12, len(rows)),
+                        len(rows),
+                        hits=int(fusion_hits_12),
+                    )
+                )
+                cards.update(
+                    card(
+                        "search_fusion_recall_at_4",
+                        _rate(fusion_hits_4, len(rows)),
+                        len(rows),
+                        hits=int(fusion_hits_4),
+                    )
+                )
         cards["_per_question"] = per_question
         cards["_n_questions_search"] = len(per_question)
         cards["_n_questions_total"] = len(items)
@@ -521,17 +609,37 @@ def measure_clarify():
         store.CHROMA = saved
         store.reset()
     cards = {}
-    cards.update(card("clarify_passthrough", _rate(passthrough, len(independent)), len(independent), hits=passthrough))
-    cards.update(card("clarify_rewrite", _rate(rewrite, len(dependent)), len(dependent), hits=rewrite))
+    cards.update(
+        card(
+            "clarify_passthrough",
+            _rate(passthrough, len(independent)),
+            len(independent),
+            hits=passthrough,
+        )
+    )
+    cards.update(
+        card("clarify_rewrite", _rate(rewrite, len(dependent)), len(dependent), hits=rewrite)
+    )
     cards.update(card("clarify_anchor", _rate(anchor, len(dependent)), len(dependent), hits=anchor))
-    cards.update(card("clarify_overrewrite", _rate(over, len(independent)), len(independent), hits=over))
+    cards.update(
+        card("clarify_overrewrite", _rate(over, len(independent)), len(independent), hits=over)
+    )
     extra = {"raw_hit4": raw_hits, "raw_n": len(search_cases)}
-    cards.update(card("clarify_search_hit4", _rate(hits, len(search_cases)), len(search_cases), hits=hits, extra=extra))
+    cards.update(
+        card(
+            "clarify_search_hit4",
+            _rate(hits, len(search_cases)),
+            len(search_cases),
+            hits=hits,
+            extra=extra,
+        )
+    )
     return cards
 
 
 def _has_fact_tokens(text):
     import re
+
     return bool(re.search(r"\d|[A-ZА-Я]{2,}", text or ""))
 
 
@@ -539,7 +647,12 @@ def measure_coord():
     import agents
     import coordinator
 
-    chunk = {"text": "Цех имеет номер 4.", "document_name": "charter.txt", "chunk_index": 0, "section": ""}
+    chunk = {
+        "text": "Цех имеет номер 4.",
+        "document_name": "charter.txt",
+        "chunk_index": 0,
+        "section": "",
+    }
     source = {"number": 1, "document_name": "charter.txt", "section": ""}
 
     def verdict(status, sources=(), feedback=""):
@@ -559,7 +672,10 @@ def measure_coord():
         {
             "id": "retry-ok",
             "chunks": [chunk],
-            "verdicts": [verdict(agents.UNCONFIRMED, feedback="исправь"), verdict(agents.CONFIRMED, [source])],
+            "verdicts": [
+                verdict(agents.UNCONFIRMED, feedback="исправь"),
+                verdict(agents.CONFIRMED, [source]),
+            ],
             "reply": "Цех имеет номер 4 [1].",
             "order": ["select", "clarify", "search", "answer", "check", "answer", "check", "save"],
             "status": agents.CONFIRMED,
@@ -569,7 +685,10 @@ def measure_coord():
         {
             "id": "retry-fail",
             "chunks": [chunk],
-            "verdicts": [verdict(agents.UNCONFIRMED, feedback="a"), verdict(agents.UNCONFIRMED, feedback="b")],
+            "verdicts": [
+                verdict(agents.UNCONFIRMED, feedback="a"),
+                verdict(agents.UNCONFIRMED, feedback="b"),
+            ],
             "reply": "Цех имеет номер 4 [1].",
             "order": ["select", "clarify", "search", "answer", "check", "answer", "check", "save"],
             "status": agents.UNCONFIRMED,
@@ -599,7 +718,18 @@ def measure_coord():
         },
     ]
 
-    originals = {name: getattr(coordinator, name) for name in ("get_dialog", "add_turn", "select_agent", "clarify_agent", "search_agent", "answer_agent", "check_agent")}
+    originals = {
+        name: getattr(coordinator, name)
+        for name in (
+            "get_dialog",
+            "add_turn",
+            "select_agent",
+            "clarify_agent",
+            "search_agent",
+            "answer_agent",
+            "check_agent",
+        )
+    }
     real_complete = agents.complete
     order_hits = cap_hits = empty_hits = empty_n = 0
     retry_help = retry_n = discard = 0
@@ -641,7 +771,9 @@ def measure_coord():
                 agents.complete = real_complete
             result = coordinator.run("Какой номер у цеха?", f"score-{case['id']}")
             if case.get("empty"):
-                order_hits += int(order[:3] == ["select", "clarify", "search"] and order[-1] == "save")
+                order_hits += int(
+                    order[:3] == ["select", "clarify", "search"] and order[-1] == "save"
+                )
                 empty_n += 1
                 empty_hits += int(len(model_calls) == 0)
             else:
@@ -649,11 +781,19 @@ def measure_coord():
             cap_hits += int(order.count("answer") <= 2)
             if case.get("retry"):
                 retry_n += 1
-                retry_help += int(result["status"] == agents.CONFIRMED and _has_fact_tokens(result["answer"]))
-            if _has_fact_tokens(case.get("reply") or "") and result["answer"] == agents.NO_ANSWER and case["status"] != agents.MISSING:
+                retry_help += int(
+                    result["status"] == agents.CONFIRMED and _has_fact_tokens(result["answer"])
+                )
+            if (
+                _has_fact_tokens(case.get("reply") or "")
+                and result["answer"] == agents.NO_ANSWER
+                and case["status"] != agents.MISSING
+            ):
                 discard += 1
             if case.get("empty"):
-                status_hits += int(result["status"] == agents.MISSING and result["answer"] == agents.NO_ANSWER)
+                status_hits += int(
+                    result["status"] == agents.MISSING and result["answer"] == agents.NO_ANSWER
+                )
             else:
                 status_hits += int(result["status"] == case["status"])
     finally:
@@ -704,6 +844,7 @@ def freeze_chunks(folder=None):
 
 def _answer_flags(item, answer, chunks):
     import re
+
     from agents import NO_ANSWER as STOP
 
     flat = _flat(answer)
@@ -744,8 +885,8 @@ def _frozen_covers_questions():
 
 
 def measure_answer():
-    from agents import answer_agent
     import dialog
+    from agents import answer_agent
 
     if not _frozen_covers_questions():
         freeze_chunks()
@@ -781,7 +922,10 @@ def measure_answer():
         bucket = by_type.setdefault(kind, [0, 0])
         bucket[1] += 1
         bucket[0] += int(flags["facts"] if kind != "noanswer" else flags["noanswer"])
-        print(f"answer {item['id']}: facts={flags['facts']} cite={flags['cite']} type={kind} t={times[-1]:.1f}s", flush=True)
+        print(
+            f"answer {item['id']}: facts={flags['facts']} cite={flags['cite']} type={kind} t={times[-1]:.1f}s",
+            flush=True,
+        )
         if not flags["facts"]:
             print(f"answer miss facts {item['id']}", flush=True)
         if flags["cite"] is False:
@@ -793,9 +937,13 @@ def measure_answer():
     cards = {}
     cards.update(card("answer_facts_dev", _rate(facts, facts_n), facts_n, hits=facts))
     cards.update(card("answer_starts_dev", _rate(starts, starts_n), starts_n, hits=starts))
-    cards.update(card("answer_forbidden_dev", _rate(forbidden, forbidden_n), forbidden_n, hits=forbidden))
+    cards.update(
+        card("answer_forbidden_dev", _rate(forbidden, forbidden_n), forbidden_n, hits=forbidden)
+    )
     cards.update(card("answer_cite_dev", _rate(cite, cite_n), cite_n, hits=cite))
-    cards.update(card("answer_noanswer_dev", _rate(noanswer, noanswer_n), noanswer_n, hits=noanswer))
+    cards.update(
+        card("answer_noanswer_dev", _rate(noanswer, noanswer_n), noanswer_n, hits=noanswer)
+    )
     for kind, (hits, n) in sorted(by_type.items()):
         cards.update(card(f"answer_by_type_{kind}", _rate(hits, n), n, hits=hits))
     cards.update(card("answer_latency_s", latency, len(items), best=best))
@@ -853,7 +1001,10 @@ def measure_e2e(holdout=False, only_holdout=False):
                 bucket = by_type.setdefault(kind, [0, 0])
                 bucket[1] += 1
                 bucket[0] += int(ok)
-                print(f"e2e {item['id']}: ok={ok} status={result['status']} t={elapsed:.1f}s", flush=True)
+                print(
+                    f"e2e {item['id']}: ok={ok} status={result['status']} t={elapsed:.1f}s",
+                    flush=True,
+                )
                 if not ok:
                     print(f"e2e miss {item['id']} status={result['status']}", flush=True)
             key = "e2e_dev" if split == "dev" else "e2e_holdout"
@@ -873,7 +1024,7 @@ def measure_e2e(holdout=False, only_holdout=False):
         store.reset()
         dialog.reset()
         store.upsert_chunks(ingest_dir(DOCS))
-        from agents import CONFIRMED, MISSING
+        from agents import CONFIRMED
 
         dialog_hits = 0
         for query, fact, banned, statuses, name in DIALOG_STEPS:
@@ -888,7 +1039,14 @@ def measure_e2e(holdout=False, only_holdout=False):
                 ok = ok and name in result["document_names"]
             dialog_hits += int(ok)
             print(f"e2e_dialog {query!r}: ok={ok} status={result['status']}", flush=True)
-        cards.update(card("e2e_dialog", _rate(dialog_hits, len(DIALOG_STEPS)), len(DIALOG_STEPS), hits=dialog_hits))
+        cards.update(
+            card(
+                "e2e_dialog",
+                _rate(dialog_hits, len(DIALOG_STEPS)),
+                len(DIALOG_STEPS),
+                hits=dialog_hits,
+            )
+        )
         return cards
     finally:
         store.CHROMA = saved
@@ -899,25 +1057,32 @@ def measure_e2e(holdout=False, only_holdout=False):
 def measure_ingest():
     import tempfile
 
-    import ingest
     from docx import Document
+
+    import ingest
     from ingest import VERSION, chunks_from_blocks, ingest_dir, split_chunks
 
     saved_count = ingest.count_tokens
     ingest.count_tokens = lambda text: max(1, len(str(text).split()))
     ingest._word_tokens.cache_clear()
     try:
-        values = [f"Наименование характеристики номер {number} очень длинное" for number in range(1, 41)]
-        blocks = [{
-            "kind": "table",
-            "caption": "Таблица 1 – Перечень",
-            "labels": ["Статус", "Описание"],
-            "width": 2,
-            "rows": [[("Статус", "Да"), ("Описание", value)] for value in values],
-        }]
+        values = [
+            f"Наименование характеристики номер {number} очень длинное" for number in range(1, 41)
+        ]
+        blocks = [
+            {
+                "kind": "table",
+                "caption": "Таблица 1 – Перечень",
+                "labels": ["Статус", "Описание"],
+                "width": 2,
+                "rows": [[("Статус", "Да"), ("Описание", value)] for value in values],
+            }
+        ]
         chunks = chunks_from_blocks(blocks, "list.txt")
         overview = next((chunk["text"] for chunk in chunks if chunk["kind"] == "overview"), "")
-        overview_ok = "Разных значений в столбце «Описание»: 40." in overview and all(value in overview for value in values)
+        overview_ok = "Разных значений в столбце «Описание»: 40." in overview and all(
+            value in overview for value in values
+        )
     finally:
         ingest.count_tokens = saved_count
         ingest._word_tokens.cache_clear()
@@ -930,7 +1095,9 @@ def measure_ingest():
         document.add_paragraph("Температура склада равна 18 градусам.")
         document.add_paragraph("Таблица 1 – Состав склада")
         table = document.add_table(rows=3, cols=2)
-        for row, (key, value) in zip(table.rows, [("Показатель", "Значение"), ("Площадь", "120 м²"), ("Этаж", "2")]):
+        for row, (key, value) in zip(
+            table.rows, [("Показатель", "Значение"), ("Площадь", "120 м²"), ("Этаж", "2")]
+        ):
             row.cells[0].text, row.cells[1].text = key, value
         document.save(folder / "store.docx")
         chunks = ingest_dir(folder)
@@ -952,10 +1119,38 @@ def measure_universality():
 
     measured = universality.measure_universality()
     cards = {}
-    cards.update(card("code_knowledge_leakage", measured["leakage"]["now"], measured["leakage"]["n"], hits=measured["leakage"]["hits"]))
-    cards.update(card("document_swap_pass_rate", measured["swap"]["now"], measured["swap"]["n"], hits=measured["swap"]["hits"]))
-    cards.update(card("citation_coverage", measured["citation"]["now"], measured["citation"]["n"], hits=measured["citation"]["hits"]))
-    cards.update(card("config_only_change_success", measured["config"]["now"], measured["config"]["n"], hits=measured["config"]["hits"]))
+    cards.update(
+        card(
+            "code_knowledge_leakage",
+            measured["leakage"]["now"],
+            measured["leakage"]["n"],
+            hits=measured["leakage"]["hits"],
+        )
+    )
+    cards.update(
+        card(
+            "document_swap_pass_rate",
+            measured["swap"]["now"],
+            measured["swap"]["n"],
+            hits=measured["swap"]["hits"],
+        )
+    )
+    cards.update(
+        card(
+            "citation_coverage",
+            measured["citation"]["now"],
+            measured["citation"]["n"],
+            hits=measured["citation"]["hits"],
+        )
+    )
+    cards.update(
+        card(
+            "config_only_change_success",
+            measured["config"]["now"],
+            measured["config"]["n"],
+            hits=measured["config"]["hits"],
+        )
+    )
     return cards
 
 
@@ -1007,7 +1202,11 @@ def write_floors(cards, raise_only=False):
         old = existing[key]
         if item.get("n") == 0:
             continue
-        better = item["now"] > old["floor"] + 1e-12 if item["direction"] == "higher" else item["now"] < old["floor"] - 1e-12
+        better = (
+            item["now"] > old["floor"] + 1e-12
+            if item["direction"] == "higher"
+            else item["now"] < old["floor"] - 1e-12
+        )
         if better:
             old["floor"] = item["now"]
         old["now"] = item["now"]
@@ -1075,14 +1274,19 @@ def print_report(cards):
             if not (key == node or key.startswith(node + "_")):
                 continue
             room = item["room"]
-            room_s = "n/a" if room is None else f"{room:.3f}" if isinstance(room, float) else str(room)
+            room_s = (
+                "n/a" if room is None else f"{room:.3f}" if isinstance(room, float) else str(room)
+            )
             if "hits" in item and item["n"]:
                 frac = f"{item['hits']}/{item['n']} = "
             else:
                 frac = f"n={item['n']} "
             now = item["now"]
             best = item["best"]
-            print(f"  {key:28} {frac}{now:.4f} / {best:.4f}  (осталось {room_s})  floor={item.get('floor', now):.4f}", flush=True)
+            print(
+                f"  {key:28} {frac}{now:.4f} / {best:.4f}  (осталось {room_s})  floor={item.get('floor', now):.4f}",
+                flush=True,
+            )
         keys = [key for key in cards if key == node or key.startswith(node + "_")]
         rooms = [cards[key]["room"] for key in keys if cards[key]["room"] is not None]
         if rooms and all(room == 0 for room in rooms):
@@ -1118,6 +1322,7 @@ def main(argv=None):
             return 0
     nodes = _parse_nodes(args.nodes)
     from settings import runtime
+
     features = dict(runtime().get("features") or {})
     for name in args.enable.split(","):
         name = name.strip()
