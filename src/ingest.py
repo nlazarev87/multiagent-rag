@@ -15,7 +15,7 @@ from pathlib import Path
 from settings import runtime
 
 SUFFIXES = {".txt", ".md", ".doc", ".docx", ".pdf", ".xlsx"}
-VERSION = 3
+VERSION = 4
 TOKENS = 250
 OVERLAP = 40
 INTRO = 120
@@ -65,6 +65,31 @@ def _load_tokenizer():
 
 def count_tokens(text):
     return len(_load_tokenizer()(text, add_special_tokens=False)["input_ids"])
+
+
+_TOKENIZER_ID_CACHE = None
+
+
+def _tokenizer_id():
+    """Имя папки модели и короткий sha256 tokenizer.json.
+
+    Кэш на процесс. Нет файла или его не прочитать — пустая строка.
+    Абсолютный путь в сумму не входит: на другой машине он другой.
+    """
+    global _TOKENIZER_ID_CACHE
+    if _TOKENIZER_ID_CACHE is not None:
+        return _TOKENIZER_ID_CACHE
+    name = MODEL.name or "unknown"
+    tokenizer_file = MODEL / "tokenizer.json"
+    if not tokenizer_file.is_file():
+        _TOKENIZER_ID_CACHE = ""
+        return _TOKENIZER_ID_CACHE
+    try:
+        digest = hashlib.sha256(tokenizer_file.read_bytes()).hexdigest()[:16]
+        _TOKENIZER_ID_CACHE = f"{name}:{digest}"
+    except OSError:
+        _TOKENIZER_ID_CACHE = ""
+    return _TOKENIZER_ID_CACHE
 
 
 @lru_cache(maxsize=200000)
@@ -661,17 +686,20 @@ def _ready_table(block):
     }
 
 
-def chunks_from_blocks(blocks, document_name=""):
+def chunks_from_blocks(blocks, document_name="", source=b""):
     """Собрать куски текста из уже разобранных блоков одного документа."""
     # Upsert skips a document when this hash matches. Overlap, chunk size and the
     # intro limit change the stored text and kind without changing the source, and
-    # often without changing how many chunks there are.
+    # often without changing how many chunks there are. The tokenizer id and the
+    # raw file bytes are part of the hash: a new tokenizer or a byte edit reindexes
+    # even when the parsed blocks and the chunk count stay the same.
     limits = json.dumps(
         {"tokens": _tokens(), "overlap": _overlap(), "intro": _intro()},
         sort_keys=True,
     )
+    raw = hashlib.sha256(source).hexdigest() if source else ""
     digest = hashlib.sha256(
-        (json.dumps(blocks, ensure_ascii=False) + str(VERSION) + limits).encode()
+        (json.dumps(blocks, ensure_ascii=False) + str(VERSION) + limits + _tokenizer_id() + raw).encode()
     ).hexdigest()
     pieces, path, buffer = [], [], []
     tables = 0
@@ -733,7 +761,7 @@ def chunks_from_blocks(blocks, document_name=""):
 
 def split_chunks(text, document_name=""):
     """Нарезать плоский текст так же, как файл без таблиц."""
-    return chunks_from_blocks(_text_blocks(text), document_name)
+    return chunks_from_blocks(_text_blocks(text), document_name, source=text.encode("utf-8"))
 
 
 def load_text(path):
@@ -796,7 +824,8 @@ def ingest_dir(directory):
             }, False)
             continue
         try:
-            extracted = chunks_from_blocks(_blocks(path), path.name)
+            source_bytes = path.read_bytes()
+            extracted = chunks_from_blocks(_blocks(path), path.name, source=source_bytes)
             limit = _max_chunks_per_doc()
             if len(extracted) > limit:
                 total = len(extracted)

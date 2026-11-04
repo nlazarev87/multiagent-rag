@@ -1665,7 +1665,7 @@ def test_chunks_truncated_per_doc(tmp_path, monkeypatch):
 
     monkeypatch.setattr("audit.write", capture)
 
-    def fake(blocks, document_name=""):
+    def fake(blocks, document_name="", source=b""):
         return [
             {"id": f"c{number}", "text": f"text {number}", "document_name": document_name}
             for number in range(6000)
@@ -1756,3 +1756,35 @@ def test_header_word_row_stays_header(tmp_path):
     assert len(tables) == 1
     assert tables[0]["labels"] == ["Показатель", "Значение"]
     assert tables[0]["rows"] == [[("Показатель", "6"), ("Значение", "8")]]
+
+
+def test_reingest_on_file_change_same_chunks(tmp_path, monkeypatch):
+    """#138: те же блоки, другие байты файла — другая контрольная сумма."""
+    monkeypatch.setattr("ingest.count_tokens", _token_count)
+    blocks = [{"kind": "p", "text": "hello"}]
+    first = ingest.chunks_from_blocks(blocks, "a.txt")
+    second = ingest.chunks_from_blocks(blocks, "a.txt", source=b"old")
+    third = ingest.chunks_from_blocks(blocks, "a.txt", source=b"new")
+    assert first[0]["checksum"] != second[0]["checksum"]
+    assert second[0]["checksum"] != third[0]["checksum"]
+    assert len(first) == len(second) == len(third)
+
+
+def test_reingest_on_tokenizer_change(tmp_path, monkeypatch):
+    """#138: другой id токенизатора — другая контрольная сумма."""
+    monkeypatch.setattr("ingest.count_tokens", _token_count)
+    blocks = [{"kind": "p", "text": "hello"}]
+    monkeypatch.setattr(ingest, "_tokenizer_id", lambda: "a")
+    first = ingest.chunks_from_blocks(blocks, "a.txt")
+    monkeypatch.setattr(ingest, "_tokenizer_id", lambda: "b")
+    second = ingest.chunks_from_blocks(blocks, "a.txt")
+    assert first[0]["checksum"] != second[0]["checksum"]
+
+
+def test_no_reingest_unchanged(tmp_path, monkeypatch):
+    """#138: те же байты и тот же токенизатор — та же контрольная сумма."""
+    monkeypatch.setattr("ingest.count_tokens", _token_count)
+    blocks = [{"kind": "p", "text": "hello"}]
+    first = ingest.chunks_from_blocks(blocks, "a.txt", source=b"same")
+    second = ingest.chunks_from_blocks(blocks, "a.txt", source=b"same")
+    assert first[0]["checksum"] == second[0]["checksum"]
