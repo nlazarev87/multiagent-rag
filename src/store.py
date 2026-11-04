@@ -15,6 +15,7 @@ from pathlib import Path
 
 from settings import runtime, where as route_where
 from pipeline_types import Chunk
+from pipeline_utils import is_code
 
 CHROMA = Path(os.environ.get("CHROMA_PATH", "data/chroma"))
 MODEL = Path(os.environ.get("EMBED_PATH", "data/models/multilingual-e5-small"))
@@ -330,12 +331,13 @@ def known(term):
 
 
 def _names(query):
+    """Имена из вопроса: is_code плюс шаблон 1.2-99.
+
+    is_code — общее ядро в pipeline_utils. Шаблон \\d+[._-]\\d+ берёт имена вроде STD_1.2-99.txt.
+    """
     names = []
     for token in _NAME.findall(query):
-        upper = sum(ch.isupper() for ch in token)
-        coded = any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
-        numbered = bool(re.search(r"\d+[._-]\d+", token))
-        if upper >= 2 or coded or numbered:
+        if is_code(token) or re.search(r"\d+[._-]\d+", token):
             names.append(token.lower().replace("ё", "е"))
     return names
 

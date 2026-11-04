@@ -29,12 +29,29 @@ def _flat(text):
     return " ".join(text.lower().replace("ё", "е").split())
 
 
+def is_code(token):
+    """Ядро: две заглавные или буква и цифра.
+
+    Хвосты остаются в обёртках:
+    _names дополнительно берёт 1.2-99 (имена файлов).
+    _codes зовёт только это ядро.
+    _anchors дополнительно берёт любую цифру (8 нужна уточнению).
+
+    Ядро не менять без test_clarify_* и test_contracts.
+    """
+    if not token:
+        return False
+    upper = sum(1 for char in token if char.isupper())
+    has_digit = any(char.isdigit() for char in token)
+    has_alpha = any(char.isalpha() for char in token)
+    return upper >= 2 or (has_digit and has_alpha)
+
+
 def _codes(text):
+    """Коды из текста: только is_code, без хвоста 1.2 и без голой цифры."""
     found = []
     for token in _TOKEN.findall(text or ""):
-        upper = sum(ch.isupper() for ch in token)
-        coded = any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
-        if upper >= 2 or coded:
+        if is_code(token):
             key = token.lower().replace("ё", "е")
             if key not in found:
                 found.append(key)
