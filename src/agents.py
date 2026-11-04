@@ -7,7 +7,7 @@ import contextvars
 import re
 
 from llm import complete, count_tokens
-from settings import fewshot, lexicon, prompts, runtime
+from settings import NO_ANSWER, fewshot, lexicon, prompts, runtime
 from store import chunks_for_document, search_chunks
 from pipeline_types import CheckResult, Chunk, SelectResult, Turn
 import pipeline_utils
@@ -27,7 +27,6 @@ from pipeline_utils import (
 
 _latin_not_found_var = contextvars.ContextVar("latin_not_found", default=False)
 
-NO_ANSWER = "В документах нет ответа."
 CONFIRMED = "подтверждён"
 CONFIRMED_OVERVIEW = "подтверждён (overview)"
 UNCONFIRMED = "не подтверждён"

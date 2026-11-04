@@ -21,7 +21,7 @@ import kb
 import trees
 import workspace
 from coordinator import run
-from settings import runtime
+from settings import NO_ANSWER, runtime
 from ingest import SUFFIXES, _blocks, _max_file_size_bytes, chunks_from_blocks, ingest_dir
 from store import chunks_for_document, delete_document, list_documents, upsert_chunks
 
@@ -862,7 +862,7 @@ def query(body: Query, request: Request, response: Response):
     try:
         existed = workspace.prepare_dialog(body.dialog_id, memory_key=memory_key) is not None
         if not scope.kbs:
-            result = {"answer": "В документах нет ответа.", "status": "нет ответа", "document_names": [], "sources": []}
+            result = {"answer": NO_ANSWER, "status": "нет ответа", "document_names": [], "sources": []}
         else:
             result = run(body.query, memory_key, scope)
         workspace.append_turn(body.dialog_id, body.query, result, create=not existed)
