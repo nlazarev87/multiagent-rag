@@ -13,7 +13,7 @@ from collections import Counter
 from pathlib import Path
 
 from settings import runtime, where as route_where
-from types import Chunk
+from pipeline_types import Chunk
 
 CHROMA = Path(os.environ.get("CHROMA_PATH", "data/chroma"))
 MODEL = Path(os.environ.get("EMBED_PATH", "data/models/multilingual-e5-small"))

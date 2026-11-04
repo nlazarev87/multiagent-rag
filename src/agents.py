@@ -9,7 +9,7 @@ import re
 from llm import complete, count_tokens
 from settings import fewshot, lexicon, prompts, runtime
 from store import chunks_for_document, search_chunks
-from types import CheckResult, Chunk, SelectResult, Turn
+from pipeline_types import CheckResult, Chunk, SelectResult, Turn
 
 _extra_rows = contextvars.ContextVar("extra_rows", default=None)
 _trace = contextvars.ContextVar("answer_trace", default=None)

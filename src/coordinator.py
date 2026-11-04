@@ -12,7 +12,7 @@ import re
 import time
 
 from langgraph.graph import END, StateGraph
-from types import GraphState
+from pipeline_types import GraphState
 
 from agents import CONFIRMED, CONFIRMED_OVERVIEW, MISSING, NO_ANSWER, UNCONFIRMED, _codes, _count_ask, _dependent, _extra_rows, _from_overview, _trace, _words, answer_agent, check_agent, clarify_agent, search_agent, select_agent
 from dialog import add_turn, get_dialog
