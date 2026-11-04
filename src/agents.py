@@ -15,6 +15,7 @@ from pipeline_utils import (
     _PRONOUNS,
     _TOKEN,
     _codes,
+    is_code,
     _count_ask,
     _dependent,
     _extra_rows,
@@ -56,13 +57,15 @@ _bind_prompts()
 
 
 def _anchors(text):
+    """Якоря для уточнения: is_code плюс любая цифра (8, 2020).
+
+    test_clarify_drops_citation_numbers_and_keeps_a_standard_code ждёт,
+    что 8 остаётся, а [1, 2] вырезается до разбора.
+    """
     found = []
     clean = re.sub(r"\[[\d,\s]+\]", " ", text or "")
     for token in _TOKEN.findall(clean):
-        upper = sum(ch.isupper() for ch in token)
-        coded = any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token)
-        numbered = any(ch.isdigit() for ch in token)
-        if upper >= 2 or coded or numbered:
+        if is_code(token) or any(char.isdigit() for char in token):
             if token not in found:
                 found.append(token)
     return found

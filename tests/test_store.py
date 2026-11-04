@@ -1098,3 +1098,39 @@ def test_dedup_different_texts_two_slots(tmp_path, monkeypatch):
     ])
     slots = store.search_chunks("насос", 4)
     assert len(slots) == 2, f"expected 2 slots, got {len(slots)}"
+
+
+def test_is_code_core():
+    """#143: is_code — две заглавные или буква и цифра."""
+    from pipeline_utils import is_code
+    assert is_code("NPP") is True
+    assert is_code("1.2-99") is False
+    assert is_code("8") is False
+    assert is_code("ГОСТ") is True
+    assert is_code("A1") is True
+    assert is_code("1А") is True
+    assert is_code("hello") is False
+    assert is_code("") is False
+    assert is_code(None) is False
+
+
+def test_names_tail():
+    """#143: _names берёт 1.2-99 и приводит токен к нижнему регистру."""
+    assert "1.2-99" in store._names("стандарт 1.2-99")
+    assert "std" in store._names("STD 1.2-99")
+
+
+def test_codes_no_extension():
+    """#143: _codes берёт только ядро и отдаёт нижний регистр."""
+    from pipeline_utils import _codes
+    result = _codes("NPP 1.2-99 ГОСТ")
+    assert "npp" in result
+    assert "гост" in result
+    assert "1.2-99" not in result
+
+
+def test_anchors_tail_keeps_digit():
+    """#143: _anchors в agents берёт голую цифру, ссылку [1, 2] вырезает."""
+    import agents
+    assert "8" in agents._anchors("Смена длится 8 часов")
+    assert "1" not in agents._anchors("[1, 2]")
