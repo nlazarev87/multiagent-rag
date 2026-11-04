@@ -5,6 +5,7 @@
 """
 import concurrent.futures
 import contextvars
+import hashlib
 import math
 import os
 import re
@@ -279,6 +280,10 @@ def _build(col):
             groups.setdefault((name, meta["group"]), []).append(number)
     for members in groups.values():
         members.sort(key=lambda number: metas[number]["chunk_index"])
+    text_hashes = [
+        hashlib.sha256((text or "").strip().lower().encode("utf-8")).hexdigest()[:16]
+        for text in texts
+    ]
     return {
         "groups": groups,
         "ids": ids,
@@ -291,6 +296,7 @@ def _build(col):
         "chunks": chunks,
         "vocabulary": vocabulary,
         "position": {key: number for number, key in enumerate(ids)},
+        "text_hashes": text_hashes,
     }
 
 
@@ -697,12 +703,84 @@ def _remember_search(focused_query, allowed, ranked_count, slots):
     })
 
 
-def search_chunks(clear_query, limit=4, document_names=None, debug=False, features=None) -> list[Chunk] | dict:
+def _collapse_copies(index, ranked_ids, expected_document):
+    """Одинаковый текст другого файла — один id. Строки того же файла остаются.
+
+    Схлопывается копия с другим именем и другой группой. Пустая группа у обоих
+    тоже считается разной таблицей: это два обычных куска. Ожидаемый файл,
+    если он есть в списке, забирает слот.
+    """
+    text_hashes = index.get("text_hashes") or []
+    if not text_hashes:
+        return ranked_ids, {}
+    groups = {}
+    deduped = []
+    for key in ranked_ids:
+        pos = index["position"].get(key)
+        if pos is None:
+            continue
+        digest = text_hashes[pos]
+        meta = index["metas"][pos]
+        doc = meta.get("document_name", "")
+        group = meta.get("group") or ""
+        if digest not in groups:
+            groups[digest] = {
+                "winner": key,
+                "doc": doc,
+                "group": group,
+                "others": [],
+                "place": len(deduped),
+            }
+            deduped.append(key)
+            continue
+        found = groups[digest]
+        same_doc = doc == found["doc"]
+        same_group = bool(group) and group == found["group"]
+        if same_doc or same_group:
+            deduped.append(key)
+            continue
+        if expected_document and doc == expected_document:
+            found["others"].append(found["winner"])
+            deduped[found["place"]] = key
+            found["winner"] = key
+            found["doc"] = doc
+            found["group"] = group
+            continue
+        if key not in found["others"]:
+            found["others"].append(key)
+    also = {}
+    for found in groups.values():
+        winner = found["winner"]
+        if not found["others"]:
+            continue
+        winner_pos = index["position"].get(winner)
+        if winner_pos is None:
+            continue
+        winner_doc = index["metas"][winner_pos].get("document_name", "")
+        names = []
+        for other in found["others"]:
+            other_pos = index["position"].get(other)
+            if other_pos is None:
+                continue
+            name = index["metas"][other_pos].get("document_name", "")
+            if name and name != winner_doc and name not in names:
+                names.append(name)
+        if names:
+            also[winner] = names
+    return deduped, also
+
+
+def search_chunks(
+    clear_query, limit=4, document_names=None, debug=False,
+    features=None, expected_document=None,
+) -> list[Chunk] | dict:
     """Вернуть не больше limit кусков. Имена ограничивают поиск уже выбранными файлами.
 
     Пустой список означает весь индекс: третьим аргументом его не передают.
     debug=True отдаёт сырые списки id и слоты. Без него ответ — прежний список слотов.
     features=None берёт флаги из config/runtime.json. Пропущенный ключ остаётся включённым.
+    expected_document, если этот файл есть среди копий, оставляет слот за ним.
+    Имена остальных копий дописываются в конец текста слота.
     """
     if features is None:
         features = runtime().get("features", {})
@@ -741,7 +819,12 @@ def search_chunks(clear_query, limit=4, document_names=None, debug=False, featur
         for key in fused_ids
         if key in index["position"] and _meta_ok(index["metas"][index["position"][key]])
     ]
-    slots = _contexts(index, ranked_ids, limit, features=features)
+    deduped_ids, also = _collapse_copies(index, ranked_ids, expected_document)
+    slots = _contexts(index, deduped_ids, limit, features=features)
+    for slot in slots:
+        names = also.get(slot.get("id"))
+        if names:
+            slot["text"] = (slot.get("text") or "").rstrip() + f"\n[также в: {', '.join(names)}]"
     _remember_search(focused_query, allowed, len(ranked_ids), slots)
     if not debug:
         return slots
