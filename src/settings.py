@@ -5,10 +5,11 @@
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 NO_ANSWER = "В документах нет ответа."
-_cache = {}
+_cache: dict[str, Any] = {}
 
 
 def _root():

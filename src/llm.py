@@ -7,6 +7,7 @@ import contextvars
 import os
 import threading
 from pathlib import Path
+from typing import Any, cast
 
 from settings import runtime
 
@@ -46,8 +47,11 @@ def load():
 def count_tokens(text):
     """Число токенов модели. Нужно, чтобы промпт уложился в бюджет."""
     load()
+    model = _llm
+    if model is None:
+        raise AttributeError("'NoneType' object has no attribute 'tokenize'")
     with _run_lock:
-        return len(_llm.tokenize(text.encode("utf-8"), add_bos=False))
+        return len(model.tokenize(text.encode("utf-8"), add_bos=False))
 
 
 def model_name():
@@ -66,8 +70,13 @@ def _complete_sync(system, user, max_tokens, examples, usage_sink):
     for question, reply in examples:
         messages += [{"role": "user", "content": question}, {"role": "assistant", "content": reply}]
     messages.append({"role": "user", "content": user})
+    model = _llm
+    if model is None:
+        raise AttributeError("'NoneType' object has no attribute 'create_chat_completion'")
     with _run_lock:
-        reply = _llm.create_chat_completion(messages=messages, max_tokens=max_tokens, temperature=temperature)
+        reply = cast(Any, model).create_chat_completion(
+            messages=messages, max_tokens=max_tokens, temperature=temperature,
+        )
     usage = reply.get("usage") if isinstance(reply, dict) else None
     if usage_sink is not None and isinstance(usage, dict):
         usage_sink["tokens_in"] = usage.get("prompt_tokens")
@@ -87,7 +96,7 @@ def complete(system, user, max_tokens=None, examples=(), *, usage_sink=None, tim
     if timeout_s is None:
         timeout_s = limits.get("llm_ms", 90000) / 1000
     retries = limits.get("retries", 1)
-    last_error = None
+    last_error: BaseException | None = None
     for attempt in range(retries + 1):
         ctx = contextvars.copy_context()
         future = _llm_executor.submit(ctx.run, _complete_sync, system, user, max_tokens, examples, usage_sink)
@@ -100,4 +109,6 @@ def complete(system, user, max_tokens=None, examples=(), *, usage_sink=None, tim
             if attempt < retries:
                 continue
             raise last_error
+    if not isinstance(last_error, BaseException):
+        raise TypeError("exceptions must derive from BaseException")
     raise last_error

@@ -4,6 +4,7 @@
 после повторов заменяется отказом, кроме числа из обзора таблицы.
 """
 from pathlib import Path
+from typing import Any
 from datetime import datetime, timezone
 
 import concurrent.futures
@@ -377,7 +378,7 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
     def answer(state: GraphState):
         started = _clock()
         state["attempts"] = state.get("attempts", 0) + 1
-        usage = {}
+        usage: dict[str, Any] = {}
         state["answer"] = answer_agent(
             state["query"], state["clear"], state["chunks"], state["work"],
             state.get("feedback"), state.get("features"), usage,

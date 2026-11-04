@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from typing import Any, TypedDict, cast
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -44,7 +45,7 @@ def _session_key(request: Request) -> str:
 
 limiter = Limiter(key_func=_session_key, key_style="endpoint")
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, cast(Any, _rate_limit_exceeded_handler))
 INBOX = Path("data/inbox")
 _PUBLIC = {("GET", "/"), ("GET", "/ready"), ("GET", "/auth/state"), ("POST", "/setup"), ("POST", "/login")}
 
@@ -69,7 +70,12 @@ async def _guard(request: Request, call_next):
 PAGE = Path(__file__).parent / "web" / "index.html"
 ROOT = Path(__file__).resolve().parents[1]
 LOAD_TIME = ROOT / "data" / "load_time.txt"
-_state = {"started": None, "done": False}
+class _Warm(TypedDict):
+    started: float | None
+    done: bool
+
+
+_state: _Warm = {"started": None, "done": False}
 # Upload reads the inbox and then indexes that snapshot. A delete or another
 # ingest in between removes a document and the snapshot puts it back.
 _upload_lock = threading.Lock()
@@ -120,7 +126,10 @@ def _warm():
     time.sleep(1)
     load()
     LOAD_TIME.parent.mkdir(parents=True, exist_ok=True)
-    LOAD_TIME.write_text(str(int(time.time() - _state["started"])), encoding="utf-8")
+    started = _state["started"]
+    if not isinstance(started, (int, float)):
+        raise TypeError("unsupported operand type(s) for -: 'float' and 'NoneType'")
+    LOAD_TIME.write_text(str(int(time.time() - started)), encoding="utf-8")
 
 
 @app.on_event("startup")
@@ -401,7 +410,7 @@ def _chunks(row, name, user):
 
 
 @app.get("/kb/{kb_id}/documents/{document_name:path}/preview")
-def documents_preview(kb_id: str, document_name: str = None, request: Request = None):
+def documents_preview(kb_id: str, document_name: str = None, request: Request = None):  # type: ignore[assignment]
     """Текст одного документа из индекса этой базы."""
     if document_name is None and request is None:
         document_name = kb_id
@@ -420,7 +429,7 @@ def documents_preview(kb_id: str, document_name: str = None, request: Request = 
 
 
 @app.delete("/kb/{kb_id}/documents/{document_name:path}")
-def documents_delete(kb_id: str, document_name: str = None, request: Request = None):
+def documents_delete(kb_id: str, document_name: str = None, request: Request = None):  # type: ignore[assignment]
     """Удалить файл из папки базы и из её индекса, не трогая диалоги."""
     if document_name is None and request is None:
         document_name = kb_id
@@ -459,7 +468,7 @@ def documents_delete(kb_id: str, document_name: str = None, request: Request = N
 
 
 @app.post("/documents")
-def documents(body: Docs, request: Request = None):
+def documents(body: Docs, request: Request = None):  # type: ignore[assignment]
     """Переиндексировать только папку базы «Документы» из реестра, не путь с клиента."""
     user = _user(request)
     if not access.can(user, kb.LEGACY_ID, "upload"):
@@ -564,7 +573,7 @@ _user_upload = None
 
 
 @app.post("/upload")
-async def upload(request: Request = None, files: list[UploadFile] = File(None), kb_id: str = Form(""), new_name: str = Form("")):
+async def upload(request: Request = None, files: list[UploadFile] = File(None), kb_id: str = Form(""), new_name: str = Form("")):  # type: ignore[assignment]
     """Записать файлы в выбранную базу. Без id базы — отказ."""
     global _user_upload
     if isinstance(request, list):
@@ -678,7 +687,7 @@ def _same_tree(left, right):
 
 
 def _split_flat(visible, node, user):
-    owners = {}
+    owners: dict[str, Any] = {}
     for row in visible:
         for name in _kb_file_names(row, user):
             owners.setdefault(name, row["id"])
@@ -689,7 +698,7 @@ def _split_flat(visible, node, user):
         return [(rows[next(iter(owner_ids))], node)]
     if not owner_ids:
         return []
-    buckets = {row["id"]: [] for row in visible}
+    buckets: dict[Any, list[dict[str, Any]]] = {row["id"]: [] for row in visible}
     for child in node.get("children") or []:
         if not isinstance(child, dict):
             continue
@@ -756,7 +765,7 @@ def _store_page_tree(user, incoming):
 
 
 @app.get("/ui")
-def ui_get(request: Request = None):
+def ui_get(request: Request = None):  # type: ignore[assignment]
     """Снимок диалогов этого человека. До готовности индекса список файлов не читается."""
     user = _user(request)
     if trees.separate():
@@ -879,6 +888,7 @@ def query(body: Query, request: Request, response: Response):
 
     try:
         existed = workspace.prepare_dialog(body.dialog_id, memory_key=memory_key) is not None
+        result: dict[str, Any]
         if not scope.kbs:
             result = {"answer": NO_ANSWER, "status": "нет ответа", "document_names": [], "sources": []}
         else:

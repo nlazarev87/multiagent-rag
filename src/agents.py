@@ -5,6 +5,7 @@
 """
 import contextvars
 import re
+from typing import Any
 
 from llm import complete, count_tokens
 from settings import NO_ANSWER, fewshot, lexicon, prompts, runtime
@@ -35,7 +36,7 @@ MISSING = "нет ответа"
 WRONG_DOC = "Возьми другой документ: в найденном тексте нет слов вопроса."
 SYSTEM = TASK = YES_NO = RETRY = COPIED = INVERT = LIST_GAP = DEFINE = ""
 PROMPT_TOKENS = 1500
-EXAMPLES = []
+EXAMPLES: list[tuple[str, str]] = []
 
 
 def _bind_prompts():
@@ -232,7 +233,7 @@ def _contradiction(answer, chunks):
             continue
         if phrase in flat:
             return True
-    groups = {}
+    groups: dict[tuple[Any, ...], list[tuple[Any, ...]]] = {}
     for fact in _facts(answer):
         stems = fact[2] if len(fact) > 2 and isinstance(fact[2], tuple) else ()
         if not stems:
@@ -465,7 +466,7 @@ def _hits(text, token):
 
 def _facts(answer):
     text = re.sub(r"\[[\d,\s]+\]", " ", answer)
-    facts = []
+    facts: list[tuple[Any, ...]] = []
     for sentence in re.split(r"(?<=[.!?])\s+", text):
         wide = tuple(word[:5] for word in _words(sentence) if len(word) >= 5)
         covered = 0
@@ -1223,7 +1224,7 @@ def _naming_nouns(span, number_start):
     # «при температуре составляет 6» drops температуре: the verb shows that
     # 6 belongs to the head before «при».
     pos = number_start
-    nouns = []
+    nouns: list[str] = []
     dropped = []
     saw_verb = False
     for _ in range(8):
@@ -1977,7 +1978,7 @@ def _keep_cited(used, scores, facts, bodies, chunks=None):
     best = max(scores[number - 1] for number in used)
     ranked = sorted(used, key=lambda number: (-scores[number - 1], number))
     covered = set()
-    kept = []
+    kept: list[int] = []
     for number in ranked:
         if len(kept) >= 4:
             break

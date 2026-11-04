@@ -177,7 +177,7 @@ def score(value):
 
 
 def iter_files(node):
-    names = []
+    names: list[str] = []
     if not isinstance(node, dict):
         return names
     name = node.get("document_name")

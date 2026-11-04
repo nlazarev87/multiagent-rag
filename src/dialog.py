@@ -4,8 +4,9 @@
 document_names или, если их нет, из sources.
 """
 import threading
+from typing import Any
 
-_dialogs = {}
+_dialogs: dict[Any, list[Any]] = {}
 _lock = threading.Lock()
 
 

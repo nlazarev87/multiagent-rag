@@ -1,4 +1,6 @@
 """Открытие базы и действия. Закрытие человека, его роли или его группы перекрывает открытие."""
+from typing import Any
+
 import auth
 import kb
 from permit import Permit, sign
@@ -209,10 +211,10 @@ def _spread_hits(chunks, limit, kbs=None, bound=None, rankings=None, marks=None)
     """Не больше двух кусков на файл. Файл с редким словом вопроса не вытесняется."""
     if limit <= 0 or not chunks:
         return []
-    per_file = {}
-    chosen = []
+    per_file: dict[tuple[str, str], int] = {}
+    chosen: list[Any] = []
     taken = set()
-    place = {}
+    place: dict[tuple[Any, ...], int] = {}
     for index, chunk in enumerate(chunks):
         ident = (*_file_key(chunk), chunk.get("chunk_index") or 0)
         place.setdefault(ident, index)
@@ -284,7 +286,7 @@ def _rrf_merge(rankings, limit, query=""):
     import store
     from settings import runtime
     width = runtime().get("rrf", store._rrf())
-    score = {}
+    score: dict[tuple[Any, ...], float] = {}
     meta = {}
     for ranking in rankings:
         for place, chunk in enumerate(ranking, start=1):
@@ -313,11 +315,11 @@ def build_scope(user):
     from settings import runtime
 
     kbs = ask_kbs(user)
-    trace = []
+    trace: list[Any] = []
 
     def names():
         rows = [row for row in visible_documents(user) if can(user, row["kb_id"], "ask")]
-        counts = {}
+        counts: dict[Any, int] = {}
         for row in rows:
             counts[row["name"]] = counts.get(row["name"], 0) + 1
         if len({row["kb_id"] for row in rows}) <= 1:
