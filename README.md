@@ -1,5 +1,7 @@
 # multiagent-rag
 
+[![CI](https://github.com/nlazarev87/multiagent-rag/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nlazarev87/multiagent-rag/actions/workflows/ci.yml)
+
 Локальный поиск по своим документам, без интернета. Ответ пишет Qwen2.5-1.5B на процессоре. Похожесть текста считает модель `multilingual-e5-small`. Поиск идёт двумя списками, Chroma и поиск по словам, и складывает их в один. Сеть для ответа не нужна.
 
 ## Запуск
