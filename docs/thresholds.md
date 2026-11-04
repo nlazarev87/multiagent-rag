@@ -34,7 +34,7 @@
 |---|---|---|---|
 | attempts max | 2 | test_coordinator | ✅ |
 | graph_ms | 120000 | test_timeouts | ✅ |
-| node_ms | 60000 | ключ в конфиге, на узел не надет | ✅ |
+| node_ms | 60000 | не используется: короче llm_ms (90000), на answer сработает раньше модели. Wave 2 follow-up (per-node или не короче llm_ms) | ✅ |
 | retry keyword | «документ» | test_coordinator | ❌ |
 
 ## ingest.py
