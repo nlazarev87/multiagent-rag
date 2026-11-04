@@ -14,7 +14,7 @@ from pathlib import Path
 
 from settings import runtime
 
-SUFFIXES = {".txt", ".md", ".doc", ".docx", ".pdf"}
+SUFFIXES = {".txt", ".md", ".doc", ".docx", ".pdf", ".xlsx"}
 VERSION = 3
 TOKENS = 250
 OVERLAP = 40
@@ -391,6 +391,63 @@ def _pdf_blocks(path):
     return blocks
 
 
+def _xlsx_cell(cell):
+    """Число остаётся без лишнего .0. Пустая ячейка — пустая строка."""
+    if cell is None:
+        return ""
+    if isinstance(cell, bool):
+        return str(cell)
+    if isinstance(cell, int):
+        return str(cell)
+    if isinstance(cell, float):
+        return str(int(cell)) if cell.is_integer() else str(cell)
+    return str(cell).strip()
+
+
+def _xlsx_blocks(path):
+    """XLSX: каждый непустой лист — одна таблица.
+
+    Первая непустая строка — имена столбцов. Дальше пары
+    (столбец, значение). Пустая ячейка остаётся в своём столбце.
+    Группа sheet:{имя листа}:0. Лист короче двух строк не даёт блоков.
+    """
+    import openpyxl
+
+    path = Path(path)
+    blocks = []
+    workbook = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
+    try:
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            grid = []
+            for row in sheet.iter_rows(values_only=True):
+                cells = [_xlsx_cell(cell) for cell in row]
+                if any(cells):
+                    grid.append(cells)
+            if len(grid) < 2:
+                continue
+            labels = grid[0]
+            width = len(labels)
+            rows = []
+            for cells in grid[1:]:
+                cells = cells + [""] * (width - len(cells))
+                rows.append([
+                    (labels[index] if index < width else "", cell)
+                    for index, cell in enumerate(cells)
+                ])
+            blocks.append({
+                "kind": "table",
+                "caption": sheet_name,
+                "labels": labels,
+                "width": width,
+                "rows": rows,
+                "group": f"sheet:{sheet_name}:0",
+            })
+    finally:
+        workbook.close()
+    return blocks
+
+
 def _doc_blocks(path):
     with tempfile.TemporaryDirectory() as folder:
         subprocess.run(
@@ -410,6 +467,8 @@ def _blocks(path):
         return _doc_blocks(path)
     if suffix == ".pdf":
         return _pdf_blocks(path)
+    if suffix == ".xlsx":
+        return _xlsx_blocks(path)
     text = path.read_text(encoding="utf-8")
     return _markdown_blocks(text) if suffix == ".md" else _text_blocks(text)
 

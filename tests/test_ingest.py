@@ -1548,3 +1548,75 @@ def test_pdf_table_chunks_from_blocks(tmp_path, monkeypatch):
     intros = [chunk for chunk in chunks if chunk.get("kind") == "intro"]
     assert len(intros) == 1
     assert intros[0]["group"] == table_chunks[0]["group"]
+
+
+def _write_xlsx(path, sheets):
+    """sheets: dict {name: [[row1], [row2], ...]}."""
+    import openpyxl
+
+    workbook = openpyxl.Workbook()
+    default = workbook.active
+    for name, rows in sheets.items():
+        sheet = workbook.create_sheet(title=name)
+        for row in rows:
+            sheet.append(row)
+    if default.title not in sheets:
+        workbook.remove(default)
+    workbook.save(str(path))
+    workbook.close()
+
+
+def test_xlsx_one_sheet_with_head(tmp_path):
+    """#167: один лист → таблица с labels и rows (пары)."""
+    xlsx_path = tmp_path / "one.xlsx"
+    _write_xlsx(xlsx_path, {"Sheet1": [
+        ["Name", "Value"],
+        ["Pressure", 6],
+        ["Temp", 40],
+    ]})
+    blocks = ingest._xlsx_blocks(xlsx_path)
+    assert len(blocks) == 1
+    table = blocks[0]
+    assert table["kind"] == "table"
+    assert table["labels"] == ["Name", "Value"]
+    assert table["caption"] == "Sheet1"
+    assert table["group"] == "sheet:Sheet1:0"
+    assert table["rows"] == [
+        [("Name", "Pressure"), ("Value", "6")],
+        [("Name", "Temp"), ("Value", "40")],
+    ]
+
+
+def test_xlsx_two_sheets_two_groups(tmp_path):
+    """#167: два листа → две таблицы с разными group."""
+    xlsx_path = tmp_path / "two.xlsx"
+    _write_xlsx(xlsx_path, {
+        "First": [["Col"], ["a"], ["b"]],
+        "Second": [["Col"], ["c"], ["d"]],
+    })
+    blocks = ingest._xlsx_blocks(xlsx_path)
+    assert len(blocks) == 2
+    assert {block["group"] for block in blocks} == {"sheet:First:0", "sheet:Second:0"}
+
+
+def test_xlsx_empty_sheet_skipped(tmp_path):
+    """#167: пустой лист → без блоков."""
+    xlsx_path = tmp_path / "empty.xlsx"
+    _write_xlsx(xlsx_path, {
+        "Empty": [],
+        "Data": [["Col"], ["x"]],
+    })
+    blocks = ingest._xlsx_blocks(xlsx_path)
+    assert len(blocks) == 1
+    assert blocks[0]["group"] == "sheet:Data:0"
+
+
+def test_xlsx_number_in_text(tmp_path):
+    """#167: числа остаются числами в тексте (не '6.0')."""
+    xlsx_path = tmp_path / "num.xlsx"
+    _write_xlsx(xlsx_path, {"N": [["val"], [6]]})
+    blocks = ingest._xlsx_blocks(xlsx_path)
+    text = ingest.load_text(xlsx_path)
+    assert blocks[0]["rows"] == [[("val", "6")]]
+    assert "6" in text
+    assert "6.0" not in text
