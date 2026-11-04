@@ -9,6 +9,7 @@ import re
 from llm import complete, count_tokens
 from settings import fewshot, lexicon, prompts, runtime
 from store import chunks_for_document, search_chunks
+from pipeline_types import CheckResult, Chunk, SelectResult, Turn
 
 _extra_rows = contextvars.ContextVar("extra_rows", default=None)
 _trace = contextvars.ContextVar("answer_trace", default=None)
@@ -91,7 +92,7 @@ def _dependent(query):
     return bool(tokens & _PRONOUNS) or not _words(query)
 
 
-def select_agent(query, turns):
+def select_agent(query: str, turns: list[Turn]) -> SelectResult:
     """Один прошлый ход или пусто. Зависимый вопрос берёт последний ход."""
     if not turns:
         return []
@@ -108,7 +109,7 @@ def select_agent(query, turns):
     return [chosen] if chosen else []
 
 
-def clarify_agent(query, work_turns):
+def clarify_agent(query: str, work_turns: list[Turn]) -> str:
     """Строка для поиска. Независимый вопрос возвращается как есть."""
     if not work_turns or not _dependent(query):
         return query
@@ -119,7 +120,7 @@ def clarify_agent(query, work_turns):
     return f"{previous['query']} {query}"
 
 
-def search_agent(clear_query, document_names=None):
+def search_agent(clear_query: str, document_names: list[str] | None = None) -> list[Chunk]:
     """Найти куски текста. Имена передаются в индекс только когда список непустой."""
     limit = runtime().get("search_limit", 4)
     if document_names:
@@ -501,7 +502,7 @@ def _drop_repeat_cite(answer):
     return text
 
 
-def answer_agent(query, clear_query, chunks, work_turns, feedback=None, features=None, usage_sink=None):
+def answer_agent(query: str, clear_query: str, chunks: list[Chunk], work_turns: list[Turn], feedback: str | None = None, features: dict | None = None, usage_sink: dict | None = None) -> str:
     """Текст ответа. Пустые куски дают отказ, обзор таблицы может обойтись без модели."""
     if not chunks:
         _latin_not_found_var.set(False)
@@ -2187,7 +2188,7 @@ def _answer_latin_missing(answer, chunks):
     return any(token not in blob for token in _latin_tokens(answer))
 
 
-def check_agent(answer, chunks, query="", known=None):
+def check_agent(answer: str, chunks: list[Chunk], query: str = "", known=None) -> CheckResult:
     """Подтвердить ответ по найденному тексту или вернуть отзыв. Модель не вызывается."""
     latin_not_found = _latin_not_found_var.get()
     _latin_not_found_var.set(False)

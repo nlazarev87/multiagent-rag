@@ -12,6 +12,7 @@ import re
 import time
 
 from langgraph.graph import END, StateGraph
+from pipeline_types import GraphState
 
 from agents import CONFIRMED, CONFIRMED_OVERVIEW, MISSING, NO_ANSWER, UNCONFIRMED, _codes, _count_ask, _dependent, _extra_rows, _from_overview, _trace, _words, answer_agent, check_agent, clarify_agent, search_agent, select_agent
 from dialog import add_turn, get_dialog
@@ -246,7 +247,7 @@ def _clock():
     return time.perf_counter(), datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
-def _run(query, dialog_id, scope, features=None):
+def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> GraphState:
     if features is None:
         features = runtime().get("features", {})
     trace_steps = []
@@ -275,7 +276,7 @@ def _run(query, dialog_id, scope, features=None):
         _keep_steps()
         return listed
 
-    def select(state):
+    def select(state: GraphState):
         started = _clock()
         state["work"] = select_agent(state["query"], get_dialog(state["dialog_id"]))
         work = state.get("work") or []
@@ -287,7 +288,7 @@ def _run(query, dialog_id, scope, features=None):
         )
         return state
 
-    def clarify(state):
+    def clarify(state: GraphState):
         started = _clock()
         state["clear"] = clarify_agent(state["query"], state["work"])
         _step(
@@ -297,7 +298,7 @@ def _run(query, dialog_id, scope, features=None):
         )
         return state
 
-    def search(state):
+    def search(state: GraphState):
         started = _clock()
         places = _places(state["work"], state["query"], state.get("feedback") or "")
         names = None
@@ -372,7 +373,7 @@ def _run(query, dialog_id, scope, features=None):
         )
         return state
 
-    def answer(state):
+    def answer(state: GraphState):
         started = _clock()
         state["attempts"] = state.get("attempts", 0) + 1
         usage = {}
@@ -391,7 +392,7 @@ def _run(query, dialog_id, scope, features=None):
         )
         return state
 
-    def check(state):
+    def check(state: GraphState):
         started = _clock()
         checker = scope.known if scope is not None else known
         verdict = check_agent(state["answer"], state["chunks"], state["query"], checker)
@@ -407,7 +408,7 @@ def _run(query, dialog_id, scope, features=None):
         )
         return state
 
-    def route(state):
+    def route(state: GraphState):
         # «документ» и обзор таблицы просят другой поиск. Остальной отзыв переписывает ответ.
         if state["status"] != UNCONFIRMED or state["attempts"] >= _attempts():
             return "finish"
@@ -416,7 +417,7 @@ def _run(query, dialog_id, scope, features=None):
             return "search"
         return "answer"
 
-    def finish(state):
+    def finish(state: GraphState):
         started = _clock()
         overview = None
         # Вопрос «сколько» не заменяется отказом, если в найденном тексте уже есть полная строка обзора.
@@ -480,7 +481,7 @@ def _run(query, dialog_id, scope, features=None):
         )
         return state
 
-    graph = StateGraph(dict)
+    graph = StateGraph(GraphState)
     for name, node in (("select", select), ("clarify", clarify), ("search", search), ("answer", answer), ("check", check), ("finish", finish)):
         graph.add_node(name, node)
     graph.set_entry_point("select")
