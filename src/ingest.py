@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from settings import runtime
 
@@ -102,7 +103,7 @@ def _plain_text(text):
     # Collapsing it to a space stores "доку- мента", so the word never matches.
     # Join only when the next line continues a letter, as across paragraphs.
     # "6-" + "10" and "ISO-" + "9001" keep the hyphen instead of becoming 610.
-    lines = []
+    lines: list[str] = []
     for raw in (text or "").splitlines():
         line = " ".join(raw.split())
         if not line:
@@ -166,7 +167,7 @@ def _aligned_row(row):
 
 
 def _style_names(style):
-    names = []
+    names: list[str] = []
     while style is not None and len(names) < 10:
         names.append(style.name or "")
         style = style.base_style
@@ -255,7 +256,7 @@ def _table_block(table, caption, depth=0):
         start = 2
     rows = []
     for row in grid[start:]:
-        pairs = []
+        pairs: list[tuple[str, str]] = []
         last = None
         for label, cell in zip(labels, row):
             if cell is None:
@@ -283,7 +284,7 @@ def _table_block(table, caption, depth=0):
             pairs.append((label, value))
         if any(value for _, value in pairs):
             rows.append(pairs)
-    names = []
+    names: list[str] = []
     for label in labels:
         if not names or not label or names[-1] != label:
             names.append(label)
@@ -413,10 +414,10 @@ def _pdf_blocks(path):
             text = (visible.extract_text() or "").strip()
             tables = []
             for index, table in enumerate(found):
-                data = table.extract() or []
+                extracted = table.extract() or []
                 grid = [
                     ["" if cell is None else str(cell).strip() for cell in (row or [])]
-                    for row in data
+                    for row in extracted
                 ]
                 grid = [row for row in grid if any(cell for cell in row)]
                 if len(grid) < 2:
@@ -554,7 +555,8 @@ def _row_parts(pairs, keyvalue, room):
     lead = 1
     while lead < min(3, len(pairs) - 1) and count_tokens(_row_line(pairs[:lead + 1], False)) * 3 <= room:
         lead += 1
-    parts, current = [], []
+    parts: list[str] = []
+    current: list[tuple[str, str]] = []
     for pair in pairs[lead:]:
         if current and count_tokens(_row_line(pairs[:lead] + current + [pair], False)) > room:
             parts.append(_row_line(pairs[:lead] + current, False))
@@ -593,7 +595,8 @@ def _cut(words, budget):
 
 def _tail(text, limit):
     words = text.split()
-    taken, size = [], 0
+    taken: list[str] = []
+    size = 0
     while words and size + _word_tokens(words[-1]) <= limit:
         size += _word_tokens(words[-1])
         taken.insert(0, words.pop())
@@ -601,7 +604,9 @@ def _tail(text, limit):
 
 
 def _pack(lines, budget, overlap=True):
-    pieces, current, size = [], [], 0
+    pieces: list[list[str]] = []
+    current: list[str] = []
+    size = 0
     for line in lines:
         cost = count_tokens(line)
         if cost > budget:
@@ -701,7 +706,9 @@ def chunks_from_blocks(blocks, document_name="", source=b""):
     digest = hashlib.sha256(
         (json.dumps(blocks, ensure_ascii=False) + str(VERSION) + limits + _tokenizer_id() + raw).encode()
     ).hexdigest()
-    pieces, path, buffer = [], [], []
+    pieces: list[tuple[Any, ...]] = []
+    path: list[tuple[Any, Any]] = []
+    buffer: list[str] = []
     tables = 0
 
     def section():

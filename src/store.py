@@ -12,6 +12,7 @@ import re
 import threading
 from collections import Counter
 from pathlib import Path
+from typing import Any, Literal, overload
 
 from settings import runtime, where as route_where
 from pipeline_types import Chunk
@@ -69,7 +70,7 @@ _model = None
 _client = None
 _collection = None
 _index = None
-_stemmers = {}
+_stemmers: dict[str, Any] = {}
 _import_lock = threading.Lock()
 # Sync routes share a thread pool with ingest. Search keeps the index object
 # it opened. A delete or an upload clears the global when it finishes, and
@@ -98,7 +99,7 @@ def _embed(texts):
     return _model.encode(texts, normalize_embeddings=True, batch_size=16).tolist()
 
 
-_pool = {}
+_pool: dict[str, Any] = {}
 
 
 def _client_for(path):
@@ -120,7 +121,10 @@ def collection():
         with _import_lock:
             if _collection is None:
                 _client_for(CHROMA)
-                _collection = _client.get_or_create_collection("fragments", metadata={"hnsw:space": "cosine"})
+                client = _client
+                if client is None:
+                    raise AttributeError("'NoneType' object has no attribute 'get_or_create_collection'")
+                _collection = client.get_or_create_collection("fragments", metadata={"hnsw:space": "cosine"})
     return _collection
 
 
@@ -152,7 +156,10 @@ def reset():
 
 
 def _rows(col, **where):
-    ids, texts, metas, offset = [], [], [], 0
+    ids: list[Any] = []
+    texts: list[Any] = []
+    metas: list[Any] = []
+    offset = 0
     while True:
         batch = col.get(include=["documents", "metadatas"], limit=500, offset=offset, **where)
         ids += batch["ids"]
@@ -176,7 +183,7 @@ def upsert_chunks(chunks):
         return
     with _index_lock:
         col = collection()
-        groups = {}
+        groups: dict[Any, list[Any]] = {}
         for chunk in chunks:
             groups.setdefault(chunk["document_name"], []).append(chunk)
         for name, items in groups.items():
@@ -278,7 +285,11 @@ def _build(col):
     ids, texts, metas = _rows(col)
     counts = [Counter(_terms(text)) for text in texts]
     lengths = [sum(count.values()) for count in counts]
-    frequency, size, chunks, vocabulary, groups = {}, Counter(), Counter(), {}, {}
+    frequency: dict[Any, Any] = {}
+    size: Counter[Any] = Counter()
+    chunks: Counter[Any] = Counter()
+    vocabulary: dict[Any, Any] = {}
+    groups: dict[Any, list[int]] = {}
     for number, (text, meta, count, length) in enumerate(zip(texts, metas, counts, lengths)):
         name = meta["document_name"]
         frequency.setdefault(name, Counter()).update(count.keys())
@@ -377,9 +388,9 @@ def scope(index, query):
         if len(word) < 5 or word in _STOP:
             continue
         stem = _stem(word)
-        hits = [doc for doc in documents if stem in file_stems[doc]]
-        if hits and len(hits) < len(documents):
-            query_stems.append(set(hits))
+        matched = [doc for doc in documents if stem in file_stems[doc]]
+        if matched and len(matched) < len(documents):
+            query_stems.append(set(matched))
     known = [
         name
         for name in names
@@ -481,7 +492,7 @@ def _dense(col, query, allowed, total):
 
 
 def _fuse(*rankings):
-    scores = Counter()
+    scores: Counter[Any] = Counter()
     for ranking in rankings:
         for rank, key in enumerate(ranking):
             scores[key] += 1 / (_rrf() + rank + 1)
@@ -575,7 +586,8 @@ def _contexts(index, ranked, limit, features=None):
             key for key in ranked
             if index["metas"][index["position"][key]].get("kind") != "overview"
         ]
-    slots, order = {}, []
+    slots: dict[Any, list[int]] = {}
+    order: list[Any] = []
     for place, key in enumerate(ranked):
         if place >= limit * 3 and len(order) >= limit:
             break
@@ -680,7 +692,9 @@ def known_permit(permit, term):
     return _read_permit(permit, lambda: known_at(permit.chroma, term))
 
 
-_search_notes = contextvars.ContextVar("store_search_notes", default=None)
+_search_notes: contextvars.ContextVar[list[dict[str, Any]] | None] = contextvars.ContextVar(
+    "store_search_notes", default=None,
+)
 
 
 def search_notes_begin():
@@ -725,8 +739,8 @@ def _collapse_copies(index, ranked_ids, expected_document):
     text_hashes = index.get("text_hashes") or []
     if not text_hashes:
         return ranked_ids, {}
-    groups = {}
-    deduped = []
+    groups: dict[Any, dict[str, Any]] = {}
+    deduped: list[Any] = []
     for key in ranked_ids:
         pos = index["position"].get(key)
         if pos is None:
@@ -782,10 +796,24 @@ def _collapse_copies(index, ranked_ids, expected_document):
     return deduped, also
 
 
+@overload
+def search_chunks(
+    clear_query, limit=4, document_names=None, debug: Literal[False] = False,
+    features=None, expected_document=None,
+) -> list[Chunk]: ...
+
+
+@overload
+def search_chunks(
+    clear_query, limit=4, document_names=None, debug: Literal[True] = ...,
+    features=None, expected_document=None,
+) -> dict[str, Any]: ...
+
+
 def search_chunks(
     clear_query, limit=4, document_names=None, debug=False,
     features=None, expected_document=None,
-) -> list[Chunk] | dict:
+) -> list[Chunk] | dict[str, Any]:
     """Вернуть не больше limit кусков. Имена ограничивают поиск уже выбранными файлами.
 
     Пустой список означает весь индекс: третьим аргументом его не передают.

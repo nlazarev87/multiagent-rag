@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import auth
 
 _lock = threading.Lock()
-_ready = set()
+_ready: set[str] = set()
 
 
 def path():

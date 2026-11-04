@@ -11,6 +11,7 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from settings import _root
 
@@ -26,7 +27,7 @@ CONTENT_ACTIONS = ("ask", "upload", "delete", "arrange")
 KEEPER = ("manage_users", "manage_roles", "manage_access", "create_kb")
 SESSION_HOURS = 12
 _lock = threading.RLock()
-_ready = set()
+_ready: set[str] = set()
 _BAD_LOGIN = re.compile(r"[/\\:\x00]")
 
 
@@ -486,7 +487,7 @@ def list_roles():
 
 def _kb_actions(conn, table, column, owner):
     rows = conn.execute(f"SELECT kb_id, action FROM {table} WHERE {column} = ?", (owner,)).fetchall()
-    found = {}
+    found: dict[Any, list[Any]] = {}
     for row in rows:
         found.setdefault(row["kb_id"], []).append(row["action"])
     return found
