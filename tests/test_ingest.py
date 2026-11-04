@@ -1620,3 +1620,72 @@ def test_xlsx_number_in_text(tmp_path):
     assert blocks[0]["rows"] == [[("val", "6")]]
     assert "6" in text
     assert "6.0" not in text
+
+
+def test_ingest_dir_skips_large_file(tmp_path, monkeypatch):
+    """#137: файл больше max_file_size_mb пропускается, маленький остаётся."""
+    monkeypatch.setattr("ingest.count_tokens", _token_count)
+    monkeypatch.setattr(
+        "settings.runtime",
+        lambda: {"ingest": {"max_file_size_mb": 50, "max_chunks_per_doc": 5000}},
+    )
+    events = []
+
+    def capture(kind, user, payload, ok=True):
+        events.append((kind, payload, ok))
+
+    monkeypatch.setattr("audit.write", capture)
+    (tmp_path / "small.txt").write_text("small content", encoding="utf-8")
+    large = tmp_path / "large.txt"
+    with open(large, "wb") as handle:
+        handle.truncate(60 * 1024 * 1024)
+    chunks = ingest_dir(tmp_path)
+    assert {chunk["document_name"] for chunk in chunks} == {"small.txt"}
+    assert any("small content" in chunk["text"] for chunk in chunks)
+    assert large.stat().st_size == 60 * 1024 * 1024
+    refused = [
+        payload for kind, payload, ok in events
+        if kind == "upload" and payload.get("error") == "file_too_large" and ok is False
+    ]
+    assert len(refused) == 1
+    assert refused[0]["file"] == "large.txt"
+    assert refused[0]["size"] == 60 * 1024 * 1024
+
+
+def test_chunks_truncated_per_doc(tmp_path, monkeypatch):
+    """#137: лишние куски отрезаются у каждого файла, не у всей папки."""
+    monkeypatch.setattr(
+        "settings.runtime",
+        lambda: {"ingest": {"max_file_size_mb": 50, "max_chunks_per_doc": 5000}},
+    )
+    events = []
+
+    def capture(kind, user, payload, ok=True):
+        events.append((kind, payload, ok))
+
+    monkeypatch.setattr("audit.write", capture)
+
+    def fake(blocks, document_name=""):
+        return [
+            {"id": f"c{number}", "text": f"text {number}", "document_name": document_name}
+            for number in range(6000)
+        ]
+
+    monkeypatch.setattr("ingest.chunks_from_blocks", fake)
+    (tmp_path / "many.txt").write_text("x", encoding="utf-8")
+    (tmp_path / "other.txt").write_text("y", encoding="utf-8")
+    chunks = ingest_dir(tmp_path)
+    by_name = {}
+    for chunk in chunks:
+        by_name.setdefault(chunk["document_name"], []).append(chunk)
+    assert set(by_name) == {"many.txt", "other.txt"}
+    assert len(by_name["many.txt"]) == 5000
+    assert len(by_name["other.txt"]) == 5000
+    assert by_name["many.txt"][0]["id"] == "c0"
+    assert by_name["many.txt"][-1]["id"] == "c4999"
+    warnings = [
+        payload for kind, payload, ok in events
+        if kind == "upload" and payload.get("warning") == "too_many_chunks" and ok is True
+    ]
+    assert {item["file"] for item in warnings} == {"many.txt", "other.txt"}
+    assert all(item["chunks_total"] == 6000 and item["chunks_kept"] == 5000 for item in warnings)
