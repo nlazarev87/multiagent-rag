@@ -8,3 +8,4 @@ snowballstemmer==3.0.1
 pytest==8.4.2
 python-multipart==0.0.22
 pypdf==6.21.4
+pdfplumber==0.11.10
