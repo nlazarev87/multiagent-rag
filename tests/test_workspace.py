@@ -130,7 +130,7 @@ def test_forget_file_keeps_the_dialog(tmp_path, monkeypatch):
     assert saved["tree"]["children"][0]["name"] == "Папка"
 
 
-def test_overlapping_tree_write_keeps_the_new_turn(tmp_path, monkeypatch):
+def test_overlapping_tree_write_blocks_until_the_other_thread_finishes(tmp_path, monkeypatch):
     monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
     dialog.reset()
     row = workspace.create_dialog()
@@ -704,7 +704,7 @@ def test_append_does_not_recreate_a_deleted_dialog(tmp_path, monkeypatch):
     assert dialog.get_dialog(row["id"]) == []
 
 
-def test_overlapping_tree_save_keeps_the_new_turn(tmp_path, monkeypatch):
+def test_overlapping_tree_save_replaces_the_folder_name(tmp_path, monkeypatch):
     monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
     dialog.reset()
     row = workspace.create_dialog()
@@ -784,7 +784,7 @@ def test_overlapping_tree_save_keeps_the_new_turn(tmp_path, monkeypatch):
     assert saved["tree"]["children"][0]["name"] == "Новая"
 
 
-def test_ratings_keep_only_scores_from_one_to_five(tmp_path, monkeypatch):
+def test_ratings_clear_an_out_of_range_score_and_keep_the_rest(tmp_path, monkeypatch):
     monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
     row = workspace.create_dialog()
     workspace.append_turn(row["id"], "вопрос", _answer("ответ"))

@@ -641,11 +641,11 @@ _user_upload = None
 
 @app.post("/upload")
 async def upload(
-    request: Request = None,
+    request: Request = None,  # type: ignore[assignment]
     files: list[UploadFile] = File(None),
     kb_id: str = Form(""),
     new_name: str = Form(""),
-):  # type: ignore[assignment]
+):
     """Записать файлы в выбранную базу. Без id базы — отказ."""
     global _user_upload
     if isinstance(request, list):

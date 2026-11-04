@@ -6,7 +6,7 @@ EVAL = Path(__file__).resolve().parent / "eval"
 if str(EVAL) not in sys.path:
     sys.path.insert(0, str(EVAL))
 
-import scorecard
+import scorecard  # noqa: E402
 
 
 def test_floors_hold():
