@@ -4,6 +4,24 @@
 
 Один процесс пишет ответ и считает длину текста. Числовую модель для поиска грузит индекс, не этот модуль.
 
+## Реестр моделей
+
+Карточки чат-моделей — [config/models.json](../config/models.json), читает их [src/model_registry.py](../src/model_registry.py). Четыре модели: Qwen2.5-1.5B, Qwen2.5-7B (два шарда), QVikhr-3-1.7B-noreasoning и RusMind-Momentum-4.7. У каждой — id, файлы, размер, SHA-256, описание, плюсы/минусы, ресурсы, лицензия, источник. Дефолт — `qvikhr`.
+
+Реестр сканирует `data/models/*.gguf`, группирует шарды `-00001-of-00002`, для неизвестного GGUF строит fallback-карточку. Каталоги эмбеддингов/реранкеров игнорируются; `../` и symlink отклоняются. Отсутствующий файл даёт `available=false`, а не исчезновение карточки.
+
+## Скачивание моделей
+
+[scripts/fetch_models.py](../scripts/fetch_models.py) качает GGUF с Hugging Face: резюм через `Range` во временный `<name>.gguf.part`, затем проверка размера и SHA-256 и атомарное переименование. Режимы: `--check` (только проверка), `--model ID` (конкретная модель), `--force` (перекачать). Перед скачиванием проверяется свободное место. Бинарники в git не идут.
+
+```text
+python scripts/fetch_models.py --check
+python scripts/fetch_models.py --model qvikhr
+python scripts/fetch_models.py --model rusmind --force
+```
+
+Повторный запуск уже корректные файлы не качает; битый `.part` не переименовывается.
+
 ## Вход и выход
 
 `complete(system, user, max_tokens=None, examples=(), *, usage_sink=None, timeout_s=None)` собирает разговор: установка, пары примеров, затем вопрос. Возвращает обрезанный текст ответа. `count_tokens` нужен, чтобы вопрос уместился в лимит.
