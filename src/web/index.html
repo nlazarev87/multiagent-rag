@@ -131,8 +131,8 @@
       position: absolute;
       top: 0;
       bottom: 0;
-      left: -2px;
-      width: 4px;
+      left: -9px;
+      width: 18px;
     }
     button {
       font: inherit;
@@ -913,7 +913,15 @@
     .empty .etext { font-size: 13px; max-width: 280px; }
     .composer-hint { align-self: center; font-size: 11px; color: var(--fg4); white-space: nowrap; }
     button, .tab { transition: background-color .12s, color .12s, border-color .12s, box-shadow .12s; }
-    button:focus-visible, .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    button:focus-visible,
+    .tab:focus-visible,
+    summary:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
     .access-block { border: 1px solid var(--line2); border-radius: 8px; background: var(--editor); }
     .access-block > summary {
       cursor: pointer;
@@ -1096,6 +1104,49 @@
         text-align: left;
       }
       .table-card .table td select { max-width: 100%; }
+    }
+    /* Accessibility (10.5) */
+    #log:has(.empty), .canvas:has(.empty) {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    @media (pointer: coarse) {
+      #chats .kill,
+      .ui-icon,
+      #find-toggle,
+      #upload,
+      #send,
+      .n,
+      .tab .x {
+        width: 28px;
+        height: 28px;
+      }
+      .seg button {
+        height: 28px;
+        padding: 0 6px;
+      }
+      #manage {
+        min-height: 28px;
+        padding: 4px 9px;
+      }
+      .menu button {
+        height: 30px;
+      }
+      .node {
+        min-height: 28px;
+      }
+      .toggle {
+        width: 36px;
+        height: 28px;
+      }
+      .toggle::after {
+        top: 3px;
+        left: 3px;
+        width: 22px;
+        height: 22px;
+      }
+      .toggle.on::after { left: 11px; }
     }
   </style>
 </head>
