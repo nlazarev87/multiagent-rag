@@ -28,7 +28,7 @@ from agents import (
     select_agent,
 )
 from dialog import add_turn, get_dialog
-from llm import model_name
+from llm import model_display_name
 from pipeline_types import GraphState
 from pipeline_utils import (
     _codes,
@@ -248,8 +248,8 @@ def _stamp_sources(state):
 def run(query, dialog_id, scope=None, features=None):
     """Вернуть ответ, статус, имена документов и источники для одного вопроса.
 
-    Свой пул на этот вызов. Зависший проход не занимает очередь следующего:
-    после предела пул закрывается без ожидания потока.
+    Свой пул на этот вызов. Пул закрывается без ожидания потока, поэтому
+    следующий вызов не стоит в очереди за зависшим проходом.
     """
     active = scope if scope is not None else _scope.get()
     if active is not None and not active.kbs:
@@ -259,15 +259,9 @@ def run(query, dialog_id, scope=None, features=None):
     trace_token = _trace.set(active.trace) if active is not None else None
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="graph-call")
     try:
-        timeout_s = (runtime().get("timeouts") or {}).get("graph_ms", 120000) / 1000
         ctx = contextvars.copy_context()
         future = executor.submit(ctx.run, _run, query, dialog_id, active, features)
-        try:
-            return future.result(timeout=timeout_s)
-        except TimeoutError:
-            if future.done():
-                raise
-            raise TimeoutError(f"graph timeout after {timeout_s}s")
+        return future.result()
     finally:
         executor.shutdown(wait=False)
         if row_token is not None:
@@ -468,6 +462,7 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
                     "document_names": names,
                 },
                 output={
+                    "service": "chroma+bm25",
                     "error": True,
                     "fallback_used": fallback_used,
                     "search_fallback_used": fallback_used,
@@ -497,6 +492,7 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
         bases = list(getattr(scope, "used", None) or []) if scope is not None else None
         previews, previews_truncated = _chunk_previews(chunks)
         output: dict[str, Any] = {
+            "service": "chroma+bm25",
             "chunks_returned": len(chunks),
             "previews": previews,
             "top_ids": [item.get("id") for item in chunks if item.get("id")],
@@ -544,7 +540,8 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
                 prompt = prompts[-1]
         output: dict[str, Any] = {
             "answer": state.get("answer"),
-            "model": model_name(),
+            "model": model_display_name(),
+            "service": "llama.cpp",
             "answer_len": len(state.get("answer") or ""),
         }
         if prompt is not None:

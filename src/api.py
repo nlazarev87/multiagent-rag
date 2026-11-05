@@ -994,6 +994,7 @@ def query(body: Query, request: Request, response: Response):
         record["request_id"] = request_id
         if runtime().get("audit", {}).get("trace_json", True):
             record["trace_json"] = getattr(scope, "trace_steps", None)
+        record["model"] = llm.model_display_name()
         return record
 
     try:

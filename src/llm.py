@@ -6,6 +6,7 @@
 import concurrent.futures
 import contextvars
 import os
+import re
 import threading
 from pathlib import Path
 from typing import Any, cast
@@ -158,6 +159,20 @@ def model_name():
     return Path(os.environ.get("LLM_MODEL_PATH", "")).stem
 
 
+def model_display_name() -> str:
+    """Человекочитаемое имя текущей модели (имя карточки или stem файла)."""
+    with _state_lock:
+        model_id = _model_id
+        name = _model_name
+    if model_id:
+        card = model_registry.get_model(model_id)
+        if card is not None and card.get("name"):
+            return card["name"]
+    if name:
+        return name
+    return Path(os.environ.get("LLM_MODEL_PATH", "")).stem
+
+
 def current_model_id():
     """id текущей модели из состояния (None, если не из реестра)."""
     with _state_lock:
@@ -180,7 +195,9 @@ def load_model(path=None, model_id=None):
     resolved_path, resolved_id = _resolve_path(path, model_id)
     if not resolved_path:
         raise ModelError("не задан путь к модели")
-    return _replace_model(resolved_path, resolved_id)
+    _replace_model(resolved_path, resolved_id)
+    if resolved_id:
+        model_registry.save_selected_model(resolved_id)
 
 
 def switch_model(path=None, model_id=None):
@@ -241,6 +258,23 @@ def _replace_model(path, model_id):
         _run_lock.release()
 
 
+def _strip_thinking(text: str) -> str:
+    """Remove reasoning artifacts from a model reply."""
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    markers = (" response", " response", " response")
+    last = -1
+    tail = text
+    for marker in markers:
+        pos = text.rfind(marker)
+        if pos > last:
+            last = pos
+            tail = text[pos + len(marker) :]
+    text = tail
+    for tag in ("</think>", "<think>"):
+        text = text.replace(tag, "")
+    return text.strip()
+
+
 def _complete_sync(system, user, max_tokens, examples, usage_sink):
     """Тело ответа. Вызывается из соседнего потока и само не смотрит на предел времени."""
     load()
@@ -263,7 +297,7 @@ def _complete_sync(system, user, max_tokens, examples, usage_sink):
     if usage_sink is not None and isinstance(usage, dict):
         usage_sink["tokens_in"] = usage.get("prompt_tokens")
         usage_sink["tokens_out"] = usage.get("completion_tokens")
-    return reply["choices"][0]["message"]["content"].strip()
+    return _strip_thinking(reply["choices"][0]["message"]["content"])
 
 
 def complete(system, user, max_tokens=None, examples=(), *, usage_sink=None, timeout_s=None):

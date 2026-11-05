@@ -1752,6 +1752,25 @@ def test_query_request_id_in_audit(monkeypatch):
     assert saved["payload"].get("trace") == [] or isinstance(saved["payload"].get("trace"), list)
 
 
+def test_query_audit_payload_has_model(monkeypatch):
+    import audit
+
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": [],
+            "sources": [],
+        },
+    )
+    client = TestClient(app)
+    response = client.post("/query", json={"query": "вопрос", "dialog_id": "d"})
+    assert response.status_code == 200
+    saved = audit.list_events(kind="query")[0]
+    assert saved["payload"]["model"]
+
+
 def test_query_error_has_request_id_header(monkeypatch):
     import audit
 
@@ -2066,9 +2085,7 @@ def test_ui_filters_turns_on_separate_path(monkeypatch):
     monkeypatch.setattr(
         "api._stored_page_tree", lambda user: {"id": "root", "name": "", "children": []}
     )
-    monkeypatch.setattr(
-        "api._page_tree", lambda user: {"id": "root", "name": "", "children": []}
-    )
+    monkeypatch.setattr("api._page_tree", lambda user: {"id": "root", "name": "", "children": []})
     created = workspace.create_dialog()
     workspace.append_turn(
         created["id"],
@@ -2106,9 +2123,7 @@ def _model_card(model_id="qvikhr", available=True):
 def test_admin_models_lists_models_and_status(monkeypatch):
     monkeypatch.setattr(api.model_registry, "list_models", lambda: [_model_card()])
     monkeypatch.setattr(api.llm, "current_model_id", lambda: "qvikhr")
-    monkeypatch.setattr(
-        api.llm, "status", lambda: {"state": "ready", "model_id": "qvikhr"}
-    )
+    monkeypatch.setattr(api.llm, "status", lambda: {"state": "ready", "model_id": "qvikhr"})
     payload = TestClient(app).get("/admin/models").json()
     assert payload["models"][0]["id"] == "qvikhr"
     assert payload["current_model_id"] == "qvikhr"
@@ -2116,9 +2131,7 @@ def test_admin_models_lists_models_and_status(monkeypatch):
 
 
 def test_admin_models_status(monkeypatch):
-    monkeypatch.setattr(
-        api.llm, "status", lambda: {"state": "unloaded", "model_id": None}
-    )
+    monkeypatch.setattr(api.llm, "status", lambda: {"state": "unloaded", "model_id": None})
     response = TestClient(app).get("/admin/models/status")
     assert response.status_code == 200
     assert response.json()["state"] == "unloaded"
