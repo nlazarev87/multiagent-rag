@@ -101,6 +101,8 @@ def _dependent(query):
 _OVERVIEW_LINE = re.compile(
     r"Разных значений в столбце «([^»]+)»: (\d+)\. Список: (.+)", re.IGNORECASE
 )
+_OVERVIEW_SUM = re.compile(r"Сумма столбца «[^»]+»: ([\-\d.,]+)\.")
+_OVERVIEW_COUNT = re.compile(r"Количество строк: (\d+)\.")
 _LIST_MARK = re.compile(r"(?<![а-яёa-z])(скольк(?:о|их|ими|им)|какие|перечисли)", re.IGNORECASE)
 _COUNT_MARK = re.compile(r"(?<![а-яёa-z])скольк(?:о|их|ими|им)(?![а-яёa-z])", re.IGNORECASE)
 _ENDINGS = (
@@ -194,12 +196,27 @@ def _label_score(query, label):
     return score
 
 
+def _sum_or_count(chunks):
+    """Запасной ответ «сколько», если строки «Разных значений» в кусках нет."""
+    for number, chunk in enumerate(chunks, 1):
+        text = chunk.get("text") or ""
+        summed = _OVERVIEW_SUM.search(text)
+        if summed:
+            return f"{summed.group(1)} [{number}]."
+        counted = _OVERVIEW_COUNT.search(text)
+        if counted:
+            return f"{counted.group(1)} [{number}]."
+    return None
+
+
 def _from_overview(query, chunks):
     if not _list_ask(query) or not chunks:
         return None
+    # «Сколько» сначала читает «Разных значений», сумма столбца остаётся запасом.
+    count_question = _count_ask(query) and not any(ch.isdigit() for ch in query or "")
     focus = _focus_words(query)
     if not focus:
-        return None
+        return _sum_or_count(chunks) if count_question else None
     ranked = []
     for number, chunk in enumerate(chunks, 1):
         text = chunk.get("text") or ""
@@ -223,7 +240,7 @@ def _from_overview(query, chunks):
                 )
             )
     if not ranked:
-        return None
+        return _sum_or_count(chunks) if count_question else None
     ranked.sort(key=lambda item: (-item[0], -item[1], item[2]))
     chosen = None
     for section_hits, column_score, number, count, items, label in ranked:
@@ -242,7 +259,7 @@ def _from_overview(query, chunks):
         _, _, number, count, items, label = ranked[0]
         chosen = (number, count, items, label)
     if chosen is None:
-        return None
+        return _sum_or_count(chunks) if count_question else None
     number, count, items, label = chosen
     if _count_ask(query):
         if any(ch.isdigit() for ch in query):
