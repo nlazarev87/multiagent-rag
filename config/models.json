@@ -1,0 +1,67 @@
+{
+  "default": "qvikhr",
+  "models": [
+    {
+      "id": "qwen2.5-1.5b",
+      "name": "Qwen2.5-1.5B-Instruct",
+      "quant": "Q4_K_M",
+      "files": ["qwen2.5-1.5b-instruct-q4_k_m.gguf"],
+      "size_bytes": 1117320736,
+      "sha256": ["6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e"],
+      "description": "Лёгкая инструкционная модель Qwen для коротких ответов на русском и английском.",
+      "pros": ["Быстрая загрузка", "Мало памяти", "Стабильно работает на CPU"],
+      "cons": ["Короче и проще ответы", "Слабее на сложном рассуждении"],
+      "resources": {"ram": "~2 ГБ", "disk": "~1.1 ГБ", "context": 4096},
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF"
+    },
+    {
+      "id": "qwen2.5-7b",
+      "name": "Qwen2.5-7B-Instruct",
+      "quant": "Q4_K_M",
+      "files": [
+        "qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
+        "qwen2.5-7b-instruct-q4_k_m-00002-of-00002.gguf"
+      ],
+      "size_bytes": 4683073632,
+      "sha256": [
+        "dfce12e3862a5283ccfb88221b48480e58745165de856439950d0f22590580db",
+        "539cf93f78e887edea1c04e2d7d8cdaca9d01dae9c9025bcb8accbe29df3d72a"
+      ],
+      "description": "Старшая модель Qwen: точнее на сложных вопросах, но тяжелее и грузится дольше.",
+      "pros": ["Лучше качество", "Держит сложный контекст"],
+      "cons": ["Долгая загрузка", "Много памяти", "Два файла-шарда"],
+      "resources": {"ram": "~8 ГБ", "disk": "~4.4 ГБ", "context": 4096},
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF"
+    },
+    {
+      "id": "qvikhr",
+      "name": "QVikhr-3-1.7B-Instruction-noreasoning",
+      "quant": "Q4_K_M",
+      "files": ["QVikhr-3-1.7B-Instruction-noreasoning-Q4_K_M.gguf"],
+      "size_bytes": 1107408608,
+      "sha256": ["425495de8462e63c98aae4e18561fa1fc7e153fa218e3067a5b39753258b48f2"],
+      "description": "Русскоязычная модель QVikhr без цепочки рассуждений, на базе Qwen3-1.7B.",
+      "pros": ["Заточена под русский", "Быстрая без рассуждений", "Компактная"],
+      "cons": ["Не рассуждает по шагам", "Моложе экосистема"],
+      "resources": {"ram": "~2 ГБ", "disk": "~1.1 ГБ", "context": 4096},
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/Vikhrmodels/QVikhr-3-1.7B-Instruction-noreasoning"
+    },
+    {
+      "id": "rusmind",
+      "name": "RusMind-Momentum-4.7",
+      "quant": "Q4_K_M",
+      "files": ["RusMind-Momentum-4.7-Q4_K_M.gguf"],
+      "size_bytes": 3427880800,
+      "sha256": ["99684d0f58f456ed3b7ec889d7264159b724c5525923e723764856ba246d01cb"],
+      "description": "Русскоязычная модель RusMind Momentum 4.7 для качественных ответов.",
+      "pros": ["Сильный русский", "Хорошее качество"],
+      "cons": ["Тяжелее (~3.2 ГиБ)", "Собственная лицензия"],
+      "resources": {"ram": "~6 ГБ", "disk": "~3.2 ГиБ", "context": 4096},
+      "license": "rusmind-license",
+      "source": "https://huggingface.co/DICPlay/RusMind-4.7-Momentum"
+    }
+  ]
+}

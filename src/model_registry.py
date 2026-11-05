@@ -1,0 +1,208 @@
+"""Реестр локальных чат-моделей.
+
+Карточки моделей лежат в config/models.json, файлы сканируются в data/models/*.gguf.
+Реестр совмещает два источника: статичные метаданные из конфига и наличие файлов
+на диске. Неизвестный .gguf превращается в fallback-карточку, поэтому модель не
+исчезает из списка, а лишь отмечается как отсутствующая (available=false).
+"""
+
+import json
+import os
+import re
+from pathlib import Path
+from typing import Any, TypedDict
+
+import settings
+
+# Каталоги эмбеддингов/реранкеров и служебные не являются чат-моделями.
+IGNORED_DIRS = {"embedding", "reranker", ".cache"}
+# Шард вида <base>-00001-of-00002.gguf группируется по base.
+_SHARD_RE = re.compile(r"^(?P<base>.+)-(?P<index>\d{5})-of-(?P<total>\d{5})\.gguf$")
+
+
+class ModelCard(TypedDict, total=False):
+    """Карточка чат-модели. available вычисляется по файлам на диске."""
+
+    id: str
+    name: str
+    quant: str
+    files: list[str]
+    size_bytes: int
+    sha256: list[str]
+    description: str
+    pros: list[str]
+    cons: list[str]
+    resources: dict[str, Any]
+    license: str
+    source: str
+    available: bool
+
+
+def _root() -> Path:
+    return settings._root()
+
+
+def _config_dir() -> Path:
+    return settings._config_dir()
+
+
+def _models_dir() -> Path:
+    override = os.environ.get("MODELS_DIR")
+    if override:
+        return Path(override)
+    return _root() / "data" / "models"
+
+
+def _read_config() -> dict[str, Any]:
+    path = _config_dir() / "models.json"
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _raw_models() -> list[dict[str, Any]]:
+    return _read_config().get("models", [])
+
+
+def default_model_id() -> str:
+    """Идентификатор модели по умолчанию из config/models.json."""
+    return _read_config().get("default", "qvikhr")
+
+
+def _safe_filename(name: str) -> bool:
+    """Только простое имя файла: без пути, .., диска и пустых значений."""
+    if not isinstance(name, str) or not name:
+        return False
+    if name in (".", ".."):
+        return False
+    try:
+        path = Path(name)
+    except (OSError, ValueError):
+        return False
+    if path.is_absolute() or path.name != name:
+        return False
+    return True
+
+
+def _resolve_file(filename: str) -> Path | None:
+    """Путь к файлу модели внутри data/models или None, если имя опасно/symlink."""
+    if not _safe_filename(filename):
+        return None
+    models = _models_dir()
+    path = models / filename
+    if path.is_symlink():
+        return None
+    resolved = path.resolve()
+    if resolved.parent != models.resolve():
+        return None
+    return resolved
+
+
+def _scan_files() -> dict[str, Path]:
+    """Безопасные существующие .gguf в корне data/models: имя -> путь."""
+    found: dict[str, Path] = {}
+    models = _models_dir()
+    if not models.is_dir():
+        return found
+    for path in models.glob("*.gguf"):
+        if not path.is_file() or path.is_symlink():
+            continue
+        if any(part in IGNORED_DIRS for part in path.parts):
+            continue
+        found[path.name] = path
+    return found
+
+
+def _build_card(raw: dict[str, Any]) -> ModelCard:
+    files = [str(f) for f in raw.get("files", []) if _safe_filename(str(f))]
+    return ModelCard(
+        id=str(raw.get("id", "")),
+        name=str(raw.get("name", "")),
+        quant=str(raw.get("quant", "")),
+        files=files,
+        size_bytes=int(raw.get("size_bytes", 0)),
+        sha256=[str(h) for h in raw.get("sha256", [])],
+        description=str(raw.get("description", "")),
+        pros=[str(p) for p in raw.get("pros", [])],
+        cons=[str(c) for c in raw.get("cons", [])],
+        resources=dict(raw.get("resources", {}) or {}),
+        license=str(raw.get("license", "")),
+        source=str(raw.get("source", "")),
+        available=False,
+    )
+
+
+def _slugify(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-") or "unknown"
+
+
+def _fallback_cards(files: dict[str, Path]) -> list[ModelCard]:
+    """Неизвестные .gguf собираются в карточки, шарды группируются по базовому имени."""
+    grouped: dict[str, list[tuple[str, Path]]] = {}
+    for name, path in files.items():
+        match = _SHARD_RE.match(name)
+        key = match.group("base") if match else Path(name).stem
+        grouped.setdefault(key, []).append((name, path))
+    cards: list[ModelCard] = []
+    for key in sorted(grouped):
+        entries = sorted(grouped[key])
+        names = [name for name, _ in entries]
+        total = sum(path.stat().st_size for _, path in entries)
+        cards.append(
+            ModelCard(
+                id=_slugify(key),
+                name=key,
+                quant="",
+                files=names,
+                size_bytes=total,
+                sha256=[],
+                description="Неизвестный локальный GGUF (нет карточки в config/models.json).",
+                pros=[],
+                cons=[],
+                resources={},
+                license="unknown",
+                source="",
+                available=True,
+            )
+        )
+    return cards
+
+
+def list_models() -> list[ModelCard]:
+    """Все чат-модели: карточки из конфига плюс fallback для неизвестных GGUF.
+
+    Отсутствующий файл даёт available=false, но карточка остаётся в списке.
+    """
+    files = _scan_files()
+    cards: list[ModelCard] = []
+    seen: set[str] = set()
+    for raw in _raw_models():
+        card = _build_card(raw)
+        if not card["id"] or card["id"] in seen:
+            continue
+        seen.add(card["id"])
+        card["available"] = bool(card["files"]) and all(f in files for f in card["files"])
+        cards.append(card)
+        for f in card["files"]:
+            files.pop(f, None)
+    cards.extend(_fallback_cards(files))
+    return cards
+
+
+def get_model(model_id: str) -> ModelCard | None:
+    """Карточка модели по id или None, если такой модели нет."""
+    for card in list_models():
+        if card["id"] == model_id:
+            return card
+    return None
+
+
+def primary_file(card: ModelCard) -> Path | None:
+    """Первый файл модели (для многотомных моделей это первый шард)."""
+    files = card.get("files") or []
+    if not files:
+        return None
+    path = _resolve_file(files[0])
+    if path is None or not path.exists():
+        return None
+    return path
