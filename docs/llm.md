@@ -22,6 +22,15 @@ python scripts/fetch_models.py --model rusmind --force
 
 Повторный запуск уже корректные файлы не качает; битый `.part` не переименовывается.
 
+## Смоук загрузки
+
+`tests/test_models_smoke.py` (маркер `slow`) грузит каждую модель в отдельном процессе и гоняет реальный `llm.complete(...)` + `llm.count_tokens(...)` — то есть проверяет и chat-template. QVikhr использует шаблон noreasoning (`/no_think`), RusMind — Gemma4 (llama-cpp-python==0.3.36). Замерено 05.11 (CPU, тёплый кэш):
+
+- QVikhr-3-1.7B-noreasoning: загрузка 2.87 с, ответ 3.08 с (43 токена).
+- RusMind-Momentum-4.7 (gemma4): загрузка 5.06 с, ответ 3.91 с (34 токена).
+
+Обе модели загружаются и отвечают; Gemma4 работает на llama-cpp-python==0.3.36.
+
 ## Вход и выход
 
 `complete(system, user, max_tokens=None, examples=(), *, usage_sink=None, timeout_s=None)` собирает разговор: установка, пары примеров, затем вопрос. Возвращает обрезанный текст ответа. `count_tokens` нужен, чтобы вопрос уместился в лимит.
