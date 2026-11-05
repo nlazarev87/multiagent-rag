@@ -11,6 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# CPU-torch первым: без CUDA-колёс (~10 GB → ~200 MB).
+# sentence-transformers затем увидит готовый torch и не будет переустанавливать.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
