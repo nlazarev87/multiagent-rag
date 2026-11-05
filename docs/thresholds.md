@@ -15,7 +15,7 @@
 | focus min words | ≥2 длиной>3 | test_store::test_focus | ❌ |
 | scope word len | ≥5 | test_store::test_scope | ❌ |
 | scope words count | 2 | test_store::test_scope | ❌ |
-| contexts scan | limit*3=12 | test_store::test_contexts | ❌ Wave 4 |
+| contexts scan | limit*3=12 | test_store::test_contexts | ❌ |
 | context tokens | 260 | test_store::test_render | ✅ |
 | chroma_ms | 10000 | test_timeouts | ✅ |
 
