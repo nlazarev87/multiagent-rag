@@ -15,3 +15,5 @@ data/users/
 data/tree.json
 
 .env
+pytest_out*.txt
+.setup/
