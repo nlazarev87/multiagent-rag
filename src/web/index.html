@@ -1148,6 +1148,53 @@
       }
       .toggle.on::after { left: 11px; }
     }
+    /* Trace UI (9.4) */
+    .trace {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: var(--fg2);
+    }
+    .trace > summary {
+      cursor: pointer;
+      color: var(--fg3);
+      padding: 2px 0;
+    }
+    .trace-step {
+      margin: 4px 0 0 12px;
+      border-left: 2px solid var(--line-2);
+      padding-left: 8px;
+    }
+    .trace-step > summary {
+      cursor: pointer;
+      color: var(--fg2);
+      padding: 2px 0;
+    }
+    .trace-field {
+      margin: 4px 0 6px;
+    }
+    .trace-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--fg4);
+      margin-bottom: 2px;
+    }
+    .trace-pre {
+      margin: 0;
+      max-height: 260px;
+      overflow: auto;
+      padding: 6px 8px;
+      border: 1px solid var(--line-2);
+      border-radius: var(--r-2);
+      background: var(--paper-2);
+      color: var(--fg2);
+      font-family: Consolas, monospace;
+      font-size: 11.5px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
   </style>
 </head>
 <body>
@@ -1694,6 +1741,51 @@
       return wrap;
     }
 
+    const TRACE_LABELS = {
+      catalog: "Каталог",
+      select: "Выбор хода",
+      clarify: "Уточнение",
+      search: "Поиск",
+      answer: "Ответ",
+      check: "Проверка",
+      route: "Решение",
+      finish: "Финал",
+    };
+
+    function traceField(label, value) {
+      const block = element("div", "trace-field");
+      block.append(element("div", "trace-label", label));
+      const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+      block.append(element("pre", "trace-pre", text));
+      return block;
+    }
+
+    function traceStepBlock(step) {
+      const details = element("details", "trace-step");
+      const summary = element("summary");
+      let title = TRACE_LABELS[step.node] || step.node || "Шаг";
+      if (typeof step.duration_ms === "number") title += " · " + Math.round(step.duration_ms) + " мс";
+      if (typeof step.attempt === "number" && step.attempt > 1) title += " · попытка " + step.attempt;
+      if (step.timed_out) title += " · таймаут";
+      summary.textContent = title;
+      details.append(summary);
+      if (step.input !== undefined && step.input !== null) details.append(traceField("Вход", step.input));
+      if (step.output !== undefined && step.output !== null) details.append(traceField("Выход", step.output));
+      return details;
+    }
+
+    function traceBlock(steps) {
+      const details = element("details", "trace");
+      const summary = element("summary");
+      const total = steps.reduce((sum, step) => sum + (typeof step.duration_ms === "number" ? step.duration_ms : 0), 0);
+      summary.textContent = "Цепочка обработки · " + steps.length + " шагов · " + Math.round(total) + " мс";
+      details.append(summary);
+      steps.forEach((step) => {
+        if (step && typeof step === "object") details.append(traceStepBlock(step));
+      });
+      return details;
+    }
+
     function paintTurn(turn, index) {
       const box = element("div", "turn");
       box.append(element("div", "question", turn.query || ""));
@@ -1703,6 +1795,7 @@
       answerBody.append(element("div", "a-text", turn.answer || ""));
       answerBox.append(answerBody);
       box.append(answerBox);
+      if (Array.isArray(turn.trace) && turn.trace.length) box.append(traceBlock(turn.trace));
       const ratings = turn.ratings || {};
       box.append(rateRow("Полнота ответа", ratings.answer_complete, (n) => {
         saveRate(index, { answer_complete: n }).then(() => paintLog());
