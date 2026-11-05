@@ -790,9 +790,10 @@ def _remember_search(focused_query, allowed, ranked_count, slots):
 def _collapse_copies(index, ranked_ids, expected_document):
     """Одинаковый текст другого файла — один id. Строки того же файла остаются.
 
-    Схлопывается копия с другим именем и другой группой. Пустая группа у обоих
-    тоже считается разной таблицей: это два обычных куска. Ожидаемый файл,
-    если он есть в списке, забирает слот.
+    Схлопывается копия с другим именем и другой группой. Та же непустая группа
+    схлопывается только когда задан ожидаемый файл и текущая строка из него:
+    слот переходит к этому файлу, прежний id уходит в «также в». Пустая группа
+    у обоих тоже считается разной таблицей: это два обычных куска.
     """
     text_hashes = index.get("text_hashes") or []
     if not text_hashes:
@@ -820,7 +821,17 @@ def _collapse_copies(index, ranked_ids, expected_document):
         found = groups[digest]
         same_doc = doc == found["doc"]
         same_group = bool(group) and group == found["group"]
-        if same_doc or same_group:
+        if same_doc:
+            deduped.append(key)
+            continue
+        if same_group:
+            if expected_document and doc == expected_document and doc != found["doc"]:
+                found["others"].append(found["winner"])
+                deduped[found["place"]] = key
+                found["winner"] = key
+                found["doc"] = doc
+                found["group"] = group
+                continue
             deduped.append(key)
             continue
         if expected_document and doc == expected_document:

@@ -1370,6 +1370,92 @@ def test_k1_b_defaults_when_missing(monkeypatch):
     assert store._b() == 0.75
 
 
+def test_dedup_table_rows_with_expected_collapses(tmp_path, monkeypatch):
+    """#242: одна группа и один текст схлопываются, если задан expected_document."""
+    _fresh(tmp_path, monkeypatch)
+    _vectors(monkeypatch)
+    monkeypatch.setattr(ingest, "count_tokens", lambda text: max(1, len((text or "").split())))
+    store.upsert_chunks(
+        [
+            {
+                **_pump(checksum="a", text="Ячейка А."),
+                "document_name": "file1.md",
+                "group": "t6",
+            },
+            {
+                **_pump(checksum="b", text="Ячейка А."),
+                "document_name": "file2.md",
+                "group": "t6",
+                "chunk_index": 1,
+            },
+        ]
+    )
+    slots = store.search_chunks("ячейка", 4, expected_document="file2.md")
+    assert len(slots) == 1, f"expected 1 slot, got {len(slots)}"
+    assert slots[0].get("document_name") == "file2.md"
+    assert "file1.md" in slots[0]["text"]
+    assert "[также в:" in slots[0]["text"]
+
+
+def test_dedup_table_rows_no_expected_keeps_both(tmp_path, monkeypatch):
+    """#242: без expected_document строки одной группы остаются двумя слотами."""
+    _fresh(tmp_path, monkeypatch)
+    _vectors(monkeypatch)
+    monkeypatch.setattr(ingest, "count_tokens", lambda text: max(1, len((text or "").split())))
+    store.upsert_chunks(
+        [
+            {
+                **_pump(checksum="a", text="Ячейка А."),
+                "document_name": "file1.md",
+                "group": "t6",
+            },
+            {
+                **_pump(checksum="b", text="Ячейка А."),
+                "document_name": "file2.md",
+                "group": "t6",
+                "chunk_index": 1,
+            },
+        ]
+    )
+    slots = store.search_chunks("ячейка", 4)
+    assert len(slots) == 2, f"expected 2 slots (no expected), got {len(slots)}"
+    assert "[также в:" not in slots[0]["text"]
+    assert "[также в:" not in slots[1]["text"]
+
+
+def test_dedup_same_file_same_group_keeps_both(tmp_path, monkeypatch):
+    """#242: два куска одного файла в одной группе не схлопываются в один id."""
+    _fresh(tmp_path, monkeypatch)
+    _vectors(monkeypatch)
+    monkeypatch.setattr(ingest, "count_tokens", lambda text: max(1, len((text or "").split())))
+    store.upsert_chunks(
+        [
+            {
+                **_pump(checksum="a", text="Ячейка А."),
+                "document_name": "file1.md",
+                "group": "t6",
+                "chunk_index": 0,
+            },
+            {
+                **_pump(checksum="b", text="Ячейка А."),
+                "document_name": "file1.md",
+                "group": "t6",
+                "chunk_index": 1,
+            },
+        ]
+    )
+    result = store.search_chunks("ячейка", 4, debug=True, expected_document="file1.md")
+    _col, _total, index = store._open_index()
+    ranked_ids = [row["id"] for row in result["ranked"]]
+    deduped, also = store._collapse_copies(index, ranked_ids, "file1.md")
+    assert len(deduped) == 2, f"expected 2 ids, got {len(deduped)}"
+    assert also == {}
+    # Одна таблица одного файла — один слот. Это сборка контекста, не дедупликация.
+    assert len(result["slots"]) == 1, f"expected 1 table slot, got {len(result['slots'])}"
+    assert result["slots"][0].get("document_name") == "file1.md"
+    assert "[также в:" not in result["slots"][0]["text"]
+
+
 def test_dedup_different_texts_two_slots(tmp_path, monkeypatch):
     """#230: разный текст — два слота."""
     _fresh(tmp_path, monkeypatch)
