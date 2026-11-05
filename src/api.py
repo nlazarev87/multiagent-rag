@@ -3,6 +3,7 @@
 Пока индекс строится, /ui отдаёт сохранённое дерево и не трогает Chroma.
 Неудачная замена файла возвращает прежние байты.
 """
+
 import json
 import os
 import threading
@@ -25,8 +26,8 @@ import kb
 import trees
 import workspace
 from coordinator import run
-from settings import NO_ANSWER, runtime
 from ingest import SUFFIXES, _blocks, _max_file_size_bytes, chunks_from_blocks, ingest_dir
+from settings import NO_ANSWER, runtime
 from store import chunks_for_document, delete_document, list_documents, upsert_chunks
 
 app = FastAPI()
@@ -47,7 +48,13 @@ limiter = Limiter(key_func=_session_key, key_style="endpoint")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, cast(Any, _rate_limit_exceeded_handler))
 INBOX = Path("data/inbox")
-_PUBLIC = {("GET", "/"), ("GET", "/ready"), ("GET", "/auth/state"), ("POST", "/setup"), ("POST", "/login")}
+_PUBLIC = {
+    ("GET", "/"),
+    ("GET", "/ready"),
+    ("GET", "/auth/state"),
+    ("POST", "/setup"),
+    ("POST", "/login"),
+}
 
 
 @app.middleware("http")
@@ -67,9 +74,13 @@ async def _guard(request: Request, call_next):
     finally:
         if token is not None:
             workspace.reset_owner(token)
+
+
 PAGE = Path(__file__).parent / "web" / "index.html"
 ROOT = Path(__file__).resolve().parents[1]
 LOAD_TIME = ROOT / "data" / "load_time.txt"
+
+
 class _Warm(TypedDict):
     started: float | None
     done: bool
@@ -101,6 +112,7 @@ def _warm():
     _state["started"] = time.time()
     from llm import load
     from store import CHROMA, _embed
+
     saved = CHROMA
     try:
         _embed(["passage: готов"])
@@ -115,11 +127,13 @@ def _warm():
                         upsert_chunks(ingest_dir(folder))
                     else:
                         from store import upsert_at
+
                         upsert_at(row["chroma"], ingest_dir(folder))
             except Exception:
                 continue
     finally:
         import store
+
         store.CHROMA = saved
         store.reset()
     _state["done"] = True
@@ -152,6 +166,7 @@ class Query(BaseModel):
 
 class SourceModel(BaseModel):
     """Один источник в ответе на вопрос."""
+
     number: int
     document_name: str
     section: str = ""
@@ -163,6 +178,7 @@ class SourceModel(BaseModel):
 
 class QueryResponse(BaseModel):
     """Тело ответа /query и /v1/query."""
+
     answer: str
     status: str
     document_names: list[str] = []
@@ -192,9 +208,7 @@ def _on_disk():
     if not INBOX.is_dir():
         return set()
     return {
-        path.name
-        for path in INBOX.iterdir()
-        if path.is_file() and path.suffix.lower() in SUFFIXES
+        path.name for path in INBOX.iterdir() if path.is_file() and path.suffix.lower() in SUFFIXES
     }
 
 
@@ -208,6 +222,7 @@ def page():
 def ready():
     """200, когда модель ответа и числовая модель поиска на месте и индекс достроен."""
     from llm import loaded
+
     if (_state["done"] or loaded) and _files_ok():
         return {"ready": True}
     elapsed = 0 if _state["started"] is None else int(time.time() - _state["started"])
@@ -230,6 +245,7 @@ def _listed(user, item):
         return list_documents()
     try:
         from store import list_permit
+
         return list_permit(permit)
     except PermissionError:
         return []
@@ -261,7 +277,14 @@ def auth_state():
 
 
 def _cookie(response, session_id):
-    response.set_cookie("session", session_id, httponly=True, samesite="lax", max_age=auth.SESSION_HOURS * 3600, path="/")
+    response.set_cookie(
+        "session",
+        session_id,
+        httponly=True,
+        samesite="lax",
+        max_age=auth.SESSION_HOURS * 3600,
+        path="/",
+    )
     return response
 
 
@@ -306,14 +329,26 @@ def _move_dialogs(user_id):
         target = auth.app_root() / "data" / "users" / user_id / "dialogs.json"
         if dialogs and not target.exists():
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(json.dumps({"dialogs": dialogs, "tree": {"id": "root", "name": "", "children": []}}, ensure_ascii=False), encoding="utf-8")
+            target.write_text(
+                json.dumps(
+                    {"dialogs": dialogs, "tree": {"id": "root", "name": "", "children": []}},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
     auth.meta_set("dialogs_moved", "1")
 
 
 def _public_user(user):
     if user is None:
         return {}
-    return {"id": user["id"], "login": user["login"], "role": user["role"], "role_id": user["role_id"], "actions": user.get("actions") or []}
+    return {
+        "id": user["id"],
+        "login": user["login"],
+        "role": user["role"],
+        "role_id": user["role_id"],
+        "actions": user.get("actions") or [],
+    }
 
 
 @app.post("/login")
@@ -404,6 +439,7 @@ def _chunks(row, name, user):
         return chunks_for_document(name)
     try:
         from store import chunks_permit
+
         return chunks_permit(permit, name)
     except PermissionError:
         return None
@@ -415,7 +451,15 @@ def documents_preview(kb_id: str, document_name: str = None, request: Request = 
     if document_name is None and request is None:
         document_name = kb_id
         kb_id = kb.LEGACY_ID
-        request = type("Req", (), {"state": type("St", (), {"user": auth.user_by_id(os.environ.get("RAG_TEST_USER") or "")})()})()
+        request = type(
+            "Req",
+            (),
+            {
+                "state": type(
+                    "St", (), {"user": auth.user_by_id(os.environ.get("RAG_TEST_USER") or "")}
+                )()
+            },
+        )()
     if not kb.is_uuid(kb_id):
         raise HTTPException(404, detail="Документ не найден")
     name = Path(document_name).name
@@ -434,7 +478,15 @@ def documents_delete(kb_id: str, document_name: str = None, request: Request = N
     if document_name is None and request is None:
         document_name = kb_id
         kb_id = kb.LEGACY_ID
-        request = type("Req", (), {"state": type("St", (), {"user": auth.user_by_id(os.environ.get("RAG_TEST_USER") or "")})()})()
+        request = type(
+            "Req",
+            (),
+            {
+                "state": type(
+                    "St", (), {"user": auth.user_by_id(os.environ.get("RAG_TEST_USER") or "")}
+                )()
+            },
+        )()
     if not kb.is_uuid(kb_id):
         raise HTTPException(404, detail="Документ не найден")
     name = Path(document_name).name
@@ -454,6 +506,7 @@ def documents_delete(kb_id: str, document_name: str = None, request: Request = N
             delete_document(name)
         else:
             from store import delete_at
+
             delete_at(row["chroma"], name)
         if path.is_file():
             path.unlink()
@@ -511,7 +564,9 @@ def _rollback_upload(saved):
 
 def _save_uploads(payloads, folder=None, chroma=None, legacy=True, user=None):
     with _upload_lock:
-        return _save_uploads_locked(payloads, folder or INBOX, chroma, legacy, _user_upload if user is None else user)
+        return _save_uploads_locked(
+            payloads, folder or INBOX, chroma, legacy, _user_upload if user is None else user
+        )
 
 
 def _save_uploads_locked(payloads, folder, chroma, legacy, user):
@@ -529,16 +584,22 @@ def _save_uploads_locked(payloads, folder, chroma, legacy, user):
             if len(payload) > _max_file_size_bytes():
                 # #137: загрузка уже прочитана в память; отказ до записи на диск.
                 try:
-                    audit.write("upload", user, {
-                        "file": name,
-                        "size": len(payload),
-                        "error": "file_too_large",
-                    }, ok=False)
+                    audit.write(
+                        "upload",
+                        user,
+                        {
+                            "file": name,
+                            "size": len(payload),
+                            "error": "file_too_large",
+                        },
+                        ok=False,
+                    )
                 except Exception:
                     pass
                 # Имя runtime в этом модуле связано при импорте. Повторный
                 # импорт читает settings.runtime в момент отказа.
                 from settings import runtime
+
                 limit_mb = runtime().get("ingest", {}).get("max_file_size_mb", 50)
                 raise HTTPException(status_code=413, detail=f"Файл больше {limit_mb} МБ")
             previous = path.read_bytes() if path.is_file() else None
@@ -549,7 +610,9 @@ def _save_uploads_locked(payloads, folder, chroma, legacy, user):
             except ImportError:
                 raise
             except Exception as exc:
-                raise HTTPException(400, detail=_upload_detail(name, previous, empty=False)) from exc
+                raise HTTPException(
+                    400, detail=_upload_detail(name, previous, empty=False)
+                ) from exc
             if not extracted:
                 raise HTTPException(400, detail=_upload_detail(name, previous, empty=True))
         chunks = ingest_dir(folder)
@@ -563,8 +626,12 @@ def _save_uploads_locked(payloads, folder, chroma, legacy, user):
             upsert_chunks(chunks)
         else:
             from store import upsert_at
+
             upsert_at(chroma, chunks)
-        return {"documents": _rows(user), "tree": workspace.snapshot(_names(_rows(user)), _on_disk())["tree"]}
+        return {
+            "documents": _rows(user),
+            "tree": workspace.snapshot(_names(_rows(user)), _on_disk())["tree"],
+        }
     except Exception as exc:
         raise HTTPException(500, detail="Не удалось записать файл") from exc
 
@@ -573,7 +640,12 @@ _user_upload = None
 
 
 @app.post("/upload")
-async def upload(request: Request = None, files: list[UploadFile] = File(None), kb_id: str = Form(""), new_name: str = Form("")):  # type: ignore[assignment]
+async def upload(
+    request: Request = None,
+    files: list[UploadFile] = File(None),
+    kb_id: str = Form(""),
+    new_name: str = Form(""),
+):  # type: ignore[assignment]
     """Записать файлы в выбранную базу. Без id базы — отказ."""
     global _user_upload
     if isinstance(request, list):
@@ -640,6 +712,7 @@ def _kb_file_names(row, user):
         return names
     try:
         from store import list_permit
+
         return set(list_permit(permit))
     except PermissionError:
         return set()
@@ -656,11 +729,13 @@ def _compose(parts):
         return parts[0][1]
     root = trees.empty()
     for row, clean in parts:
-        root["children"].append({
-            "id": "kb-" + row["id"],
-            "name": row["name"],
-            "children": clean.get("children") or [],
-        })
+        root["children"].append(
+            {
+                "id": "kb-" + row["id"],
+                "name": row["name"],
+                "children": clean.get("children") or [],
+            }
+        )
     return root
 
 
@@ -683,7 +758,9 @@ def _stored_page_tree(user):
 
 
 def _same_tree(left, right):
-    return json.dumps(left, sort_keys=True, ensure_ascii=False) == json.dumps(right, sort_keys=True, ensure_ascii=False)
+    return json.dumps(left, sort_keys=True, ensure_ascii=False) == json.dumps(
+        right, sort_keys=True, ensure_ascii=False
+    )
 
 
 def _split_flat(visible, node, user):
@@ -707,15 +784,27 @@ def _split_flat(visible, node, user):
             if kb_id:
                 buckets[kb_id].append({"document_name": child["document_name"]})
             continue
-        files = [item for item in child.get("children") or [] if isinstance(item, dict) and item.get("document_name")]
-        used = {owners.get(item["document_name"]) for item in files if owners.get(item["document_name"])}
+        files = [
+            item
+            for item in child.get("children") or []
+            if isinstance(item, dict) and item.get("document_name")
+        ]
+        used = {
+            owners.get(item["document_name"]) for item in files if owners.get(item["document_name"])
+        }
         if len(used) == 1:
             kb_id = next(iter(used))
-            buckets[kb_id].append({
-                "id": child.get("id") or "folder",
-                "name": child.get("name") or "Папка",
-                "children": [{"document_name": item["document_name"]} for item in files if owners.get(item["document_name"]) == kb_id],
-            })
+            buckets[kb_id].append(
+                {
+                    "id": child.get("id") or "folder",
+                    "name": child.get("name") or "Папка",
+                    "children": [
+                        {"document_name": item["document_name"]}
+                        for item in files
+                        if owners.get(item["document_name"]) == kb_id
+                    ],
+                }
+            )
         else:
             for item in files:
                 kb_id = owners.get(item["document_name"])
@@ -740,7 +829,9 @@ def _store_page_tree(user, incoming):
             row = kb.get(str(child.get("id"))[3:])
             if row is None or not access.can_see(user, row["id"]):
                 continue
-            targets.append((row, {"id": "root", "name": "", "children": child.get("children") or []}))
+            targets.append(
+                (row, {"id": "root", "name": "", "children": child.get("children") or []})
+            )
     elif len(visible) <= 1:
         if visible:
             targets.append((visible[0], node))
@@ -829,11 +920,21 @@ def ui_put(body: UiTree, request: Request):
 
 
 def _merge_hidden(stored, incoming, visible):
-    hidden = [child for child in (stored.get("children") or []) if isinstance(child, dict) and child.get("document_name") and child["document_name"] not in visible]
+    hidden = [
+        child
+        for child in (stored.get("children") or [])
+        if isinstance(child, dict)
+        and child.get("document_name")
+        and child["document_name"] not in visible
+    ]
     node = incoming if isinstance(incoming, dict) else {"id": "root", "name": "", "children": []}
     children = []
     for child in node.get("children") or []:
-        if isinstance(child, dict) and child.get("document_name") and child["document_name"] not in visible:
+        if (
+            isinstance(child, dict)
+            and child.get("document_name")
+            and child["document_name"] not in visible
+        ):
             continue
         children.append(child)
     children.extend(hidden)
@@ -890,19 +991,28 @@ def query(body: Query, request: Request, response: Response):
         existed = workspace.prepare_dialog(body.dialog_id, memory_key=memory_key) is not None
         result: dict[str, Any]
         if not scope.kbs:
-            result = {"answer": NO_ANSWER, "status": "нет ответа", "document_names": [], "sources": []}
+            result = {
+                "answer": NO_ANSWER,
+                "status": "нет ответа",
+                "document_names": [],
+                "sources": [],
+            }
         else:
             result = run(body.query, memory_key, scope)
         workspace.append_turn(body.dialog_id, body.query, result, create=not existed)
-        audit.write("query", user, _record(
-            query=body.query,
-            answer=result.get("answer", ""),
-            status=result.get("status", ""),
-            dialog_id=body.dialog_id,
-            sources=access.source_rows(result, getattr(scope, "found", None) or []),
-            attempts=getattr(scope, "attempts", 0) or 0,
-            feedback=getattr(scope, "feedback", "") or "",
-        ))
+        audit.write(
+            "query",
+            user,
+            _record(
+                query=body.query,
+                answer=result.get("answer", ""),
+                status=result.get("status", ""),
+                dialog_id=body.dialog_id,
+                sources=access.source_rows(result, getattr(scope, "found", None) or []),
+                attempts=getattr(scope, "attempts", 0) or 0,
+                feedback=getattr(scope, "feedback", "") or "",
+            ),
+        )
         return QueryResponse(
             answer=result.get("answer") or "",
             status=result.get("status") or "",
@@ -911,16 +1021,21 @@ def query(body: Query, request: Request, response: Response):
             request_id=request_id,
         )
     except TimeoutError:
-        audit.write("query", user, _record(
-            query=body.query,
-            answer="Обработка заняла слишком много времени. Попробуйте позже.",
-            status="нет ответа",
-            dialog_id=body.dialog_id,
-            sources=[],
-            attempts=getattr(scope, "attempts", 0) or 0,
-            feedback="timeout",
-            error="timeout",
-        ), ok=False)
+        audit.write(
+            "query",
+            user,
+            _record(
+                query=body.query,
+                answer="Обработка заняла слишком много времени. Попробуйте позже.",
+                status="нет ответа",
+                dialog_id=body.dialog_id,
+                sources=[],
+                attempts=getattr(scope, "attempts", 0) or 0,
+                feedback="timeout",
+                error="timeout",
+            ),
+            ok=False,
+        )
         return QueryResponse(
             answer="Обработка заняла слишком много времени. Попробуйте позже.",
             status="нет ответа",
@@ -930,16 +1045,21 @@ def query(body: Query, request: Request, response: Response):
             feedback="timeout",
         )
     except Exception as exc:
-        audit.write("query", user, _record(
-            query=body.query,
-            answer="",
-            status="нет",
-            dialog_id=body.dialog_id,
-            sources=[],
-            attempts=getattr(scope, "attempts", 0) or 0,
-            feedback="",
-            error=type(exc).__name__,
-        ), ok=False)
+        audit.write(
+            "query",
+            user,
+            _record(
+                query=body.query,
+                answer="",
+                status="нет",
+                dialog_id=body.dialog_id,
+                sources=[],
+                attempts=getattr(scope, "attempts", 0) or 0,
+                feedback="",
+                error=type(exc).__name__,
+            ),
+            ok=False,
+        )
         return JSONResponse(
             content={"detail": "Ошибка сервера"},
             status_code=500,
@@ -1015,7 +1135,9 @@ def admin_user_create(body: UserBody, request: Request):
     try:
         created = auth.create_user(body.login, body.password, body.role_id)
     except ValueError as exc:
-        detail = "Такой логин уже есть" if exc.args == ("taken",) else "Логин или пароль не подходят"
+        detail = (
+            "Такой логин уже есть" if exc.args == ("taken",) else "Логин или пароль не подходят"
+        )
         raise HTTPException(400, detail=detail) from None
     except LookupError:
         raise HTTPException(404, detail="Роль не найдена") from None
@@ -1067,7 +1189,10 @@ def admin_user_delete(user_id: str, request: Request):
 @app.get("/admin/roles")
 def admin_roles(request: Request):
     _need(_user(request), "manage_roles")
-    return {"roles": auth.list_roles(), "bases": [{"id": row["id"], "name": row["name"]} for row in kb.list_kbs()]}
+    return {
+        "roles": auth.list_roles(),
+        "bases": [{"id": row["id"], "name": row["name"]} for row in kb.list_kbs()],
+    }
 
 
 @app.post("/admin/roles")
@@ -1088,7 +1213,9 @@ def admin_role_patch(role_id: str, body: RoleBody, request: Request):
     user = _user(request)
     _need(user, "manage_roles")
     try:
-        auth.update_role(role_id, name=body.name or None, actions=body.actions, kb_actions=body.kb_actions)
+        auth.update_role(
+            role_id, name=body.name or None, actions=body.actions, kb_actions=body.kb_actions
+        )
     except PermissionError:
         raise HTTPException(400, detail="Нельзя оставить систему без управляющего") from None
     except ValueError as exc:
@@ -1157,22 +1284,26 @@ def admin_kb(request: Request):
     if access.has_global(user, "manage_access"):
         bases = []
         for row in kb.list_kbs():
-            bases.append({
-                "id": row["id"],
-                "name": row["name"],
-                "acl": auth.acl_rows(row["id"]),
-                "role_actions": {
-                    role["id"]: sorted(auth.role_content(role["id"], row["id"]))
-                    for role in auth.list_roles()
-                },
-                "personal": {
-                    person["id"]: sorted(auth.user_content(person["id"], row["id"]))
-                    for person in auth.list_users()
-                },
-            })
+            bases.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "acl": auth.acl_rows(row["id"]),
+                    "role_actions": {
+                        role["id"]: sorted(auth.role_content(role["id"], row["id"]))
+                        for role in auth.list_roles()
+                    },
+                    "personal": {
+                        person["id"]: sorted(auth.user_content(person["id"], row["id"]))
+                        for person in auth.list_users()
+                    },
+                }
+            )
         return {
             "bases": bases,
-            "people": [{"id": person["id"], "login": person["login"]} for person in auth.list_users()],
+            "people": [
+                {"id": person["id"], "login": person["login"]} for person in auth.list_users()
+            ],
             "roles": [{"id": role["id"], "name": role["name"]} for role in auth.list_roles()],
             "groups": [{"id": group["id"], "name": group["name"]} for group in auth.list_groups()],
         }
@@ -1186,11 +1317,17 @@ def admin_allow(kb_id: str, body: AclBody, request: Request):
     user = _user(request)
     _need(user, "manage_access")
     auth.acl_add(kb_id, body.subject_type, body.subject_id, "allow")
-    audit.write("access_allow", user, {"kb_id": kb_id, "subject_type": body.subject_type, "subject_id": body.subject_id})
+    audit.write(
+        "access_allow",
+        user,
+        {"kb_id": kb_id, "subject_type": body.subject_type, "subject_id": body.subject_id},
+    )
     person = auth.user_by_id(body.subject_id) if body.subject_type == "user" else None
     if person is not None and not (access.actions_for(person, kb_id) & set(auth.CONTENT_ACTIONS)):
         auth.set_user_content(person["id"], kb_id, ["ask"])
-        audit.write("personal_actions", user, {"kb_id": kb_id, "user_id": person["id"], "actions": ["ask"]})
+        audit.write(
+            "personal_actions", user, {"kb_id": kb_id, "user_id": person["id"], "actions": ["ask"]}
+        )
     return {"ok": True}
 
 
@@ -1199,7 +1336,11 @@ def admin_allow_delete(kb_id: str, body: AclBody, request: Request):
     user = _user(request)
     _need(user, "manage_access")
     auth.acl_remove(kb_id, body.subject_type, body.subject_id, "allow")
-    audit.write("access_revoke", user, {"kb_id": kb_id, "subject_type": body.subject_type, "subject_id": body.subject_id})
+    audit.write(
+        "access_revoke",
+        user,
+        {"kb_id": kb_id, "subject_type": body.subject_type, "subject_id": body.subject_id},
+    )
     return {"ok": True}
 
 
@@ -1208,7 +1349,11 @@ def admin_deny(kb_id: str, body: AclBody, request: Request):
     user = _user(request)
     _need(user, "manage_access")
     auth.acl_add(kb_id, body.subject_type, body.subject_id, "deny")
-    audit.write("access_deny", user, {"kb_id": kb_id, "subject_type": body.subject_type, "subject_id": body.subject_id})
+    audit.write(
+        "access_deny",
+        user,
+        {"kb_id": kb_id, "subject_type": body.subject_type, "subject_id": body.subject_id},
+    )
     return {"ok": True}
 
 
@@ -1217,7 +1362,11 @@ def admin_deny_delete(kb_id: str, body: AclBody, request: Request):
     user = _user(request)
     _need(user, "manage_access")
     auth.acl_remove(kb_id, body.subject_type, body.subject_id, "deny")
-    audit.write("access_undeny", user, {"kb_id": kb_id, "subject_type": body.subject_type, "subject_id": body.subject_id})
+    audit.write(
+        "access_undeny",
+        user,
+        {"kb_id": kb_id, "subject_type": body.subject_type, "subject_id": body.subject_id},
+    )
     return {"ok": True}
 
 
@@ -1232,8 +1381,12 @@ def admin_self(kb_id: str, request: Request):
     except LookupError:
         raise HTTPException(404, detail="База не найдена") from None
     if changed:
-        audit.write("access_allow", user, {"kb_id": kb_id, "subject_type": "user", "subject_id": user["id"]})
-        audit.write("personal_actions", user, {"kb_id": kb_id, "actions": list(auth.CONTENT_ACTIONS)})
+        audit.write(
+            "access_allow", user, {"kb_id": kb_id, "subject_type": "user", "subject_id": user["id"]}
+        )
+        audit.write(
+            "personal_actions", user, {"kb_id": kb_id, "actions": list(auth.CONTENT_ACTIONS)}
+        )
     return {"ok": True, "changed": changed}
 
 
@@ -1242,7 +1395,9 @@ def admin_personal(kb_id: str, user_id: str, body: ActionBody, request: Request)
     user = _user(request)
     _need(user, "manage_access")
     auth.set_user_content(user_id, kb_id, body.actions)
-    audit.write("personal_actions", user, {"kb_id": kb_id, "user_id": user_id, "actions": body.actions})
+    audit.write(
+        "personal_actions", user, {"kb_id": kb_id, "user_id": user_id, "actions": body.actions}
+    )
     return {"ok": True}
 
 
@@ -1259,16 +1414,38 @@ def kb_create(body: KbBody, request: Request):
     auth.acl_add(row["id"], "user", user["id"], "allow")
     auth.set_user_content(user["id"], row["id"], list(auth.CONTENT_ACTIONS))
     audit.write("kb_create", user, {"kb_id": row["id"], "name": row["name"]})
-    audit.write("access_allow", user, {"kb_id": row["id"], "subject_type": "user", "subject_id": user["id"]})
-    audit.write("personal_actions", user, {"kb_id": row["id"], "actions": list(auth.CONTENT_ACTIONS)})
+    audit.write(
+        "access_allow", user, {"kb_id": row["id"], "subject_type": "user", "subject_id": user["id"]}
+    )
+    audit.write(
+        "personal_actions", user, {"kb_id": row["id"], "actions": list(auth.CONTENT_ACTIONS)}
+    )
     return {"id": row["id"], "name": row["name"]}
 
 
 @app.get("/admin/audit")
-def admin_audit(request: Request, user: str = "", role: str = "", group: str = "", kind: str = "", before: str = "", after: str = "", before_id: int = 0):
+def admin_audit(
+    request: Request,
+    user: str = "",
+    role: str = "",
+    group: str = "",
+    kind: str = "",
+    before: str = "",
+    after: str = "",
+    before_id: int = 0,
+):
     actor = _user(request)
     _need(actor, "view_audit")
-    rows = audit.list_events(user_id=user, role_id=role, group_id=group, kind=kind, before=before, after=after, before_id=before_id, limit=50)
+    rows = audit.list_events(
+        user_id=user,
+        role_id=role,
+        group_id=group,
+        kind=kind,
+        before=before,
+        after=after,
+        before_id=before_id,
+        limit=50,
+    )
     audit.write("audit_view", actor, {"user": user, "role": role, "group": group, "kind": kind})
     return {"events": rows}
 

@@ -3,6 +3,7 @@
 Координатор видит последние 20 ходов. Имена документов хода берутся из
 document_names или, если их нет, из sources.
 """
+
 import threading
 from typing import Any
 

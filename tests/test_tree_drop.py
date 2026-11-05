@@ -142,6 +142,7 @@ def _client(tmp_path, monkeypatch):
     monkeypatch.setenv("PROMPTS_DIR", str(repo / "data" / "prompts"))
     monkeypatch.delenv("RAG_TEST_USER", raising=False)
     import settings
+
     settings.reload()
     path = tmp_path / "workspace.json"
     monkeypatch.setattr(workspace, "PATH", path)
@@ -151,7 +152,9 @@ def _client(tmp_path, monkeypatch):
     monkeypatch.setattr(api, "INBOX", inbox)
     monkeypatch.setattr(api, "list_documents", lambda: ["note.txt"])
     client = TestClient(app)
-    assert client.post("/setup", json={"login": "admin", "password": "password12"}).status_code == 200
+    assert (
+        client.post("/setup", json={"login": "admin", "password": "password12"}).status_code == 200
+    )
     api._state["done"] = True
     return client
 
@@ -180,7 +183,11 @@ def test_second_move_does_not_erase_the_saved_tree(tmp_path, monkeypatch):
     _client(tmp_path, monkeypatch)
     source = {
         "dialogs": [],
-        "tree": {"id": "root", "name": "", "children": [{"id": "old", "name": "Архив", "children": []}]},
+        "tree": {
+            "id": "root",
+            "name": "",
+            "children": [{"id": "old", "name": "Архив", "children": []}],
+        },
     }
     workspace.PATH.write_text(json.dumps(source), encoding="utf-8")
     trees.migrate()
@@ -228,11 +235,16 @@ def test_folder_is_not_stored_inside_itself(tmp_path, monkeypatch):
 def test_file_from_another_base_does_not_enter_this_tree(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     kb.create("Кадры")
-    response = client.put("/ui", json={"tree": {
-        "id": "root",
-        "name": "",
-        "children": [{"document_name": "чужой.txt"}, {"document_name": "note.txt"}],
-    }})
+    response = client.put(
+        "/ui",
+        json={
+            "tree": {
+                "id": "root",
+                "name": "",
+                "children": [{"document_name": "чужой.txt"}, {"document_name": "note.txt"}],
+            }
+        },
+    )
     assert response.status_code == 200
     names = workspace.iter_files(trees.read(trees.path_for(kb.get(kb.LEGACY_ID))))
     assert names == ["note.txt"]
@@ -242,7 +254,12 @@ def test_ui_before_ready_returns_saved_folders_without_listing(tmp_path, monkeyp
     client = _client(tmp_path, monkeypatch)
     api._state["done"] = False
     target = trees.path_for(kb.get(kb.LEGACY_ID))
-    trees.write(target, {"id": "root", "name": "", "children": [{"id": "f", "name": "Склад", "children": []}]})
-    monkeypatch.setattr(api, "list_documents", lambda: (_ for _ in ()).throw(AssertionError("list")))
+    trees.write(
+        target,
+        {"id": "root", "name": "", "children": [{"id": "f", "name": "Склад", "children": []}]},
+    )
+    monkeypatch.setattr(
+        api, "list_documents", lambda: (_ for _ in ()).throw(AssertionError("list"))
+    )
     listed = client.get("/ui").json()
     assert listed["tree"]["children"][0]["name"] == "Склад"

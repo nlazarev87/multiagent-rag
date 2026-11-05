@@ -2,6 +2,7 @@
 
 При выключенном флаге поиск меняется. test_features_default_all_true не требует корпуса.
 """
+
 from pathlib import Path
 
 import pytest
@@ -18,8 +19,13 @@ def test_features_default_all_true():
     feats = runtime().get("features", {})
     assert feats, "runtime.json must have 'features'"
     expected = {
-        "focus", "scope", "cover_latin", "prefer_name",
-        "from_overview", "table_neighbors", "overview_rows",
+        "focus",
+        "scope",
+        "cover_latin",
+        "prefer_name",
+        "from_overview",
+        "table_neighbors",
+        "overview_rows",
     }
     missing = expected - set(feats.keys())
     assert not missing, f"runtime.json missing features: {missing}"
@@ -41,7 +47,9 @@ def test_cover_latin_off_does_not_refuse(monkeypatch):
     monkeypatch.setattr(agents, "_cover_latin", cover)
     monkeypatch.setattr(agents, "count_tokens", lambda text: len(text.split()))
     monkeypatch.setattr(agents, "complete", model)
-    chunks = [{"text": "Насос работает.", "document_name": "a.txt", "chunk_index": 0, "section": ""}]
+    chunks = [
+        {"text": "Насос работает.", "document_name": "a.txt", "chunk_index": 0, "section": ""}
+    ]
     off = {"cover_latin": False, "prefer_name": False, "from_overview": False}
     answer = agents.answer_agent("Где NPP?", "Где NPP?", chunks, [], features=off)
     assert calls["cover"] == 0
@@ -64,7 +72,9 @@ def test_cover_latin_on_with_none_does_not_refuse(monkeypatch):
     monkeypatch.setattr(agents, "_cover_latin", cover)
     monkeypatch.setattr(agents, "count_tokens", lambda text: len(text.split()))
     monkeypatch.setattr(agents, "complete", model)
-    chunks = [{"text": "Насос работает.", "document_name": "a.txt", "chunk_index": 0, "section": ""}]
+    chunks = [
+        {"text": "Насос работает.", "document_name": "a.txt", "chunk_index": 0, "section": ""}
+    ]
     features = {"cover_latin": True, "prefer_name": False, "from_overview": False}
     answer = agents.answer_agent("Где NPP?", "Где NPP?", chunks, [], features=features)
     assert calls["cover"] == 1
@@ -78,27 +88,51 @@ def test_cover_latin_on_with_none_does_not_refuse(monkeypatch):
 @pytest.mark.skipif(not _HAS_CORPUS, reason="no corpus in data/inbox")
 def test_disable_overview_rows_filters_overview_kind():
     query = "Сколько потоков"
-    result = search_chunks(query, 4, debug=True, features={
-        "overview_rows": False, "inject_rare": True, "table_neighbors": True,
-        "scope": True, "focus": True,
-    })
+    result = search_chunks(
+        query,
+        4,
+        debug=True,
+        features={
+            "overview_rows": False,
+            "inject_rare": True,
+            "table_neighbors": True,
+            "scope": True,
+            "focus": True,
+        },
+    )
     for slot in result["slots"]:
-        assert "Разных значений в столбце" not in (slot.get("text") or ""), (
-            f"overview text leaked into slot with overview_rows=False: {slot.get('id')}"
-        )
+        assert "Разных значений в столбце" not in (
+            slot.get("text") or ""
+        ), f"overview text leaked into slot with overview_rows=False: {slot.get('id')}"
 
 
 @pytest.mark.slow
 @pytest.mark.skipif(not _HAS_CORPUS, reason="no corpus in data/inbox")
 def test_disable_scope_widens_search():
     query = "насосный агрегат на площадке"
-    with_scope = search_chunks(query, 4, debug=True, features={
-        "scope": True, "inject_rare": True, "overview_rows": True,
-        "table_neighbors": True, "focus": True,
-    })
-    without_scope = search_chunks(query, 4, debug=True, features={
-        "scope": False, "inject_rare": True, "overview_rows": True,
-        "table_neighbors": True, "focus": True,
-    })
+    with_scope = search_chunks(
+        query,
+        4,
+        debug=True,
+        features={
+            "scope": True,
+            "inject_rare": True,
+            "overview_rows": True,
+            "table_neighbors": True,
+            "focus": True,
+        },
+    )
+    without_scope = search_chunks(
+        query,
+        4,
+        debug=True,
+        features={
+            "scope": False,
+            "inject_rare": True,
+            "overview_rows": True,
+            "table_neighbors": True,
+            "focus": True,
+        },
+    )
     assert isinstance(with_scope["slots"], list)
     assert isinstance(without_scope["slots"], list)

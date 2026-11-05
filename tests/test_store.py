@@ -1,13 +1,13 @@
 from collections import Counter
+from pathlib import Path
 
+import pytest
 from docx import Document
 
 import ingest
 import settings
 import store
 from ingest import ingest_dir, split_chunks
-from pathlib import Path
-import pytest
 
 
 def _fresh(tmp_path, monkeypatch):
@@ -21,7 +21,13 @@ def test_identical_text_is_stored_for_each_document(tmp_path, monkeypatch):
     text = "Договор: оплата в течение 10 дней."
 
     def chunk(name):
-        return {"text": text, "document_name": name, "chunk_index": 0, "checksum": "same", "section": ""}
+        return {
+            "text": text,
+            "document_name": name,
+            "chunk_index": 0,
+            "checksum": "same",
+            "section": "",
+        }
 
     store.upsert_chunks([chunk("draft.txt"), chunk("signed.txt")])
     store.upsert_chunks([chunk("copy.txt")])
@@ -31,7 +37,9 @@ def test_identical_text_is_stored_for_each_document(tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_upsert_skips_same_checksum(tmp_path, monkeypatch):
@@ -61,13 +69,17 @@ def test_reingest_applies_overlap_change(tmp_path, monkeypatch):
     assert [chunk["text"] for chunk in first] != [chunk["text"] for chunk in second]
     store.upsert_chunks(second)
     _, texts, metas = store._rows(store.collection())
-    stored = [body for _, body in sorted(zip(metas, texts), key=lambda item: item[0]["chunk_index"])]
+    stored = [
+        body for _, body in sorted(zip(metas, texts), key=lambda item: item[0]["chunk_index"])
+    ]
     assert stored == [chunk["text"] for chunk in second]
     ingest._word_tokens.cache_clear()
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_upsert_replaces_changed_document(tmp_path, monkeypatch):
@@ -80,11 +92,31 @@ def test_upsert_replaces_changed_document(tmp_path, monkeypatch):
 def test_chunks_for_document_orders_by_index(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
-    store.upsert_chunks([
-        {"text": "второй", "document_name": "note.txt", "chunk_index": 1, "checksum": "a", "section": "B"},
-        {"text": "первый", "document_name": "note.txt", "chunk_index": 0, "checksum": "a", "section": "A"},
-        {"text": "чужой", "document_name": "other.txt", "chunk_index": 0, "checksum": "b", "section": ""},
-    ])
+    store.upsert_chunks(
+        [
+            {
+                "text": "второй",
+                "document_name": "note.txt",
+                "chunk_index": 1,
+                "checksum": "a",
+                "section": "B",
+            },
+            {
+                "text": "первый",
+                "document_name": "note.txt",
+                "chunk_index": 0,
+                "checksum": "a",
+                "section": "A",
+            },
+            {
+                "text": "чужой",
+                "document_name": "other.txt",
+                "chunk_index": 0,
+                "checksum": "b",
+                "section": "",
+            },
+        ]
+    )
     rows = store.chunks_for_document("note.txt")
     assert [row["text"] for row in rows] == ["первый", "второй"]
     assert [row["section"] for row in rows] == ["A", "B"]
@@ -94,10 +126,24 @@ def test_chunks_for_document_orders_by_index(tmp_path, monkeypatch):
 def test_delete_document_removes_only_that_file(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
-    store.upsert_chunks([
-        {"text": "Цех имеет номер 4.", "document_name": "charter.txt", "chunk_index": 0, "checksum": "c", "section": "A"},
-        {"text": "Насос синий.", "document_name": "pump.md", "chunk_index": 0, "checksum": "p", "section": ""},
-    ])
+    store.upsert_chunks(
+        [
+            {
+                "text": "Цех имеет номер 4.",
+                "document_name": "charter.txt",
+                "chunk_index": 0,
+                "checksum": "c",
+                "section": "A",
+            },
+            {
+                "text": "Насос синий.",
+                "document_name": "pump.md",
+                "chunk_index": 0,
+                "checksum": "p",
+                "section": "",
+            },
+        ]
+    )
     store.known("цех")
     assert store._index is not None
     store.delete_document("charter.txt")
@@ -114,24 +160,26 @@ def test_delete_document_removes_only_that_file(tmp_path, monkeypatch):
 def test_search_keeps_routing_where(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     monkeypatch.setattr(store, "_embed", lambda texts: [[0.2, 0.3, 0.4, 0.5] for _ in texts])
-    store.upsert_chunks([
-        {
-            "text": "Сушильная камера имеет площадь 25 квадратных метров.",
-            "document_name": "plain.txt",
-            "chunk_index": 0,
-            "checksum": "p",
-            "kind": "text",
-            "section": "",
-        },
-        {
-            "text": "Сушильная камера имеет площадь 40 квадратных метров.",
-            "document_name": "listed.txt",
-            "chunk_index": 0,
-            "checksum": "l",
-            "kind": "overview",
-            "section": "",
-        },
-    ])
+    store.upsert_chunks(
+        [
+            {
+                "text": "Сушильная камера имеет площадь 25 квадратных метров.",
+                "document_name": "plain.txt",
+                "chunk_index": 0,
+                "checksum": "p",
+                "kind": "text",
+                "section": "",
+            },
+            {
+                "text": "Сушильная камера имеет площадь 40 квадратных метров.",
+                "document_name": "listed.txt",
+                "chunk_index": 0,
+                "checksum": "l",
+                "kind": "overview",
+                "section": "",
+            },
+        ]
+    )
     monkeypatch.setattr(store, "route_where", lambda: {"kind": "overview"})
     found = store.search_chunks("площадь сушильной камеры")
     assert found
@@ -139,9 +187,13 @@ def test_search_keeps_routing_where(tmp_path, monkeypatch):
 
 
 def test_where_ignores_blank_filters(monkeypatch):
-    monkeypatch.setattr(settings, "routing", lambda: {
-        "where": {"kind": "", "collection": None, "section": [], "version": 0},
-    })
+    monkeypatch.setattr(
+        settings,
+        "routing",
+        lambda: {
+            "where": {"kind": "", "collection": None, "section": [], "version": 0},
+        },
+    )
     assert settings.where() == {"version": 0}
 
 
@@ -152,19 +204,25 @@ def test_empty_search_returns_empty(tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_search_finds_document(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
-    store.upsert_chunks(split_chunks("Насос имеет обозначение Н-12. Рабочее давление равно 6 бар.", "pump.md"))
+    store.upsert_chunks(
+        split_chunks("Насос имеет обозначение Н-12. Рабочее давление равно 6 бар.", "pump.md")
+    )
     found = store.search_chunks("давление насоса")
     assert found[0]["document_name"] == "pump.md"
     assert "6 бар" in found[0]["text"]
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_search_keeps_to_document_named_in_question(tmp_path, monkeypatch):
@@ -185,7 +243,9 @@ def test_scope_narrows_only_when_one_document_owns_the_number():
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_search_keeps_to_numbered_filename_in_question(tmp_path, monkeypatch):
@@ -198,7 +258,9 @@ def test_search_keeps_to_numbered_filename_in_question(tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_search_finds_exact_code(tmp_path, monkeypatch):
@@ -282,10 +344,24 @@ def test_delete_during_query_embed_does_not_crash_search(tmp_path, monkeypatch):
         return [vector for _ in texts]
 
     monkeypatch.setattr(store, "_embed", embed)
-    store.upsert_chunks([
-        {"text": "Насос синий.", "document_name": "pump.md", "chunk_index": 0, "checksum": "a", "section": ""},
-        {"text": "Цех имеет номер 4.", "document_name": "charter.txt", "chunk_index": 0, "checksum": "b", "section": ""},
-    ])
+    store.upsert_chunks(
+        [
+            {
+                "text": "Насос синий.",
+                "document_name": "pump.md",
+                "chunk_index": 0,
+                "checksum": "a",
+                "section": "",
+            },
+            {
+                "text": "Цех имеет номер 4.",
+                "document_name": "charter.txt",
+                "chunk_index": 0,
+                "checksum": "b",
+                "section": "",
+            },
+        ]
+    )
     try:
         found = store.search_chunks("насос")
         assert isinstance(found, list)
@@ -296,7 +372,9 @@ def test_delete_during_query_embed_does_not_crash_search(tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small").exists(),
+    not (
+        Path(__file__).resolve().parent.parent / "data" / "models" / "multilingual-e5-small"
+    ).exists(),
     reason="model not available in CI (data/models/multilingual-e5-small)",
 )
 def test_table_row_comes_with_its_table(tmp_path, monkeypatch):
@@ -306,7 +384,12 @@ def test_table_row_comes_with_its_table(tmp_path, monkeypatch):
     document = Document()
     document.add_heading("Склад", level=1)
     document.add_paragraph("Таблица 1 – Помещения склада")
-    rows = [("Помещение", "Площадь"), ("Холодильная камера", "40 м²"), ("Сушильная", "25 м²"), ("Архив", "12 м²")]
+    rows = [
+        ("Помещение", "Площадь"),
+        ("Холодильная камера", "40 м²"),
+        ("Сушильная", "25 м²"),
+        ("Архив", "12 м²"),
+    ]
     table = document.add_table(rows=len(rows), cols=2)
     for row, (key, value) in zip(table.rows, rows):
         row.cells[0].text, row.cells[1].text = key, value
@@ -319,6 +402,7 @@ def test_table_row_comes_with_its_table(tmp_path, monkeypatch):
     assert "Архив: 12 м²" in text
     assert text.count("Таблица 1") == 1
 
+
 def _stored(text, name, index=0, checksum="same"):
     return {
         "text": text,
@@ -328,12 +412,12 @@ def _stored(text, name, index=0, checksum="same"):
         "section": "",
     }
 
+
 def test_upsert_keeps_chunks_beyond_the_first_batch(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
     chunks = [
-        _stored(f"Фрагмент номер {index} про склад.", "long.txt", index)
-        for index in range(64)
+        _stored(f"Фрагмент номер {index} про склад.", "long.txt", index) for index in range(64)
     ]
     chunks.append(_stored("Уникальный хвост партии лежит в последнем ящике.", "long.txt", 64))
     store.upsert_chunks(chunks)
@@ -345,21 +429,27 @@ def test_upsert_keeps_chunks_beyond_the_first_batch(tmp_path, monkeypatch):
     assert found[0]["chunk_index"] == 64
     assert "последнем ящике" in found[0]["text"]
 
+
 def test_search_stays_on_requested_documents(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
-    store.upsert_chunks([
-        _stored("Смена длится 8 часов.", "charter.txt", checksum="charter"),
-        _stored("Смена длится 12 часов.", "pump.md", checksum="pump"),
-        _stored("Система АЛЬФА передаёт данные по протоколу HTTP.", "a.txt", checksum="a"),
-        _stored("Система БЕТА передаёт данные по протоколу FTP.", "b.txt", checksum="b"),
-    ])
+    store.upsert_chunks(
+        [
+            _stored("Смена длится 8 часов.", "charter.txt", checksum="charter"),
+            _stored("Смена длится 12 часов.", "pump.md", checksum="pump"),
+            _stored("Система АЛЬФА передаёт данные по протоколу HTTP.", "a.txt", checksum="a"),
+            _stored("Система БЕТА передаёт данные по протоколу FTP.", "b.txt", checksum="b"),
+        ]
+    )
     shift = store.search_chunks("Сколько длится смена?", document_names=["gone.txt", "charter.txt"])
     assert {chunk["document_name"] for chunk in shift} == {"charter.txt"}
     assert all("8 часов" in chunk["text"] for chunk in shift)
-    named = store.search_chunks("По какому протоколу передаёт данные БЕТА?", document_names=["a.txt"])
+    named = store.search_chunks(
+        "По какому протоколу передаёт данные БЕТА?", document_names=["a.txt"]
+    )
     assert {chunk["document_name"] for chunk in named} == {"a.txt"}
     assert all("HTTP" in chunk["text"] for chunk in named)
+
 
 def test_search_limits_follow_up_to_named_documents(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
@@ -374,14 +464,21 @@ def test_search_limits_follow_up_to_named_documents(tmp_path, monkeypatch):
             "section": "",
         }
 
-    store.upsert_chunks([
-        chunk("Система АЛЬФА передаёт данные по протоколу HTTP.", "a.txt", "a"),
-        chunk("Система БЕТА передаёт данные по протоколу FTP.", "b.txt", "b"),
-    ])
-    limited = store.search_chunks("По какому протоколу передаёт данные?", document_names=["a.txt", "missing.txt"])
+    store.upsert_chunks(
+        [
+            chunk("Система АЛЬФА передаёт данные по протоколу HTTP.", "a.txt", "a"),
+            chunk("Система БЕТА передаёт данные по протоколу FTP.", "b.txt", "b"),
+        ]
+    )
+    limited = store.search_chunks(
+        "По какому протоколу передаёт данные?", document_names=["a.txt", "missing.txt"]
+    )
     assert {chunk["document_name"] for chunk in limited} == {"a.txt"}
-    unknown = store.search_chunks("По какому протоколу передаёт данные?", document_names=["missing.txt"])
+    unknown = store.search_chunks(
+        "По какому протоколу передаёт данные?", document_names=["missing.txt"]
+    )
     assert {chunk["document_name"] for chunk in unknown} == {"a.txt", "b.txt"}
+
 
 def _index(docs):
     names = list(docs)
@@ -399,6 +496,7 @@ def _index(docs):
         "position": {name: number for number, name in enumerate(names)},
     }
 
+
 def test_scope_stays_open_without_a_unique_document():
     single = _index({"only.txt": {"цех"}})
     assert store.scope(single, "Что сказано в ONLY про цех?") is None
@@ -407,9 +505,11 @@ def test_scope_stays_open_without_a_unique_document():
     unknown = _index({"a.txt": {"альфа"}, "b.txt": {"бета"}})
     assert store.scope(unknown, "Как работает ZZ-9?") is None
 
+
 def test_scope_picks_the_file_named_by_a_number():
     index = _index({"STD_1.2-99.txt": set(), "STD_1.3-99.txt": set()})
     assert store.scope(index, "Что указано в STD 1.2-99?") == ["STD_1.2-99.txt"]
+
 
 def test_focus_drops_the_filename_when_words_remain():
     query = "Что указывают в разделе Назначение программы по STD 1.2-99?"
@@ -419,6 +519,7 @@ def test_focus_drops_the_filename_when_words_remain():
     assert "Назначение" in focused
     assert store._focus("Что STD?", ["STD.txt"]) == "Что STD?"
     assert store._focus(query, None) == query
+
 
 def test_metadata_filter_hides_another_collection(monkeypatch):
     state = {"where": {"collection": "library"}}
@@ -451,9 +552,11 @@ def test_metadata_filter_hides_another_collection(monkeypatch):
     assert store._chroma_where(["a.txt"]) == {"document_name": {"$in": ["a.txt"]}}
     assert store._lexical(index, "насос", None) == ["a", "b"]
 
+
 class _Count:
     def count(self):
         return 2
+
 
 def test_document_argument_overrides_a_matching_name(monkeypatch):
     index = _index({"a.txt": {"http"}, "b.txt": {"ftp"}})
@@ -474,30 +577,42 @@ def test_document_argument_overrides_a_matching_name(monkeypatch):
     assert seen[2][1] == ["a.txt"]
     assert "HTTP" not in seen[0][0].split()
 
+
 def test_search_stays_inside_the_routed_collection(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
-    store.upsert_chunks([{
-        "text": "Насос имеет обозначение Н-12.",
-        "document_name": "pump.md",
-        "chunk_index": 0,
-        "checksum": "a",
-        "section": "",
-        "collection": "alpha",
-    }])
-    store.upsert_chunks([{
-        "text": "Кран имеет обозначение К-9.",
-        "document_name": "valve.md",
-        "chunk_index": 0,
-        "checksum": "b",
-        "section": "",
-        "collection": "beta",
-    }])
+    store.upsert_chunks(
+        [
+            {
+                "text": "Насос имеет обозначение Н-12.",
+                "document_name": "pump.md",
+                "chunk_index": 0,
+                "checksum": "a",
+                "section": "",
+                "collection": "alpha",
+            }
+        ]
+    )
+    store.upsert_chunks(
+        [
+            {
+                "text": "Кран имеет обозначение К-9.",
+                "document_name": "valve.md",
+                "chunk_index": 0,
+                "checksum": "b",
+                "section": "",
+                "collection": "beta",
+            }
+        ]
+    )
     monkeypatch.setattr(settings, "routing", lambda: {"where": {}})
     assert store.route_where() == {}
     assert store._chroma_where(None) is None
     assert store._chroma_where(["pump.md"]) == {"document_name": {"$in": ["pump.md"]}}
-    assert {chunk["document_name"] for chunk in store.search_chunks("обозначение")} == {"pump.md", "valve.md"}
+    assert {chunk["document_name"] for chunk in store.search_chunks("обозначение")} == {
+        "pump.md",
+        "valve.md",
+    }
     monkeypatch.setattr(
         settings,
         "routing",
@@ -510,22 +625,30 @@ def test_search_stays_inside_the_routed_collection(tmp_path, monkeypatch):
     assert {chunk["document_name"] for chunk in store.search_chunks("обозначение")} == {"pump.md"}
     assert store.search_chunks("обозначение", document_names=["valve.md"]) == []
 
+
 def test_scope_names_one_file_and_stays_open_on_a_tie():
     assert store.scope({"vocabulary": {"only.txt": {"насос"}}}, "Что умеет насос Н-12?") is None
-    assert store.scope(
-        {"vocabulary": {"a.txt": {"альфа"}, "b.txt": {"альфа"}}},
-        "Как устроена система АЛЬФА?",
-    ) is None
+    assert (
+        store.scope(
+            {"vocabulary": {"a.txt": {"альфа"}, "b.txt": {"альфа"}}},
+            "Как устроена система АЛЬФА?",
+        )
+        is None
+    )
     assert store.scope(
         {"vocabulary": {"a.txt": {"альфа"}, "b.txt": {"бета"}}},
         "Как устроена система БЕТА?",
     ) == ["b.txt"]
-    assert store.scope(
-        {"vocabulary": {"a.txt": {"альфа"}, "b.txt": {"бета"}}},
-        "Как устроена система ГАММА?",
-    ) is None
+    assert (
+        store.scope(
+            {"vocabulary": {"a.txt": {"альфа"}, "b.txt": {"бета"}}},
+            "Как устроена система ГАММА?",
+        )
+        is None
+    )
     numbered = {"vocabulary": {"STD_1.2-99.txt": set(), "STD_1.3-99.txt": set()}}
     assert store.scope(numbered, "Что указано в STD 1.2-99?") == ["STD_1.2-99.txt"]
+
 
 def test_focus_drops_the_document_name_when_words_remain():
     scoped = store._focus("Какое давление у системы БЕТА сейчас", ["b.txt"])
@@ -533,14 +656,33 @@ def test_focus_drops_the_document_name_when_words_remain():
     assert store._focus("БЕТА?", ["b.txt"]) == "БЕТА?"
     assert store._focus("Какое давление у системы БЕТА", None) == "Какое давление у системы БЕТА"
 
+
 def test_table_context_keeps_overview_and_near_rows_inside_the_budget(monkeypatch):
     monkeypatch.setattr(ingest, "count_tokens", lambda text: max(1, len((text or "").split())))
     small = {
         "texts": ["цель", "сосед", "далеко"],
         "metas": [
-            {"head": "шапка", "kind": "table", "document_name": "t.docx", "group": "t1", "chunk_index": 0},
-            {"head": "", "kind": "table", "document_name": "t.docx", "group": "t1", "chunk_index": 1},
-            {"head": "", "kind": "table", "document_name": "t.docx", "group": "t1", "chunk_index": 2},
+            {
+                "head": "шапка",
+                "kind": "table",
+                "document_name": "t.docx",
+                "group": "t1",
+                "chunk_index": 0,
+            },
+            {
+                "head": "",
+                "kind": "table",
+                "document_name": "t.docx",
+                "group": "t1",
+                "chunk_index": 1,
+            },
+            {
+                "head": "",
+                "kind": "table",
+                "document_name": "t.docx",
+                "group": "t1",
+                "chunk_index": 2,
+            },
         ],
         "groups": {("t.docx", "t1"): [0, 1, 2]},
     }
@@ -551,9 +693,27 @@ def test_table_context_keeps_overview_and_near_rows_inside_the_budget(monkeypatc
     wide = {
         "texts": ["цель", "сосед", "один два три четыре пять шесть"],
         "metas": [
-            {"head": "шапка", "kind": "table", "document_name": "t.docx", "group": "t1", "chunk_index": 0},
-            {"head": "", "kind": "table", "document_name": "t.docx", "group": "t1", "chunk_index": 1},
-            {"head": "", "kind": "overview", "document_name": "t.docx", "group": "t1", "chunk_index": 2},
+            {
+                "head": "шапка",
+                "kind": "table",
+                "document_name": "t.docx",
+                "group": "t1",
+                "chunk_index": 0,
+            },
+            {
+                "head": "",
+                "kind": "table",
+                "document_name": "t.docx",
+                "group": "t1",
+                "chunk_index": 1,
+            },
+            {
+                "head": "",
+                "kind": "overview",
+                "document_name": "t.docx",
+                "group": "t1",
+                "chunk_index": 2,
+            },
         ],
         "groups": {("t.docx", "t1"): [0, 1, 2]},
     }
@@ -563,6 +723,7 @@ def test_table_context_keeps_overview_and_near_rows_inside_the_budget(monkeypatc
     assert "цель" in forced
     assert "сосед" not in forced
 
+
 def test_contexts_collapse_one_table_into_a_single_slot(monkeypatch):
     monkeypatch.setattr(ingest, "count_tokens", lambda text: 1)
     monkeypatch.setattr(store, "_context", lambda: 100)
@@ -570,10 +731,38 @@ def test_contexts_collapse_one_table_into_a_single_slot(monkeypatch):
         "ids": ["a0", "a1", "a2", "b0"],
         "texts": ["A0", "A1", "список значений", "B0"],
         "metas": [
-            {"document_name": "a.docx", "group": "t1", "kind": "table", "chunk_index": 0, "section": "S", "head": ""},
-            {"document_name": "a.docx", "group": "t1", "kind": "table", "chunk_index": 1, "section": "S", "head": ""},
-            {"document_name": "a.docx", "group": "t1", "kind": "overview", "chunk_index": 2, "section": "S", "head": ""},
-            {"document_name": "b.txt", "group": "", "kind": "text", "chunk_index": 0, "section": "", "head": ""},
+            {
+                "document_name": "a.docx",
+                "group": "t1",
+                "kind": "table",
+                "chunk_index": 0,
+                "section": "S",
+                "head": "",
+            },
+            {
+                "document_name": "a.docx",
+                "group": "t1",
+                "kind": "table",
+                "chunk_index": 1,
+                "section": "S",
+                "head": "",
+            },
+            {
+                "document_name": "a.docx",
+                "group": "t1",
+                "kind": "overview",
+                "chunk_index": 2,
+                "section": "S",
+                "head": "",
+            },
+            {
+                "document_name": "b.txt",
+                "group": "",
+                "kind": "text",
+                "chunk_index": 0,
+                "section": "",
+                "head": "",
+            },
         ],
         "groups": {("a.docx", "t1"): [0, 1, 2]},
         "position": {"a0": 0, "a1": 1, "a2": 2, "b0": 3},
@@ -581,7 +770,11 @@ def test_contexts_collapse_one_table_into_a_single_slot(monkeypatch):
     found = store._contexts(index, ["a0", "a1", "a2", "b0"], 2)
     assert [item["document_name"] for item in found] == ["a.docx", "b.txt"]
     assert found[0]["kind"] == "overview"
-    assert "A0" in found[0]["text"] and "A1" in found[0]["text"] and "список значений" in found[0]["text"]
+    assert (
+        "A0" in found[0]["text"]
+        and "A1" in found[0]["text"]
+        and "список значений" in found[0]["text"]
+    )
     assert found[1]["text"] == "B0"
 
 
@@ -589,8 +782,15 @@ def test_fuse_ranks_a_shared_hit_above_a_single_list(monkeypatch):
     monkeypatch.setattr(store, "_rrf", lambda: 5)
     assert store._fuse(["b", "a"], ["a"]) == ["a", "b"]
 
+
 def test_blank_route_values_are_not_filters(monkeypatch):
-    monkeypatch.setattr(settings, "routing", lambda: {"where": {"collection": "", "kind": None, "tags": [], "version": 0, "keep": "alpha"}})
+    monkeypatch.setattr(
+        settings,
+        "routing",
+        lambda: {
+            "where": {"collection": "", "kind": None, "tags": [], "version": 0, "keep": "alpha"}
+        },
+    )
     assert settings.where() == {"version": 0, "keep": "alpha"}
     monkeypatch.setattr(store, "route_where", lambda: {})
     assert store._meta_ok({"collection": "beta"}) is True
@@ -603,6 +803,7 @@ def test_blank_route_values_are_not_filters(monkeypatch):
     assert store._chroma_where(["a.txt"]) == {
         "$and": [{"collection": "alpha"}, {"document_name": {"$in": ["a.txt"]}}],
     }
+
 
 def test_lexical_hides_another_collection(monkeypatch):
     monkeypatch.setattr(store, "route_where", lambda: {"collection": "alpha"})
@@ -627,12 +828,14 @@ def test_lexical_hides_another_collection(monkeypatch):
     assert store._lexical(index, "насос", ["b.txt"]) == ["b"]
     assert store._lexical(index, "склад", ["a.txt"]) == []
 
+
 def test_scope_keeps_search_open_on_a_tie_or_unknown_name():
     index = {"vocabulary": {"a.txt": {"альфа", "протокол"}, "b.txt": {"бета", "протокол"}}}
     assert store.scope(index, "Какой протокол у АЛЬФА?") == ["a.txt"]
     assert store.scope(index, "Какой протокол у АЛЬФА и БЕТА?") is None
     assert store.scope(index, "Какой протокол у ГАММА?") is None
     assert store.scope({"vocabulary": {"only.txt": {"альфа"}}}, "АЛЬФА") is None
+
 
 def test_scope_matches_a_numbered_filename_without_a_longer_prefix():
     index = {
@@ -648,22 +851,36 @@ def test_scope_matches_a_numbered_filename_without_a_longer_prefix():
     pair = {"vocabulary": {"STD_1.2-99.txt": set(), "STD_1.3-99.txt": set()}}
     assert store.scope(pair, "Что указано в 1.2 и 1.3?") is None
 
+
 def test_explicit_document_names_override_the_query_scope(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
 
     def chunk(text, name):
-        return {"text": text, "document_name": name, "chunk_index": 0, "checksum": name, "section": ""}
+        return {
+            "text": text,
+            "document_name": name,
+            "chunk_index": 0,
+            "checksum": name,
+            "section": "",
+        }
 
-    store.upsert_chunks([
-        chunk("Система АЛЬФА передаёт данные по протоколу HTTP.", "a.txt"),
-        chunk("Система БЕТА передаёт данные по протоколу FTP.", "b.txt"),
-    ])
-    forced = store.search_chunks("По какому протоколу передаёт данные БЕТА?", document_names=["a.txt"])
+    store.upsert_chunks(
+        [
+            chunk("Система АЛЬФА передаёт данные по протоколу HTTP.", "a.txt"),
+            chunk("Система БЕТА передаёт данные по протоколу FTP.", "b.txt"),
+        ]
+    )
+    forced = store.search_chunks(
+        "По какому протоколу передаёт данные БЕТА?", document_names=["a.txt"]
+    )
     assert forced
     assert {chunk["document_name"] for chunk in forced} == {"a.txt"}
-    fallback = store.search_chunks("По какому протоколу передаёт данные БЕТА?", document_names=["gone.txt"])
+    fallback = store.search_chunks(
+        "По какому протоколу передаёт данные БЕТА?", document_names=["gone.txt"]
+    )
     assert {chunk["document_name"] for chunk in fallback} == {"b.txt"}
+
 
 def test_scope_keeps_a_shorter_index_off_a_longer_one():
     numbered = {"vocabulary": {"STD_1.2-99.txt": set(), "STD_1.20-99.txt": set()}}
@@ -671,7 +888,9 @@ def test_scope_keeps_a_shorter_index_off_a_longer_one():
     assert store.scope(numbered, "Что указано в пункте 1.20?") == ["STD_1.20-99.txt"]
     tied = {"vocabulary": {"a.txt": {"альфа"}, "b.txt": {"альфа"}}}
     assert store.scope(tied, "Где описана система АЛЬФА?") is None
-    assert store.scope({"vocabulary": {"only.txt": {"альфа"}}}, "Где описана система АЛЬФА?") is None
+    assert (
+        store.scope({"vocabulary": {"only.txt": {"альфа"}}}, "Где описана система АЛЬФА?") is None
+    )
 
 
 def test_filename_stems_need_two_words_and_keep_a_named_file():
@@ -722,26 +941,37 @@ def test_lexical_matches_a_code_suffix_and_skips_a_short_piece(monkeypatch):
     assert store._lexical(index, "пункт 1.2", None) == ["point.txt"]
     assert store._lexical(index, "цифра 1", None) == []
 
+
 def test_scope_stays_open_when_filename_words_point_different_ways():
     index = {"vocabulary": {"насосный агрегат.txt": set(), "складской учет.txt": set()}}
     assert store.scope(index, "насосный агрегат на площадке") == ["насосный агрегат.txt"]
     assert store.scope(index, "насосный агрегат и складской учет") is None
+
 
 def test_search_finds_a_number_hidden_in_a_code(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
 
     def chunk(text, name):
-        return {"text": text, "document_name": name, "chunk_index": 0, "checksum": name, "section": ""}
+        return {
+            "text": text,
+            "document_name": name,
+            "chunk_index": 0,
+            "checksum": name,
+            "section": "",
+        }
 
-    store.upsert_chunks([
-        chunk("Насос ХН-100 стоит в цехе.", "coded.txt"),
-        chunk("Насос без номера стоит на складе.", "plain.txt"),
-    ])
+    store.upsert_chunks(
+        [
+            chunk("Насос ХН-100 стоит в цехе.", "coded.txt"),
+            chunk("Насос без номера стоит на складе.", "plain.txt"),
+        ]
+    )
     found = store.search_chunks("100")
     assert found
     assert found[0]["document_name"] == "coded.txt"
     assert "12" not in store._terms("Обозначение Н-12.")
+
 
 def test_empty_upsert_keeps_the_index_and_skips_a_repeat(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
@@ -768,24 +998,28 @@ def test_empty_upsert_keeps_the_index_and_skips_a_repeat(tmp_path, monkeypatch):
     assert store.known("цех") is True
     assert store.known("насос") is False
 
+
 def test_rows_past_the_first_page_stay_in_the_document(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
-    store.upsert_chunks([
-        {
-            "text": f"строка {number} уникальна",
-            "document_name": "long.txt",
-            "chunk_index": number,
-            "checksum": "page",
-            "section": "",
-        }
-        for number in range(501)
-    ])
+    store.upsert_chunks(
+        [
+            {
+                "text": f"строка {number} уникальна",
+                "document_name": "long.txt",
+                "chunk_index": number,
+                "checksum": "page",
+                "section": "",
+            }
+            for number in range(501)
+        ]
+    )
     rows = store.chunks_for_document("long.txt")
     assert len(rows) == 501
     assert rows[0]["text"] == "строка 0 уникальна"
     assert rows[-1]["text"] == "строка 500 уникальна"
     assert store.list_documents() == ["long.txt"]
+
 
 def test_table_rows_render_in_document_order(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
@@ -795,28 +1029,30 @@ def test_table_rows_render_in_document_order(tmp_path, monkeypatch):
 
     _word_tokens.cache_clear()
     try:
-        store.upsert_chunks([
-            {
-                "text": "Показатель\nМаксимум: 10",
-                "document_name": "pump.md",
-                "chunk_index": 1,
-                "checksum": "t",
-                "section": "Замеры",
-                "kind": "table",
-                "group": "t1",
-                "head": "Показатель",
-            },
-            {
-                "text": "Показатель\nМинимум: 6",
-                "document_name": "pump.md",
-                "chunk_index": 0,
-                "checksum": "t",
-                "section": "Замеры",
-                "kind": "table",
-                "group": "t1",
-                "head": "Показатель",
-            },
-        ])
+        store.upsert_chunks(
+            [
+                {
+                    "text": "Показатель\nМаксимум: 10",
+                    "document_name": "pump.md",
+                    "chunk_index": 1,
+                    "checksum": "t",
+                    "section": "Замеры",
+                    "kind": "table",
+                    "group": "t1",
+                    "head": "Показатель",
+                },
+                {
+                    "text": "Показатель\nМинимум: 6",
+                    "document_name": "pump.md",
+                    "chunk_index": 0,
+                    "checksum": "t",
+                    "section": "Замеры",
+                    "kind": "table",
+                    "group": "t1",
+                    "head": "Показатель",
+                },
+            ]
+        )
         found = store.search_chunks("минимум максимум")
         assert found
         text = found[0]["text"]
@@ -824,16 +1060,21 @@ def test_table_rows_render_in_document_order(tmp_path, monkeypatch):
     finally:
         _word_tokens.cache_clear()
 
+
 def test_reset_clears_the_index_when_shutdown_fails(tmp_path, monkeypatch):
     _fresh(tmp_path, monkeypatch)
     monkeypatch.setattr(store, "_embed", lambda texts: [[0.1, 0.2, 0.3, 0.4] for _ in texts])
-    store.upsert_chunks([{
-        "text": "Цех имеет номер 4.",
-        "document_name": "charter.txt",
-        "chunk_index": 0,
-        "checksum": "c",
-        "section": "",
-    }])
+    store.upsert_chunks(
+        [
+            {
+                "text": "Цех имеет номер 4.",
+                "document_name": "charter.txt",
+                "chunk_index": 0,
+                "checksum": "c",
+                "section": "",
+            }
+        ]
+    )
 
     real = store._client
 
@@ -893,15 +1134,31 @@ def test_two_catalogs_stay_apart_and_reset_follows_chroma(tmp_path, monkeypatch)
     second = tmp_path / "two"
     monkeypatch.setattr(store, "CHROMA", first)
     store.reset()
-    store.upsert_chunks([
-        {"text": "первый каталог", "document_name": "same.txt", "chunk_index": 0, "checksum": "1", "section": ""},
-    ])
+    store.upsert_chunks(
+        [
+            {
+                "text": "первый каталог",
+                "document_name": "same.txt",
+                "chunk_index": 0,
+                "checksum": "1",
+                "section": "",
+            },
+        ]
+    )
     monkeypatch.setattr(store, "CHROMA", second)
     store.reset()
     assert store.list_documents() == []
-    store.upsert_chunks([
-        {"text": "второй каталог", "document_name": "same.txt", "chunk_index": 0, "checksum": "2", "section": ""},
-    ])
+    store.upsert_chunks(
+        [
+            {
+                "text": "второй каталог",
+                "document_name": "same.txt",
+                "chunk_index": 0,
+                "checksum": "2",
+                "section": "",
+            },
+        ]
+    )
     assert store.chunks_for_document("same.txt")[0]["text"] == "второй каталог"
     store.delete_document("same.txt")
     assert store.list_documents() == []
@@ -914,7 +1171,14 @@ def test_two_catalogs_stay_apart_and_reset_follows_chroma(tmp_path, monkeypatch)
     )
     env = dict(os.environ)
     env["PYTHONPATH"] = "src"
-    done = subprocess.run([sys.executable, "-c", script], cwd=str(Path(__file__).resolve().parents[1]), env=env, capture_output=True, text=True, encoding="utf-8")
+    done = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=str(Path(__file__).resolve().parents[1]),
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == "первый каталог"
     store.reset()
@@ -1005,10 +1269,12 @@ def test_dedup_no_expected_keeps_first(tmp_path, monkeypatch):
     """#230: без expected_document победитель — первый в ранжировании."""
     _fresh(tmp_path, monkeypatch)
     _vectors(monkeypatch)
-    store.upsert_chunks([
-        {**_pump(checksum="a", text="Насос синий."), "document_name": "file1.md"},
-        {**_pump(checksum="a", text="Насос синий."), "document_name": "file2.md"},
-    ])
+    store.upsert_chunks(
+        [
+            {**_pump(checksum="a", text="Насос синий."), "document_name": "file1.md"},
+            {**_pump(checksum="a", text="Насос синий."), "document_name": "file2.md"},
+        ]
+    )
     slots = store.search_chunks("насос", 4)
     assert len(slots) == 1, f"expected 1 slot, got {len(slots)}"
     assert slots[0].get("document_name") == "file1.md"
@@ -1020,10 +1286,12 @@ def test_dedup_expected_wins(tmp_path, monkeypatch):
     """#230: expected_document = file2 → победитель = file2."""
     _fresh(tmp_path, monkeypatch)
     _vectors(monkeypatch)
-    store.upsert_chunks([
-        {**_pump(checksum="a", text="Насос синий."), "document_name": "file1.md"},
-        {**_pump(checksum="a", text="Насос синий."), "document_name": "file2.md"},
-    ])
+    store.upsert_chunks(
+        [
+            {**_pump(checksum="a", text="Насос синий."), "document_name": "file1.md"},
+            {**_pump(checksum="a", text="Насос синий."), "document_name": "file2.md"},
+        ]
+    )
     slots = store.search_chunks("насос", 4, expected_document="file2.md")
     assert len(slots) == 1
     assert slots[0].get("document_name") == "file2.md"
@@ -1035,10 +1303,12 @@ def test_dedup_expected_not_in_ranked_keeps_first(tmp_path, monkeypatch):
     """#230: expected_document нет в ранжировании → победитель — первый."""
     _fresh(tmp_path, monkeypatch)
     _vectors(monkeypatch)
-    store.upsert_chunks([
-        {**_pump(checksum="a", text="Насос синий."), "document_name": "file1.md"},
-        {**_pump(checksum="a", text="Насос синий."), "document_name": "file2.md"},
-    ])
+    store.upsert_chunks(
+        [
+            {**_pump(checksum="a", text="Насос синий."), "document_name": "file1.md"},
+            {**_pump(checksum="a", text="Насос синий."), "document_name": "file2.md"},
+        ]
+    )
     slots = store.search_chunks("насос", 4, expected_document="file99.md")
     assert len(slots) == 1
     assert slots[0].get("document_name") == "file1.md"
@@ -1051,10 +1321,12 @@ def test_dedup_single_table_still_one_slot(tmp_path, monkeypatch):
     _vectors(monkeypatch)
     # _render берёт count_tokens из ingest в момент вызова. В CI модели нет.
     monkeypatch.setattr(ingest, "count_tokens", lambda text: max(1, len((text or "").split())))
-    store.upsert_chunks([
-        {**_pump(checksum="a", text="Строка 1."), "document_name": "table.md", "group": "t1"},
-        {**_pump(checksum="b", text="Строка 2."), "document_name": "table.md", "group": "t1"},
-    ])
+    store.upsert_chunks(
+        [
+            {**_pump(checksum="a", text="Строка 1."), "document_name": "table.md", "group": "t1"},
+            {**_pump(checksum="b", text="Строка 2."), "document_name": "table.md", "group": "t1"},
+        ]
+    )
     slots = store.search_chunks("строка", 4)
     assert len(slots) == 1, f"expected 1 slot (same group), got {len(slots)}"
     assert "[также в:" not in slots[0]["text"]
@@ -1064,10 +1336,20 @@ def test_dedup_same_document_keeps_both_copies(tmp_path, monkeypatch):
     """#230: тот же файл не схлопывается, даже если текст совпал."""
     _fresh(tmp_path, monkeypatch)
     _vectors(monkeypatch)
-    store.upsert_chunks([
-        {**_pump(checksum="a", text="Насос синий."), "document_name": "file1.md", "chunk_index": 0},
-        {**_pump(checksum="b", text="Насос синий."), "document_name": "file1.md", "chunk_index": 1},
-    ])
+    store.upsert_chunks(
+        [
+            {
+                **_pump(checksum="a", text="Насос синий."),
+                "document_name": "file1.md",
+                "chunk_index": 0,
+            },
+            {
+                **_pump(checksum="b", text="Насос синий."),
+                "document_name": "file1.md",
+                "chunk_index": 1,
+            },
+        ]
+    )
     slots = store.search_chunks("насос", 4)
     assert len(slots) == 2, f"expected 2 slots, got {len(slots)}"
     assert all(slot.get("document_name") == "file1.md" for slot in slots)
@@ -1092,10 +1374,12 @@ def test_dedup_different_texts_two_slots(tmp_path, monkeypatch):
     """#230: разный текст — два слота."""
     _fresh(tmp_path, monkeypatch)
     _vectors(monkeypatch)
-    store.upsert_chunks([
-        {**_pump(checksum="a", text="Насос синий."), "document_name": "file1.md"},
-        {**_pump(checksum="b", text="Насос красный."), "document_name": "file2.md"},
-    ])
+    store.upsert_chunks(
+        [
+            {**_pump(checksum="a", text="Насос синий."), "document_name": "file1.md"},
+            {**_pump(checksum="b", text="Насос красный."), "document_name": "file2.md"},
+        ]
+    )
     slots = store.search_chunks("насос", 4)
     assert len(slots) == 2, f"expected 2 slots, got {len(slots)}"
 
@@ -1103,6 +1387,7 @@ def test_dedup_different_texts_two_slots(tmp_path, monkeypatch):
 def test_is_code_core():
     """#143: is_code — две заглавные или буква и цифра."""
     from pipeline_utils import is_code
+
     assert is_code("NPP") is True
     assert is_code("1.2-99") is False
     assert is_code("8") is False
@@ -1123,6 +1408,7 @@ def test_names_tail():
 def test_codes_no_extension():
     """#143: _codes берёт только ядро и отдаёт нижний регистр."""
     from pipeline_utils import _codes
+
     result = _codes("NPP 1.2-99 ГОСТ")
     assert "npp" in result
     assert "гост" in result
@@ -1132,5 +1418,6 @@ def test_codes_no_extension():
 def test_anchors_tail_keeps_digit():
     """#143: _anchors в agents берёт голую цифру, ссылку [1, 2] вырезает."""
     import agents
+
     assert "8" in agents._anchors("Смена длится 8 часов")
     assert "1" not in agents._anchors("[1, 2]")

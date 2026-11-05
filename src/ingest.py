@@ -3,6 +3,7 @@
 Один битый файл пропускается и не выбрасывает остальные. Номер версии входит
 в контрольную сумму: смена разбора без нового номера оставляет старый текст.
 """
+
 import hashlib
 import json
 import os
@@ -44,7 +45,12 @@ def _intro():
 
 _bind_runtime()
 
-MODEL = Path(os.environ.get("EMBED_PATH", Path(__file__).resolve().parents[1] / "data" / "models" / "multilingual-e5-small"))
+MODEL = Path(
+    os.environ.get(
+        "EMBED_PATH",
+        Path(__file__).resolve().parents[1] / "data" / "models" / "multilingual-e5-small",
+    )
+)
 _HEADING = re.compile(r"^(heading|заголовок)\s*(\d)", re.IGNORECASE)
 _NUMBERED_HEAD = re.compile(r"^(\d+(?:\.\d+)*)\s+(\S.*)$")
 _TOC = re.compile(r"^(toc|оглавление)\s*\d", re.IGNORECASE)
@@ -55,11 +61,13 @@ def _load_tokenizer():
     global _tokenizer
     if _tokenizer is None:
         import store
+
         with store._import_lock:
             if _tokenizer is None:
                 os.environ.setdefault("HF_HUB_OFFLINE", "1")
                 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
                 from transformers import AutoTokenizer
+
                 _tokenizer = AutoTokenizer.from_pretrained(str(MODEL), local_files_only=True)
     return _tokenizer
 
@@ -250,7 +258,9 @@ def _table_block(table, caption, depth=0):
         start = 0
     elif len(grid) > 2 and _subheader(grid[0], grid[1]):
         labels = [
-            top if _same_cell(upper, lower) or not _text(lower, depth) else f"{top} / {_text(lower, depth)}"
+            top
+            if _same_cell(upper, lower) or not _text(lower, depth)
+            else f"{top} / {_text(lower, depth)}"
             for top, upper, lower in zip(labels, grid[0], grid[1])
         ]
         start = 2
@@ -288,7 +298,13 @@ def _table_block(table, caption, depth=0):
     for label in labels:
         if not names or not label or names[-1] != label:
             names.append(label)
-    return {"kind": "table", "caption": caption, "labels": names, "width": len(labels), "rows": rows}
+    return {
+        "kind": "table",
+        "caption": caption,
+        "labels": names,
+        "width": len(labels),
+        "rows": rows,
+    }
 
 
 _WML = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -296,8 +312,18 @@ _WML = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 # a direct paragraph or a direct run, so an inserted value or a form field is
 # skipped and the index keeps the old text or an empty cell.
 _WORD_PARENTS = {
-    "body", "p", "hyperlink", "sdtContent", "tc", "tbl", "tr",
-    "smartTag", "ins", "moveTo", "txbxContent", "customXml",
+    "body",
+    "p",
+    "hyperlink",
+    "sdtContent",
+    "tc",
+    "tbl",
+    "tr",
+    "smartTag",
+    "ins",
+    "moveTo",
+    "txbxContent",
+    "customXml",
 }
 
 
@@ -335,6 +361,7 @@ def _unwrap_word_wrappers(root):
 def _docx_blocks(path):
     from docx import Document
     from docx.table import Table
+
     document = Document(str(path))
     _unwrap_word_wrappers(document.element)
     blocks = []
@@ -369,7 +396,11 @@ def _docx_blocks(path):
             blocks[-1]["text"] = previous_text[:-1] + text
             previous = blocks[-1]["text"]
             continue
-        blocks.append({"kind": "heading", "level": level, "text": text} if level else {"kind": "p", "text": text})
+        blocks.append(
+            {"kind": "heading", "level": level, "text": text}
+            if level
+            else {"kind": "p", "text": text}
+        )
         previous = text
     return blocks
 
@@ -382,14 +413,18 @@ def _markdown_blocks(text):
             continue
         match = re.match(r"^(#{1,6})\s+(.*)$", line)
         if match:
-            blocks.append({"kind": "heading", "level": len(match.group(1)), "text": match.group(2).strip()})
+            blocks.append(
+                {"kind": "heading", "level": len(match.group(1)), "text": match.group(2).strip()}
+            )
         else:
             blocks.append({"kind": "p", "text": line})
     return blocks
 
 
 def _text_blocks(text):
-    return [{"kind": "p", "text": " ".join(line.split())} for line in text.splitlines() if line.strip()]
+    return [
+        {"kind": "p", "text": " ".join(line.split())} for line in text.splitlines() if line.strip()
+    ]
 
 
 def _pdf_blocks(path):
@@ -437,14 +472,16 @@ def _pdf_blocks(path):
                 else:
                     labels = grid[0]
                     data = grid[1:]
-                blocks.append({
-                    "kind": "table",
-                    "caption": "",
-                    "labels": labels,
-                    "width": len(grid[0]),
-                    "rows": data,
-                    "group": f"pdf:{path.name}:{number}:{index}",
-                })
+                blocks.append(
+                    {
+                        "kind": "table",
+                        "caption": "",
+                        "labels": labels,
+                        "width": len(grid[0]),
+                        "rows": data,
+                        "group": f"pdf:{path.name}:{number}:{index}",
+                    }
+                )
     return blocks
 
 
@@ -494,18 +531,22 @@ def _xlsx_blocks(path):
             rows = []
             for cells in data_rows:
                 cells = cells + [""] * (width - len(cells))
-                rows.append([
-                    (labels[index] if index < width else "", cell)
-                    for index, cell in enumerate(cells)
-                ])
-            blocks.append({
-                "kind": "table",
-                "caption": sheet_name,
-                "labels": labels,
-                "width": width,
-                "rows": rows,
-                "group": f"sheet:{sheet_name}:0",
-            })
+                rows.append(
+                    [
+                        (labels[index] if index < width else "", cell)
+                        for index, cell in enumerate(cells)
+                    ]
+                )
+            blocks.append(
+                {
+                    "kind": "table",
+                    "caption": sheet_name,
+                    "labels": labels,
+                    "width": width,
+                    "rows": rows,
+                    "group": f"sheet:{sheet_name}:0",
+                }
+            )
     finally:
         workbook.close()
     return blocks
@@ -553,7 +594,10 @@ def _row_parts(pairs, keyvalue, room):
     if keyvalue or len(pairs) < 3 or count_tokens(line) <= room:
         return [line] if line else []
     lead = 1
-    while lead < min(3, len(pairs) - 1) and count_tokens(_row_line(pairs[:lead + 1], False)) * 3 <= room:
+    while (
+        lead < min(3, len(pairs) - 1)
+        and count_tokens(_row_line(pairs[: lead + 1], False)) * 3 <= room
+    ):
         lead += 1
     parts: list[str] = []
     current: list[tuple[str, str]] = []
@@ -618,7 +662,11 @@ def _pack(lines, budget, overlap=True):
         if current and size + cost > budget:
             pieces.append(current)
             tail = _tail("\n".join(current), _overlap()) if overlap else ""
-            current, size = ([tail], count_tokens(tail)) if tail and count_tokens(tail) + cost <= budget else ([], 0)
+            current, size = (
+                ([tail], count_tokens(tail))
+                if tail and count_tokens(tail) + cost <= budget
+                else ([], 0)
+            )
         current.append(line)
         size += cost
     if current:
@@ -633,7 +681,11 @@ def _distinct_column(block):
             if position < len(pairs) and pairs[position][1]:
                 values.append(pairs[position][1])
         unique = list(dict.fromkeys(values))
-        if values and len(unique) * 2 >= len(values) and not all(re.fullmatch(r"[\d.,\s-]+", value) for value in unique):
+        if (
+            values
+            and len(unique) * 2 >= len(values)
+            and not all(re.fullmatch(r"[\d.,\s-]+", value) for value in unique)
+        ):
             return block["labels"][position], unique
     return "", []
 
@@ -653,7 +705,12 @@ def _table_pieces(block, section):
     title = block["caption"] or section.split(" > ")[-1]
     groups = [part for line in lines for part in _cut(line.split(), room)]
     pieces = [
-        ("table", f"{head_text}\n{group}" if head_text else group, head_text, f"{title}\n{group}" if title else group)
+        (
+            "table",
+            f"{head_text}\n{group}" if head_text else group,
+            head_text,
+            f"{title}\n{group}" if title else group,
+        )
         for group in groups
     ]
     if len(block["rows"]) > 1 and sum(count_tokens(line) for line in lines) > _tokens():
@@ -661,8 +718,18 @@ def _table_pieces(block, section):
         if values:
             # The count is the full column, so the list must stay complete. Cutting it to the
             # chunk budget drops later values while the line still claims to be exhaustive.
-            overview = f"Разных значений в столбце «{label}»: {len(values)}. Список: {', '.join(values)}."
-            pieces.insert(0, ("overview", f"{head_text}\n{overview}" if head_text else overview, head_text, f"{title}\n{overview}" if title else overview))
+            overview = (
+                f"Разных значений в столбце «{label}»: {len(values)}. Список: {', '.join(values)}."
+            )
+            pieces.insert(
+                0,
+                (
+                    "overview",
+                    f"{head_text}\n{overview}" if head_text else overview,
+                    head_text,
+                    f"{title}\n{overview}" if title else overview,
+                ),
+            )
     return pieces
 
 
@@ -677,8 +744,7 @@ def _ready_table(block):
     for row in rows:
         cells = ["" if cell is None else str(cell) for cell in row]
         pairs = [
-            (labels[index] if index < len(labels) else "", cell)
-            for index, cell in enumerate(cells)
+            (labels[index] if index < len(labels) else "", cell) for index, cell in enumerate(cells)
         ]
         if any(value for _, value in pairs):
             paired.append(pairs)
@@ -704,7 +770,9 @@ def chunks_from_blocks(blocks, document_name="", source=b""):
     )
     raw = hashlib.sha256(source).hexdigest() if source else ""
     digest = hashlib.sha256(
-        (json.dumps(blocks, ensure_ascii=False) + str(VERSION) + limits + _tokenizer_id() + raw).encode()
+        (
+            json.dumps(blocks, ensure_ascii=False) + str(VERSION) + limits + _tokenizer_id() + raw
+        ).encode()
     ).hexdigest()
     pieces: list[tuple[Any, ...]] = []
     path: list[tuple[Any, Any]] = []
@@ -790,6 +858,7 @@ def load_text(path):
 def _max_file_size_bytes():
     """Предел размера файла в байтах из runtime."""
     from settings import runtime
+
     mb = runtime().get("ingest", {}).get("max_file_size_mb", 50)
     return mb * 1024 * 1024
 
@@ -797,6 +866,7 @@ def _max_file_size_bytes():
 def _max_chunks_per_doc():
     """Предел кусков на документ из runtime."""
     from settings import runtime
+
     return runtime().get("ingest", {}).get("max_chunks_per_doc", 5000)
 
 
@@ -804,6 +874,7 @@ def _audit_upload(user, payload, ok):
     """Журнал kind=upload. Сбой записи не останавливает разбор."""
     try:
         from audit import write as audit_write
+
         audit_write("upload", user, payload, ok=ok)
     except Exception:
         return
@@ -824,11 +895,15 @@ def ingest_dir(directory):
             continue
         if size > _max_file_size_bytes():
             # #137: файл больше предела — не разбирать.
-            _audit_upload(None, {
-                "file": path.name,
-                "size": size,
-                "error": "file_too_large",
-            }, False)
+            _audit_upload(
+                None,
+                {
+                    "file": path.name,
+                    "size": size,
+                    "error": "file_too_large",
+                },
+                False,
+            )
             continue
         try:
             source_bytes = path.read_bytes()
@@ -837,12 +912,16 @@ def ingest_dir(directory):
             if len(extracted) > limit:
                 total = len(extracted)
                 extracted = extracted[:limit]
-                _audit_upload(None, {
-                    "file": path.name,
-                    "chunks_total": total,
-                    "chunks_kept": limit,
-                    "warning": "too_many_chunks",
-                }, True)
+                _audit_upload(
+                    None,
+                    {
+                        "file": path.name,
+                        "chunks_total": total,
+                        "chunks_kept": limit,
+                        "warning": "too_many_chunks",
+                    },
+                    True,
+                )
             chunks += extracted
         except ImportError:
             raise

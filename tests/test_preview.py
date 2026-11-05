@@ -1,8 +1,9 @@
 import os
-import pytest
 import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 HTML = Path(__file__).resolve().parents[1] / "src" / "web" / "index.html"
 NODE = shutil.which("node") or "/exec-daemon/node"
@@ -471,6 +472,7 @@ def test_preview_and_tree_save_ignore_a_stale_result():
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip() == "ok"
 
+
 def test_preview_ignores_a_stale_document_and_a_stale_tree_save():
     page = HTML.read_text(encoding="utf-8")
     assert "if (activeTab !== name) return;" in page
@@ -622,6 +624,7 @@ def test_load_ui_keeps_the_shown_tree_when_refresh_fails_or_overlaps_an_edit():
     )
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip() == "ok"
+
 
 PAGE = r"""
 const fs = require("fs");

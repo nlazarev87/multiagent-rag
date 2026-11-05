@@ -56,7 +56,11 @@ def problems(item):
             found.append(f"лишнее «{fact}»")
     if item.get("starts") and not answer.startswith(_flat(item["starts"])):
         found.append(f"не начинается с «{item['starts']}»")
-    if expected == CONFIRMED and item.get("document") not in (None, "*") and item["document"] not in result["document_names"]:
+    if (
+        expected == CONFIRMED
+        and item.get("document") not in (None, "*")
+        and item["document"] not in result["document_names"]
+    ):
         found.append("не тот документ")
     return found, result["answer"]
 

@@ -12,6 +12,7 @@ os.environ["LLM_MODEL_PATH"] = str(
 def _reset_query_rate_limit():
     """#147: лимит /query живёт в памяти процесса. Перед тестом счётчик пустой."""
     import sys
+
     module = sys.modules.get("api")
     limiter = getattr(module, "limiter", None)
     if limiter is not None:

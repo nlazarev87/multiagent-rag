@@ -1,8 +1,9 @@
 import os
-import pytest
 import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 HTML = Path(__file__).resolve().parents[1] / "src" / "web" / "index.html"
 NODE = shutil.which("node") or "/exec-daemon/node"

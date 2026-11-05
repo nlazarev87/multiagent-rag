@@ -28,7 +28,9 @@ def question_needles():
             for option in fact if isinstance(fact, list) else [fact]:
                 if len(option) >= 4:
                     found.add(option)
-        for phrase in item.get("evidence", []) + item.get("evidence_any", []) + item.get("together", []):
+        for phrase in (
+            item.get("evidence", []) + item.get("evidence_any", []) + item.get("together", [])
+        ):
             if len(phrase) >= 4:
                 found.add(phrase)
         for token in re.findall(r"[0-9A-Za-zА-Яа-яЁё_.-]+", item["query"]):
@@ -94,7 +96,9 @@ def _has_any(text, needles):
     return any(needle.lower() in flat for needle in needles)
 
 
-def _probe_corpus(store, agents, ingest_dir, corpus, inside_query, inside_needles, outside_query, outside_needles):
+def _probe_corpus(
+    store, agents, ingest_dir, corpus, inside_query, inside_needles, outside_query, outside_needles
+):
     store.reset()
     store.upsert_chunks(ingest_dir(corpus))
     inside_chunks = store.search_chunks(inside_query)
@@ -131,18 +135,28 @@ def measure_swap():
             pump_dir.mkdir()
             shutil.copy(PUMP, pump_dir / PUMP.name)
             pump_ok, pump_cite, *_ = _probe_corpus(
-                store, agents, ingest_dir, pump_dir,
-                "Какое обозначение у насоса?", ("Н-12",),
-                "Когда открыта библиотека?", ("9 до 18", "Читальный"),
+                store,
+                agents,
+                ingest_dir,
+                pump_dir,
+                "Какое обозначение у насоса?",
+                ("Н-12",),
+                "Когда открыта библиотека?",
+                ("9 до 18", "Читальный"),
             )
             hits += int(pump_ok)
             cites += int(pump_cite)
             store.reset()
             store.CHROMA = root / "chroma-library"
             library_ok, library_cite, *_ = _probe_corpus(
-                store, agents, ingest_dir, LIBRARY,
-                "Какие залы есть в библиотеке?", ("Читальный", "Детский", "Архивный"),
-                "Какое обозначение у насоса?", ("Н-12",),
+                store,
+                agents,
+                ingest_dir,
+                LIBRARY,
+                "Какие залы есть в библиотеке?",
+                ("Читальный", "Детский", "Архивный"),
+                "Какое обозначение у насоса?",
+                ("Н-12",),
             )
             hits += int(library_ok)
             cites += int(library_cite)
@@ -191,15 +205,24 @@ def measure_config_only():
             settings.reload()
             store.CHROMA = root / "chroma"
             store.reset()
-            store.upsert_chunks([
-                _chunk("Код участка АЛЬФА-77 стоит в тексте.", "mix.md", 0, "text"),
-                _chunk("Разных значений в столбце «Код»: 1. Список: BETA-01.", "mix.md", 1, "overview"),
-            ])
+            store.upsert_chunks(
+                [
+                    _chunk("Код участка АЛЬФА-77 стоит в тексте.", "mix.md", 0, "text"),
+                    _chunk(
+                        "Разных значений в столбце «Код»: 1. Список: BETA-01.",
+                        "mix.md",
+                        1,
+                        "overview",
+                    ),
+                ]
+            )
             opened = store.search_chunks("АЛЬФА-77")
             open_ok = any("АЛЬФА-77" in chunk["text"] for chunk in opened)
             routing = json.loads((cfg / "routing.json").read_text(encoding="utf-8"))
             routing["where"] = {"kind": "overview"}
-            (cfg / "routing.json").write_text(json.dumps(routing, ensure_ascii=False, indent=2), encoding="utf-8")
+            (cfg / "routing.json").write_text(
+                json.dumps(routing, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
             settings.reload()
             filtered = store.search_chunks("АЛЬФА-77")
             filter_ok = all(chunk.get("kind") != "text" for chunk in filtered)
@@ -209,7 +232,13 @@ def measure_config_only():
             agents.reload_behavior()
             verdict = agents.check_agent(
                 "Код участка BETA-01 [1].",
-                [{"text": "Разных значений в столбце «Код»: 1. Список: BETA-01.", "document_name": "mix.md", "section": ""}],
+                [
+                    {
+                        "text": "Разных значений в столбце «Код»: 1. Список: BETA-01.",
+                        "document_name": "mix.md",
+                        "section": "",
+                    }
+                ],
                 "Какой код участка?",
                 lambda _term: True,
             )

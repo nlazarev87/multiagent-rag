@@ -2,6 +2,7 @@
 
 Видеокарта не используется. Файл 7B рядом с 1.5B не удалять: start.ps1 big его ждёт.
 """
+
 import concurrent.futures
 import contextvars
 import os
@@ -18,7 +19,9 @@ _load_lock = threading.Lock()
 _run_lock = threading.Lock()
 # Повтор должен стартовать, пока предыдущий вызов ещё сидит в своём потоке.
 # Одного работника на это не хватает: вторая попытка стояла бы в очереди и не началась.
-_llm_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="llm-timeout")
+_llm_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=4, thread_name_prefix="llm-timeout"
+)
 
 
 def _n_ctx():
@@ -32,10 +35,13 @@ def load():
         with _load_lock:
             if _llm is None:
                 from llama_cpp import Llama, LlamaRAMCache
+
                 model = Llama(
                     model_path=os.environ["LLM_MODEL_PATH"],
                     n_ctx=_n_ctx(),
-                    n_threads=int(os.environ.get("LLM_THREADS", max(1, (os.cpu_count() or 2) // 2))),
+                    n_threads=int(
+                        os.environ.get("LLM_THREADS", max(1, (os.cpu_count() or 2) // 2))
+                    ),
                     n_gpu_layers=0,
                     verbose=False,
                 )
@@ -75,7 +81,9 @@ def _complete_sync(system, user, max_tokens, examples, usage_sink):
         raise AttributeError("'NoneType' object has no attribute 'create_chat_completion'")
     with _run_lock:
         reply = cast(Any, model).create_chat_completion(
-            messages=messages, max_tokens=max_tokens, temperature=temperature,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
         )
     usage = reply.get("usage") if isinstance(reply, dict) else None
     if usage_sink is not None and isinstance(usage, dict):
@@ -99,7 +107,9 @@ def complete(system, user, max_tokens=None, examples=(), *, usage_sink=None, tim
     last_error: BaseException | None = None
     for attempt in range(retries + 1):
         ctx = contextvars.copy_context()
-        future = _llm_executor.submit(ctx.run, _complete_sync, system, user, max_tokens, examples, usage_sink)
+        future = _llm_executor.submit(
+            ctx.run, _complete_sync, system, user, max_tokens, examples, usage_sink
+        )
         try:
             return future.result(timeout=timeout_s)
         except TimeoutError:

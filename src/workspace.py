@@ -3,6 +3,7 @@
 Запись под замком: оценка не затирает ход, который параллельно дописывает ответ.
 Файл, который индекс временно скрыл, остаётся в своей папке, пока он на диске.
 """
+
 import contextvars
 import json
 import threading
@@ -45,6 +46,7 @@ def _dialog_file():
     owner = _owner.get()
     if _split():
         from auth import app_root
+
         return app_root() / "data" / "users" / owner / "dialogs.json"
     return PATH
 
@@ -110,7 +112,10 @@ def _write(data):
     if not _split():
         _dump(PATH, data)
         return
-    _dump(_dialog_file(), {"dialogs": data.get("dialogs") or [], "tree": {"id": "root", "name": "", "children": []}})
+    _dump(
+        _dialog_file(),
+        {"dialogs": data.get("dialogs") or [], "tree": {"id": "root", "name": "", "children": []}},
+    )
     stored = _load_file(_tree_file())
     stored["tree"] = data.get("tree") or stored["tree"]
     _dump(_tree_file(), stored)
@@ -156,11 +161,13 @@ def _names(turn):
 def _turns(turns):
     rows = []
     for turn in turns[-20:]:
-        rows.append({
-            "query": turn.get("query", ""),
-            "answer": turn.get("answer", ""),
-            "document_names": _names(turn),
-        })
+        rows.append(
+            {
+                "query": turn.get("query", ""),
+                "answer": turn.get("answer", ""),
+                "document_names": _names(turn),
+            }
+        )
     return rows
 
 
@@ -258,7 +265,9 @@ def snapshot(known=None, keep=None):
     with _lock:
         data = _read()
         names = list(known or [])
-        data["tree"] = ensure_files(sanitize_tree(data["tree"], _catalog(data["tree"], names, keep)), names)
+        data["tree"] = ensure_files(
+            sanitize_tree(data["tree"], _catalog(data["tree"], names, keep)), names
+        )
         if not data["dialogs"]:
             data["dialogs"].append(_blank())
             _write(data)
@@ -294,7 +303,11 @@ def create_dialog():
 def delete_dialog(dialog_id):
     with _lock:
         data = _read()
-        data["dialogs"] = [row for row in data["dialogs"] if not (isinstance(row, dict) and row.get("id") == dialog_id)]
+        data["dialogs"] = [
+            row
+            for row in data["dialogs"]
+            if not (isinstance(row, dict) and row.get("id") == dialog_id)
+        ]
         if not data["dialogs"]:
             data["dialogs"].append(_blank())
         _write(data)
@@ -341,7 +354,9 @@ def forget_file(name, known, keep=None):
         data["tree"] = drop_file(data["tree"], name)
         _write(data)
         names = list(known or [])
-        shown = ensure_files(sanitize_tree(data["tree"], _catalog(data["tree"], names, keep)), names)
+        shown = ensure_files(
+            sanitize_tree(data["tree"], _catalog(data["tree"], names, keep)), names
+        )
         if not data["dialogs"]:
             data["dialogs"].append(_blank())
             data["tree"] = shown

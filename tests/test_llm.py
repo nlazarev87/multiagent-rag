@@ -39,7 +39,12 @@ def test_complete_uses_cpu_settings_and_roles(monkeypatch):
     assert captured["n_threads"] == 2
     assert captured["n_gpu_layers"] == 0
     assert captured["cache"][0] == "cache"
-    assert [message["role"] for message in captured["messages"]] == ["system", "user", "assistant", "user"]
+    assert [message["role"] for message in captured["messages"]] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+    ]
     assert captured["max_tokens"] == 200
     assert captured["temperature"] == 0.0
     assert llm.count_tokens("три слова здесь") == 3
@@ -91,13 +96,15 @@ def test_load_builds_one_cpu_model(monkeypatch):
             time.sleep(0.01)
         assert len(arrived) == 4
         time.sleep(0.05)
-        assert [item for item in created if isinstance(item, dict)] == [{
-            "model_path": "model.gguf",
-            "n_ctx": 2048,
-            "n_threads": max(1, (os.cpu_count() or 2) // 2),
-            "n_gpu_layers": 0,
-            "verbose": False,
-        }]
+        assert [item for item in created if isinstance(item, dict)] == [
+            {
+                "model_path": "model.gguf",
+                "n_ctx": 2048,
+                "n_threads": max(1, (os.cpu_count() or 2) // 2),
+                "n_gpu_layers": 0,
+                "verbose": False,
+            }
+        ]
         release.set()
         for thread in threads:
             thread.join(3)
@@ -112,7 +119,9 @@ def test_load_builds_one_cpu_model(monkeypatch):
 
 
 def test_complete_follows_runtime_limits_one_call_at_a_time(monkeypatch):
-    monkeypatch.setattr(llm, "runtime", lambda: {"n_ctx": 1536, "max_tokens": 40, "temperature": 0.3})
+    monkeypatch.setattr(
+        llm, "runtime", lambda: {"n_ctx": 1536, "max_tokens": 40, "temperature": 0.3}
+    )
     calls = []
     release = threading.Event()
     entered = threading.Event()
@@ -127,7 +136,13 @@ def test_complete_follows_runtime_limits_one_call_at_a_time(monkeypatch):
             pass
 
         def create_chat_completion(self, messages, max_tokens, temperature):
-            calls.append({"max_tokens": max_tokens, "temperature": temperature, "roles": [item["role"] for item in messages]})
+            calls.append(
+                {
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "roles": [item["role"] for item in messages],
+                }
+            )
             active["n"] += 1
             active["max"] = max(active["max"], active["n"])
             try:
@@ -158,7 +173,9 @@ def test_complete_follows_runtime_limits_one_call_at_a_time(monkeypatch):
         threads[1].start()
         assert started.wait(2)
         assert not second_entered.wait(0.3)
-        assert [item for item in calls if "max_tokens" in item] == [{"max_tokens": 40, "temperature": 0.3, "roles": ["system", "user"]}]
+        assert [item for item in calls if "max_tokens" in item] == [
+            {"max_tokens": 40, "temperature": 0.3, "roles": ["system", "user"]}
+        ]
         release.set()
         for thread in threads:
             thread.join(3)
