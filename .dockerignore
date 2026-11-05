@@ -1,0 +1,28 @@
+# Модели (volume, не слой образа)
+data/models/
+
+# Данные на хосте (volume)
+data/inbox/
+data/chroma/
+data/audit/
+data/ui/
+data/users/
+
+# Git, тесты, служебное
+.git/
+.gitignore
+tests/
+.setup/
+.cursor/
+debug-*.log
+*.pyc
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# В образ не копируются
+docs/
+README.md
+CONTRIBUTING.md
+AGENTS.md

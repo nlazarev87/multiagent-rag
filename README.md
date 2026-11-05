@@ -80,3 +80,51 @@ flowchart LR
 Не опускать нижнюю границу в `tests/eval/floors.json` и не передавать `--write-floors` / `--raise-floors`, пока об этом не попросили и проверка не написала, что порог пройден. `tests/eval/last.json` и `pytest tests/test_floors.py` качество заново не меряют: они сравнивают уже записанные числа.
 
 После правки `src/`, `config/` или `data/prompts/` заново измерить то, что сдвинулось. Как именно — в [docs/eval.md](docs/eval.md).
+
+## Запуск через Docker
+
+Нужны Docker Desktop (Windows/macOS) или Docker Engine (Linux) и Docker Compose.
+
+### Требования
+
+1. Модели в `data/models/`:
+   - `multilingual-e5-small/` (около 2.1 GB)
+   - `qwen2.5-1.5b-instruct-q4_k_m.gguf` (около 1.0 GB)
+
+   Модели не входят в образ, их монтирует volume.
+
+2. Файлы документов в `data/inbox/` (`.txt`, `.md`, `.doc`, `.docx`, `.pdf`, `.xlsx`).
+
+### Запуск
+
+```bash
+docker compose up --build -d
+```
+
+Первая сборка занимает 10–20 минут: ставятся torch, sentence-transformers и llama-cpp-python.
+
+### Проверка
+
+```bash
+curl http://localhost:8000/ready
+```
+
+`{"ready": true}` и код 200 — модель и индекс готовы. Код 503 с `elapsed_sec` и `eta_sec` — ещё грузится. Первый прогрев может занять больше пяти минут.
+
+Страница на `http://localhost:8000`.
+
+### Данные
+
+Каталоги на этой машине:
+
+- `data/models/` — только чтение.
+- `data/inbox/` — документы.
+- `data/chroma/` — индекс.
+- `data/audit/` — журнал.
+- `data/ui/`, `data/users/` — диалоги и пользователи.
+
+### Остановка
+
+```bash
+docker compose down
+```

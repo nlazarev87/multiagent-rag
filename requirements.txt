@@ -14,3 +14,4 @@ slowapi==0.1.9
 ruff==0.6.9
 pre-commit==3.8.0
 mypy==2.4.1
+uvicorn==0.40.0
