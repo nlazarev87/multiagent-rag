@@ -283,6 +283,15 @@ def _get_from(target, event_id):
 
 
 def get_event(event_id, file=None):
+    """Вернуть одно событие по id.
+
+    В каждом файле `log-*.sqlite` свой AUTOINCREMENT. Один и тот же id
+    может быть и в текущем `log.sqlite`, и в архиве. Без `file` вернётся
+    первое совпадение: текущий файл, потом свежие архивы.
+
+    Нужную строку выбирает `file` из `list_events` или из query-параметра.
+    См. #222, #223.
+    """
     if file is not None:
         target = _named(file)
         return None if target is None else _get_from(target, event_id)
