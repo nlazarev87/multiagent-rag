@@ -999,7 +999,13 @@ def query(body: Query, request: Request, response: Response):
             }
         else:
             result = run(body.query, memory_key, scope)
-        workspace.append_turn(body.dialog_id, body.query, result, create=not existed)
+        workspace.append_turn(
+            body.dialog_id,
+            body.query,
+            result,
+            create=not existed,
+            trace=getattr(scope, "trace_steps", None),
+        )
         audit.write(
             "query",
             user,

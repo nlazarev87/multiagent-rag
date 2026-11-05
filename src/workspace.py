@@ -23,6 +23,8 @@ _lock = threading.RLock()
 _before_write = None
 _owner = contextvars.ContextVar("workspace_owner", default=None)
 DEFAULT = PATH
+# Версия формата trace в ходе. Поднять при смене структуры TraceStep.
+TRACE_VERSION = 1
 
 
 def set_owner(user_id):
@@ -364,8 +366,12 @@ def forget_file(name, known, keep=None):
         return shown
 
 
-def append_turn(dialog_id, query, result, *, create=True):
-    """Дописать ход. create=False не возрождает диалог, удалённый пока шёл ответ."""
+def append_turn(dialog_id, query, result, *, create=True, trace=None):
+    """Дописать ход. create=False не возрождает диалог, удалённый пока шёл ответ.
+
+    trace — подробная трасса обработки (список TraceStep). None не пишет
+    поля trace/trace_version, поэтому старые ходы без trace читаются как раньше.
+    """
     with _lock:
         data = _read()
         index, row = _find(data, dialog_id)
@@ -398,6 +404,9 @@ def append_turn(dialog_id, query, result, *, create=True):
         }
         if places:
             turn["places"] = places
+        if trace is not None:
+            turn["trace"] = trace
+            turn["trace_version"] = TRACE_VERSION
         turns.append(turn)
         row = dict(row)
         row["turns"] = turns

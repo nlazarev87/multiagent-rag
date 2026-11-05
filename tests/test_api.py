@@ -1888,3 +1888,68 @@ def test_admin_audit_list_without_file_uses_current(monkeypatch):
     numbers = [row["payload"].get("n") for row in response.json()["events"]]
     assert 2 in numbers
     assert 1 not in numbers
+
+
+def test_query_saves_trace_and_ui_returns_it(monkeypatch):
+    trace = [
+        {
+            "node": "catalog",
+            "started_at": "t",
+            "duration_ms": 1.0,
+            "input": {"query": "вопрос"},
+            "output": {"is_catalog": False},
+            "attempt": 1,
+            "timed_out": False,
+        }
+    ]
+
+    def run(query, dialog_id, scope=None):
+        if scope is not None:
+            scope.trace_steps = list(trace)
+        return {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": [],
+            "sources": [],
+        }
+
+    monkeypatch.setattr("api.run", run)
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    response = client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]})
+    assert response.status_code == 200
+    assert "trace" not in response.json()
+    row = client.get("/ui/dialogs/" + created["id"]).json()
+    assert row["turns"][0]["trace"] == trace
+    assert row["turns"][0]["trace_version"] == workspace.TRACE_VERSION
+    listed = client.get("/ui").json()
+    stored = next(item for item in listed["dialogs"] if item["id"] == created["id"])
+    assert stored["turns"][0]["trace"] == trace
+
+
+def test_ratings_do_not_erase_trace(monkeypatch):
+    trace = [{"node": "finish", "attempt": 1}]
+
+    def run(query, dialog_id, scope=None):
+        if scope is not None:
+            scope.trace_steps = list(trace)
+        return {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": [],
+            "sources": [],
+        }
+
+    monkeypatch.setattr("api.run", run)
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]})
+    patched = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_complete": 4},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["trace"] == trace
+    row = client.get("/ui/dialogs/" + created["id"]).json()
+    assert row["turns"][0]["trace"] == trace
+    assert row["turns"][0]["ratings"]["answer_complete"] == 4

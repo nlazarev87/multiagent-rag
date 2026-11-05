@@ -1883,3 +1883,46 @@ def test_append_turn_keeps_the_base_on_the_file(tmp_path, monkeypatch):
     assert dialog.get_dialog(row["id"])[0]["places"] == [
         {"kb_id": "base-1", "document_name": "note.txt"}
     ]
+
+
+def test_append_turn_stores_trace_and_version(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    dialog.reset()
+    row = workspace.create_dialog()
+    trace = [{"node": "catalog", "started_at": "t", "duration_ms": 1.0}]
+    saved = workspace.append_turn(row["id"], "вопрос", _answer("ответ"), trace=trace)
+    turn = saved["turns"][0]
+    assert turn["trace"] == trace
+    assert turn["trace_version"] == workspace.TRACE_VERSION
+
+
+def test_append_turn_without_trace_writes_no_trace_key(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    dialog.reset()
+    row = workspace.create_dialog()
+    saved = workspace.append_turn(row["id"], "вопрос", _answer("ответ"))
+    assert "trace" not in saved["turns"][0]
+    assert "trace_version" not in saved["turns"][0]
+
+
+def test_ratings_keep_trace(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    dialog.reset()
+    row = workspace.create_dialog()
+    trace = [{"node": "answer", "attempt": 1}]
+    workspace.append_turn(row["id"], "вопрос", _answer("ответ"), trace=trace)
+    patched = workspace.patch_ratings(row["id"], 0, {"answer_complete": 5})
+    assert patched["trace"] == trace
+    assert patched["trace_version"] == workspace.TRACE_VERSION
+    assert patched["ratings"]["answer_complete"] == 5
+
+
+def test_old_turn_without_trace_still_reads(tmp_path, monkeypatch):
+    monkeypatch.setattr(workspace, "PATH", tmp_path / "workspace.json")
+    dialog.reset()
+    row = workspace.create_dialog()
+    workspace.append_turn(row["id"], "старый", _answer("без trace"))
+    workspace.append_turn(row["id"], "новый", _answer("с trace"), trace=[{"node": "catalog"}])
+    turns = workspace.get_dialog_row(row["id"])["turns"]
+    assert "trace" not in turns[0]
+    assert turns[1]["trace"] == [{"node": "catalog"}]
