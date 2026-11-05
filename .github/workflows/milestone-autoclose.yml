@@ -1,0 +1,28 @@
+name: autoclose milestones
+# Закрывает веху, когда в ней не осталось открытых issue.
+on:
+  issues: { types: [closed] }
+permissions:
+  issues: write
+  contents: read
+jobs:
+  autoclose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close completed milestone
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MILESTONE: ${{ github.event.issue.milestone.number }}
+        run: |
+          set -euo pipefail
+          if [ -z "$MILESTONE" ] || [ "$MILESTONE" = "null" ]; then
+            echo "issue без вехи — пропуск"
+            exit 0
+          fi
+          OPEN=$(gh api "repos/$GITHUB_REPOSITORY/issues?milestone=$MILESTONE&state=open" --jq 'length')
+          if [ "$OPEN" = "0" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/milestones/$MILESTONE" -f state=closed
+            echo "веха $MILESTONE закрыта (открытых issue не осталось)"
+          else
+            echo "в вехе $MILESTONE ещё $OPEN открытых issue — не закрываю"
+          fi

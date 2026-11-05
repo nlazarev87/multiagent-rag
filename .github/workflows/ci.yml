@@ -32,3 +32,23 @@ jobs:
         run: ruff check src/ tests/
       - name: mypy src/
         run: mypy src/
+  pr-lint:
+    name: pr-lint
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Проверить связь PR с issue и вехой
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          if ! echo "$BODY" | grep -Eq '(Closes|Fixes|Resolves)[[:space:]]+#[0-9]+'; then
+            echo "::error::В PR нет ссылки на issue (Closes/Fixes/Resolves #N)."
+            exit 1
+          fi
+          if ! echo "$BODY" | grep -Eq 'Milestone:'; then
+            echo "::error::В PR нет строки 'Milestone:'."
+            exit 1
+          fi
+          echo "PR связан с issue и вехой."

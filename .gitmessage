@@ -1,0 +1,8 @@
+<type>(<scope>): <краткое описание> (#<issue>)
+
+Зачем: 
+Что:
+- 
+Как проверено: pytest -m "not slow and not holdout" — 
+Closes #<issue>
+Milestone: Wave <N>

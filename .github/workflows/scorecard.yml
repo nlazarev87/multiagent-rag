@@ -1,0 +1,39 @@
+name: scorecard (metrics)
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 2 * * *"  # nightly 02:30 UTC
+  pull_request:
+    types: [opened, synchronize, labeled]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  metrics:
+    # на PR — только если явно повешен label "metrics"
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'metrics')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Download embedding model
+        run: |
+          python - <<'PY'
+          from huggingface_hub import snapshot_download
+          snapshot_download("intfloat/multilingual-e5-small", local_dir="/tmp/e5")
+          print("embedding model ready", flush=True)
+          PY
+      - name: Run scorecard (fast)
+        env:
+          EMBED_PATH: /tmp/e5
+        run: python tests/eval/scorecard.py --nodes fast
+      - name: Upload last.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: last.json
+          path: tests/eval/last.json
