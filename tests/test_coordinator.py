@@ -959,16 +959,29 @@ def test_run_writes_trace_steps_to_scope(monkeypatch):
     assert set(result) == {"answer", "status", "document_names", "sources"}
     steps = scope.trace_steps
     assert isinstance(steps, list) and steps
-    assert all("node" in step and "duration_ms" in step for step in steps)
+    assert all(
+        "node" in step and "started_at" in step and "duration_ms" in step for step in steps
+    )
     seen = [step["node"] for step in steps]
-    for node in ("select", "clarify", "search", "answer", "check", "finish"):
-        assert node in seen
+    assert seen == [
+        "catalog",
+        "select",
+        "clarify",
+        "search",
+        "answer",
+        "check",
+        "route",
+        "finish",
+    ]
+    for step in steps:
+        assert step["input"] and step["output"]
+        assert step["attempt"] == 1
     search = next(step for step in steps if step["node"] == "search")
-    assert "focused_query" in search
-    assert "clear_query" in search
-    assert search["search_fallback_used"] is False
+    assert "focused_query" in search["output"]
+    assert "previews" in search["output"]
+    assert search["output"]["search_fallback_used"] is False
     finish = next(step for step in steps if step["node"] == "finish")
-    assert finish["heuristic_finish_answer"] is False
+    assert finish["output"]["heuristic_finish_answer"] is False
     assert scope.trace == []
 
 
@@ -992,7 +1005,7 @@ def test_run_finish_step_has_heuristic_flag(monkeypatch):
     assert result["status"] == agents.UNCONFIRMED
     assert result["answer"] == "Цех имеет номер 4 [1]."
     finish = next(step for step in scope.trace_steps if step["node"] == "finish")
-    assert finish["heuristic_finish_answer"] is True
+    assert finish["output"]["heuristic_finish_answer"] is True
 
 
 def _scope_with_search(monkeypatch, seen, results):
@@ -1033,9 +1046,9 @@ def test_search_falls_back_when_sliced_search_returns_empty(monkeypatch):
     coordinator.run("Сколько она длится?", "d-fallback", scope)
     assert seen == [[{"kb_id": "", "document_name": "a.txt"}], None]
     step = _search_step(scope)
-    assert step["search_fallback_used"] is True
-    assert step["output_summary"]["chunks_returned"] == 1
-    assert step["output_summary"]["fallback_used"] is True
+    assert step["output"]["search_fallback_used"] is True
+    assert step["output"]["chunks_returned"] == 1
+    assert step["output"]["fallback_used"] is True
 
 
 def test_search_does_not_fall_back_when_names_empty(monkeypatch):
@@ -1050,8 +1063,8 @@ def test_search_does_not_fall_back_when_names_empty(monkeypatch):
     coordinator.run("Сколько она длится?", "d-empty-names", scope)
     assert seen == [None]
     step = _search_step(scope)
-    assert step["search_fallback_used"] is False
-    assert step["output_summary"]["chunks_returned"] == 0
+    assert step["output"]["search_fallback_used"] is False
+    assert step["output"]["chunks_returned"] == 0
 
 
 def test_concurrent_runs_dont_block_queue(monkeypatch):
@@ -1094,5 +1107,180 @@ def test_search_does_not_fall_back_when_no_work(monkeypatch):
     coordinator.run("Какое давление у насоса?", "d-no-work", scope)
     assert seen == [None]
     step = _search_step(scope)
-    assert step["search_fallback_used"] is False
-    assert step["output_summary"]["chunks_returned"] == 0
+    assert step["output"]["search_fallback_used"] is False
+    assert step["output"]["chunks_returned"] == 0
+
+
+def _trace_scope(monkeypatch, verdicts):
+    """Scope для trace-тестов: поиск отдаёт CHUNK, проверка берёт вердикты по очереди."""
+    scope = type("Scope", (), {})()
+    scope.kbs = ["kb"]
+    scope.trace = []
+    scope.chunks = []
+    scope.known = lambda _term: True
+    scope.search = lambda _clear, _limit, _places: [CHUNK]
+    monkeypatch.setattr(coordinator, "get_dialog", lambda _id: [])
+    monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: [])
+    monkeypatch.setattr(coordinator, "clarify_agent", lambda *_args: "номер цеха")
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Цех имеет номер 4 [1].")
+    monkeypatch.setattr(coordinator, "check_agent", lambda *_args: verdicts.pop(0))
+    return scope
+
+
+def test_trace_order_and_attempts_on_retry(monkeypatch):
+    verdicts = [
+        _verdict(agents.UNCONFIRMED, feedback="исправь"),
+        _verdict(agents.CONFIRMED, [SOURCE]),
+    ]
+    scope = _trace_scope(monkeypatch, verdicts)
+    result = coordinator.run("Какой номер у цеха?", "d-trace-order", scope)
+    assert result["status"] == agents.CONFIRMED
+    seen = [step["node"] for step in scope.trace_steps]
+    assert seen == [
+        "catalog",
+        "select",
+        "clarify",
+        "search",
+        "answer",
+        "check",
+        "route",
+        "answer",
+        "check",
+        "route",
+        "finish",
+    ]
+    answers = [step for step in scope.trace_steps if step["node"] == "answer"]
+    checks = [step for step in scope.trace_steps if step["node"] == "check"]
+    assert [step["attempt"] for step in answers] == [1, 2]
+    assert [step["attempt"] for step in checks] == [1, 2]
+    routes = [step for step in scope.trace_steps if step["node"] == "route"]
+    assert [step["output"]["next"] for step in routes] == ["answer", "finish"]
+    for step in scope.trace_steps:
+        assert step["input"] and step["output"]
+
+
+def test_trace_route_decides_search_on_document_feedback(monkeypatch):
+    verdicts = [
+        _verdict(agents.UNCONFIRMED, feedback="Возьми другой документ."),
+        _verdict(agents.CONFIRMED, [SOURCE]),
+    ]
+    scope = _trace_scope(monkeypatch, verdicts)
+    coordinator.run("Какое давление у насоса?", "d-trace-doc", scope)
+    seen = [step["node"] for step in scope.trace_steps]
+    assert seen.count("search") == 2
+    routes = [step for step in scope.trace_steps if step["node"] == "route"]
+    assert [step["output"]["next"] for step in routes] == ["search", "finish"]
+
+
+def test_trace_answer_has_prompt_and_tokens(monkeypatch):
+    scope = _trace_scope(monkeypatch, [_verdict(agents.CONFIRMED, [SOURCE])])
+
+    def answer(query, clear, chunks, work, feedback, features, usage):
+        scope.trace.append("SYSTEM: пример\nUSER: вопрос")
+        usage["tokens_in"] = 12
+        usage["tokens_out"] = 7
+        return "Цех имеет номер 4 [1]."
+
+    monkeypatch.setattr(coordinator, "answer_agent", answer)
+    coordinator.run("Какой номер у цеха?", "d-trace-answer", scope)
+    step = next(s for s in scope.trace_steps if s["node"] == "answer")
+    assert step["output"]["prompt"] == "SYSTEM: пример\nUSER: вопрос"
+    assert step["output"]["tokens_in"] == 12
+    assert step["output"]["tokens_out"] == 7
+    assert step["attempt"] == 1
+
+
+def test_trace_search_has_previews(monkeypatch):
+    scope = _trace_scope(monkeypatch, [_verdict(agents.CONFIRMED, [SOURCE])])
+    coordinator.run("Какой номер у цеха?", "d-trace-preview", scope)
+    step = _search_step(scope)
+    assert step["output"]["previews"] == [
+        {"document_name": "charter.txt", "chunk_index": 0, "text": "Цех имеет номер 4."}
+    ]
+
+
+def test_trace_catalog_step_records_decision(monkeypatch):
+    scope = _trace_scope(monkeypatch, [_verdict(agents.CONFIRMED, [SOURCE])])
+    coordinator.run("Какой номер у цеха?", "d-trace-catalog", scope)
+    catalog = scope.trace_steps[0]
+    assert catalog["node"] == "catalog"
+    assert catalog["output"]["is_catalog"] is False
+    assert catalog["attempt"] == 1
+
+
+def test_trace_catalog_query_records_names(monkeypatch):
+    scope = type("Scope", (), {})()
+    scope.kbs = ["kb"]
+    scope.trace = []
+    scope.chunks = []
+    scope.names = lambda: ["a.txt", "b.txt"]
+    result = coordinator.run("Какие документы загружены в систему?", "d-trace-cat", scope)
+    assert result["answer"] == "a.txt, b.txt"
+    catalog = scope.trace_steps[0]
+    assert catalog["node"] == "catalog"
+    assert catalog["output"]["is_catalog"] is True
+    assert catalog["output"]["answer"] == "a.txt, b.txt"
+    assert catalog["output"]["status"] == agents.CONFIRMED
+
+
+def test_clip_strings_caps_at_4000():
+    value = {"text": "x" * 5000, "nested": {"items": ["y" * 4001, 3]}}
+    clipped, cut = coordinator._clip_strings(value)
+    assert len(clipped["text"]) == 4000
+    assert len(clipped["nested"]["items"][0]) == 4000
+    assert clipped["nested"]["items"][1] == 3
+    assert cut is True
+
+
+def test_chunk_previews_cap_count_and_length():
+    chunks = [
+        {"text": "a" * 700, "document_name": f"d{i}.txt", "chunk_index": i} for i in range(10)
+    ]
+    previews, truncated = coordinator._chunk_previews(chunks)
+    assert len(previews) == 8
+    assert all(len(item["text"]) == 600 for item in previews)
+    assert truncated is True
+
+
+def test_fit_trace_caps_at_64_kb():
+    steps = [
+        {
+            "node": "answer",
+            "started_at": "t",
+            "duration_ms": 1.0,
+            "input": {},
+            "output": {"prompt": "p" * 100_000},
+            "attempt": 1,
+            "timed_out": False,
+        }
+    ]
+    fitted = coordinator._fit_trace(steps)
+    assert coordinator._trace_size(fitted) <= 64 * 1024
+    assert fitted[0]["output"]["truncated"] is True
+
+
+def test_trace_partial_on_exception(monkeypatch):
+    import pytest
+
+    scope = type("Scope", (), {})()
+    scope.kbs = ["kb"]
+    scope.trace = []
+    scope.chunks = []
+    scope.known = lambda _term: True
+    scope.search = lambda _clear, _limit, _places: [CHUNK]
+    monkeypatch.setattr(coordinator, "get_dialog", lambda _id: [])
+    monkeypatch.setattr(coordinator, "add_turn", lambda *_args: None)
+    monkeypatch.setattr(coordinator, "select_agent", lambda *_args: [])
+    monkeypatch.setattr(coordinator, "clarify_agent", lambda *_args: "номер цеха")
+    monkeypatch.setattr(coordinator, "answer_agent", lambda *_args: "Цех имеет номер 4 [1].")
+
+    def fail(*_args):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(coordinator, "check_agent", fail)
+    with pytest.raises(RuntimeError):
+        coordinator.run("Какой номер у цеха?", "d-trace-fail", scope)
+    nodes = [step["node"] for step in scope.trace_steps]
+    assert "search" in nodes
+    assert "check" not in nodes

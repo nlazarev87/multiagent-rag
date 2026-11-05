@@ -60,3 +60,18 @@ def test_public_signature(name, fn, expected_required, expected_optional):
         f"  было: {expected_optional}\n"
         f"  стало: {optional}"
     )
+
+
+def test_trace_step_contract():
+    """TraceStep — публичный контракт подробной трассы узлов."""
+    from pipeline_types import TraceStep
+
+    assert set(TraceStep.__annotations__) >= {
+        "node",
+        "started_at",
+        "duration_ms",
+        "input",
+        "output",
+        "attempt",
+        "timed_out",
+    }

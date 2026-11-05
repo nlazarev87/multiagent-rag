@@ -6,6 +6,7 @@
 
 import concurrent.futures
 import contextvars
+import json
 import re
 import time
 from datetime import datetime, timezone
@@ -279,45 +280,140 @@ def _clock():
     return time.perf_counter(), datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
+_TRACE_STRING_LIMIT = 4000
+_TRACE_CHUNK_LIMIT = 600
+_TRACE_CHUNK_COUNT = 8
+_TRACE_BYTES_LIMIT = 64 * 1024
+
+
+def _clip_strings(value, limit=_TRACE_STRING_LIMIT):
+    """Обрезать строки в структуре до limit. Вернуть (структура, была ли обрезка)."""
+    if isinstance(value, str):
+        if len(value) > limit:
+            return value[:limit], True
+        return value, False
+    if isinstance(value, dict):
+        clipped_dict: dict[str, Any] = {}
+        truncated = False
+        for key, item in value.items():
+            clipped, cut = _clip_strings(item, limit)
+            clipped_dict[key] = clipped
+            truncated = truncated or cut
+        return clipped_dict, truncated
+    if isinstance(value, list):
+        clipped_list: list[Any] = []
+        truncated = False
+        for item in value:
+            clipped, cut = _clip_strings(item, limit)
+            clipped_list.append(clipped)
+            truncated = truncated or cut
+        return clipped_list, truncated
+    return value, False
+
+
+def _chunk_previews(chunks):
+    """Превью фрагментов: максимум 8, текст не длиннее 600 символов."""
+    previews: list[dict[str, Any]] = []
+    truncated = len(chunks or []) > _TRACE_CHUNK_COUNT
+    for chunk in (chunks or [])[:_TRACE_CHUNK_COUNT]:
+        text = chunk.get("text") or ""
+        if len(text) > _TRACE_CHUNK_LIMIT:
+            text = text[:_TRACE_CHUNK_LIMIT]
+            truncated = True
+        previews.append(
+            {
+                "document_name": chunk.get("document_name") or "",
+                "chunk_index": chunk.get("chunk_index", 0),
+                "text": text,
+            }
+        )
+    return previews, truncated
+
+
+def _trace_size(steps):
+    return len(json.dumps(steps, ensure_ascii=False, sort_keys=True).encode("utf-8"))
+
+
+def _fit_trace(steps):
+    """Трасса не больше 64 КБ. Сначала пустеют превью фрагментов, потом строки."""
+    if _trace_size(steps) <= _TRACE_BYTES_LIMIT:
+        return steps
+    for step in steps:
+        output = step.get("output")
+        if isinstance(output, dict):
+            for preview in output.get("previews") or []:
+                if isinstance(preview, dict):
+                    preview["text"] = ""
+    limit = _TRACE_STRING_LIMIT
+    while _trace_size(steps) > _TRACE_BYTES_LIMIT and limit > 0:
+        limit //= 2
+        for step in steps:
+            for key in ("input", "output"):
+                value = step.get(key)
+                if isinstance(value, dict):
+                    clipped, _ = _clip_strings(value, limit)
+                    step[key] = clipped
+    for step in steps:
+        output = step.get("output")
+        if isinstance(output, dict):
+            output["truncated"] = True
+    return steps
+
+
 def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> GraphState:
     if features is None:
         features = runtime().get("features", {})
-    trace_steps = []
+    trace_steps: list[dict[str, Any]] = []
 
-    def _step(node, started, input_summary=None, output_summary=None, extra=None, timed_out=False):
+    def _step(node, started, input=None, output=None, attempt=None, timed_out=False):
         mark, stamp = started
+        input_value, input_cut = _clip_strings(input if input is not None else {})
+        output_value, output_cut = _clip_strings(output if output is not None else {})
+        if input_cut:
+            input_value["truncated"] = True
+        if output_cut or output_value.get("truncated"):
+            output_value["truncated"] = True
         entry = {
             "node": node,
             "started_at": stamp,
             "duration_ms": round((time.perf_counter() - mark) * 1000, 2),
-            "input_summary": input_summary,
-            "output_summary": output_summary,
+            "input": input_value,
+            "output": output_value,
+            "attempt": attempt if attempt is not None else 1,
+            "timed_out": bool(timed_out),
         }
-        if timed_out:
-            entry["timed_out"] = True
-        if extra:
-            entry.update(extra)
         trace_steps.append(entry)
-
-    def _keep_steps():
         if scope is not None:
             scope.trace_steps = list(trace_steps)
 
+    def _keep_steps():
+        if scope is not None:
+            scope.trace_steps = _fit_trace(list(trace_steps))
+
+    catalog_started = _clock()
     listed = _catalog_result(query, dialog_id, scope)
+    catalog_output: dict[str, Any] = {"is_catalog": listed is not None}
+    if listed is not None:
+        catalog_output["answer"] = listed.get("answer")
+        catalog_output["status"] = listed.get("status")
+        catalog_output["document_names"] = listed.get("document_names")
+    _step("catalog", catalog_started, input={"query": query}, output=catalog_output, attempt=1)
     if listed is not None:
         _keep_steps()
         return listed
 
     def select(state: GraphState):
         started = _clock()
-        state["work"] = select_agent(state["query"], get_dialog(state["dialog_id"]))
+        dialog_turns = get_dialog(state["dialog_id"])
+        state["work"] = select_agent(state["query"], dialog_turns)
         work = state.get("work") or []
         chosen = work[0].get("id") if work and isinstance(work[0], dict) else None
         _step(
             "select",
             started,
-            input_summary={"query_len": len(state.get("query") or "")},
-            output_summary={"work_len": len(work), "chosen_turn_id": chosen},
+            input={"query": state.get("query"), "dialog_turns": len(dialog_turns)},
+            output={"turns": work, "chosen_turn_id": chosen},
+            attempt=1,
         )
         return state
 
@@ -327,8 +423,9 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
         _step(
             "clarify",
             started,
-            input_summary={"query_len": len(state.get("query") or "")},
-            output_summary={"search_string": state.get("clear")},
+            input={"query": state.get("query"), "work": state.get("work")},
+            output={"search_string": state.get("clear")},
+            attempt=1,
         )
         return state
 
@@ -366,8 +463,16 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
             _step(
                 "search",
                 started,
-                output_summary={"error": True, "fallback_used": fallback_used},
-                extra={"search_fallback_used": fallback_used},
+                input={
+                    "query": state.get("clear") or state.get("query"),
+                    "document_names": names,
+                },
+                output={
+                    "error": True,
+                    "fallback_used": fallback_used,
+                    "search_fallback_used": fallback_used,
+                },
+                attempt=state.get("attempts", 0) + 1,
             )
             raise
         state["search_fallback_used"] = fallback_used
@@ -390,27 +495,31 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
             allowed = None
             ranked_count = None
         bases = list(getattr(scope, "used", None) or []) if scope is not None else None
+        previews, previews_truncated = _chunk_previews(chunks)
+        output: dict[str, Any] = {
+            "chunks_returned": len(chunks),
+            "previews": previews,
+            "top_ids": [item.get("id") for item in chunks if item.get("id")],
+            "top_docs": docs,
+            "fallback_used": fallback_used,
+            "search_fallback_used": fallback_used,
+            "focused_query": focused_query,
+            "allowed": allowed,
+            "ranked_count": ranked_count,
+            "bases_queried": bases,
+        }
+        if previews_truncated:
+            output["truncated"] = True
         _step(
             "search",
             started,
-            input_summary={
+            input={
                 "query": state.get("clear") or state.get("query"),
                 "document_names": names,
+                "places": places,
             },
-            output_summary={
-                "chunks_returned": len(chunks),
-                "top_ids": [item.get("id") for item in chunks if item.get("id")],
-                "top_docs": docs,
-                "fallback_used": fallback_used,
-            },
-            extra={
-                "clear_query": state.get("clear"),
-                "focused_query": focused_query,
-                "allowed": allowed,
-                "ranked_count": ranked_count,
-                "bases_queried": bases,
-                "search_fallback_used": fallback_used,
-            },
+            output=output,
+            attempt=state.get("attempts", 0) + 1,
         )
         return state
 
@@ -418,6 +527,7 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
         started = _clock()
         state["attempts"] = state.get("attempts", 0) + 1
         usage: dict[str, Any] = {}
+        trace_mark = len(getattr(scope, "trace", None) or []) if scope is not None else 0
         state["answer"] = answer_agent(
             state["query"],
             state["clear"],
@@ -427,15 +537,31 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
             state.get("features"),
             usage,
         )
-        extra = {}
+        prompt = None
+        if scope is not None:
+            prompts = list(getattr(scope, "trace", None) or [])[trace_mark:]
+            if prompts:
+                prompt = prompts[-1]
+        output: dict[str, Any] = {
+            "answer": state.get("answer"),
+            "model": model_name(),
+            "answer_len": len(state.get("answer") or ""),
+        }
+        if prompt is not None:
+            output["prompt"] = prompt
         if usage.get("tokens_in") is not None or usage.get("tokens_out") is not None:
-            extra["tokens_in"] = usage.get("tokens_in")
-            extra["tokens_out"] = usage.get("tokens_out")
+            output["tokens_in"] = usage.get("tokens_in")
+            output["tokens_out"] = usage.get("tokens_out")
         _step(
             "answer",
             started,
-            output_summary={"model": model_name(), "answer_len": len(state.get("answer") or "")},
-            extra=extra or None,
+            input={
+                "query": state.get("query"),
+                "clear_query": state.get("clear"),
+                "feedback": state.get("feedback"),
+            },
+            output=output,
+            attempt=state.get("attempts", 0),
         )
         return state
 
@@ -452,21 +578,44 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
         _step(
             "check",
             started,
-            output_summary={"status": state.get("status"), "feedback": state.get("feedback") or ""},
+            input={"answer": state.get("answer"), "query": state.get("query")},
+            output={
+                "status": state.get("status"),
+                "feedback": state.get("feedback") or "",
+                "sources": state.get("sources"),
+            },
+            attempt=state.get("attempts", 0),
         )
         return state
 
     def route(state: GraphState):
+        started = _clock()
         # «документ» и обзор таблицы просят другой поиск. Остальной отзыв переписывает ответ.
         if state["status"] != UNCONFIRMED or state["attempts"] >= _attempts():
-            return "finish"
-        feedback = state.get("feedback") or ""
-        if "Разных значений" in feedback or "документ" in feedback.lower():
-            return "search"
-        return "answer"
+            decision = "finish"
+        else:
+            feedback = state.get("feedback") or ""
+            if "Разных значений" in feedback or "документ" in feedback.lower():
+                decision = "search"
+            else:
+                decision = "answer"
+        _step(
+            "route",
+            started,
+            input={
+                "status": state.get("status"),
+                "attempts": state.get("attempts", 0),
+                "feedback": state.get("feedback") or "",
+            },
+            output={"next": decision},
+            attempt=state.get("attempts", 0) or 1,
+        )
+        return decision
 
     def finish(state: GraphState):
         started = _clock()
+        incoming_answer = state.get("answer")
+        incoming_status = state.get("status")
         overview = None
         # Вопрос «сколько» не заменяется отказом, если в найденном тексте уже есть полная строка обзора.
         show_overview = (state.get("features") or {}).get("from_overview", True)
@@ -525,12 +674,15 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
         _step(
             "finish",
             started,
-            output_summary={
+            input={"answer": incoming_answer, "status": incoming_status},
+            output={
                 "status": state.get("status"),
+                "answer": state.get("answer"),
                 "document_names": list(state.get("document_names") or []),
                 "feedback": state.get("feedback") or "",
+                "heuristic_finish_answer": heuristic_finish_answer,
             },
-            extra={"heuristic_finish_answer": heuristic_finish_answer},
+            attempt=state.get("attempts", 0) or 1,
         )
         return state
 
@@ -553,18 +705,20 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
         "check", route, {"answer": "answer", "search": "search", "finish": "finish"}
     )
     graph.add_edge("finish", END)
-    out = graph.compile().invoke(
-        {
-            "query": query,
-            "dialog_id": dialog_id,
-            "features": features,
-            "trace_steps": trace_steps,
+    try:
+        out = graph.compile().invoke(
+            {
+                "query": query,
+                "dialog_id": dialog_id,
+                "features": features,
+                "trace_steps": trace_steps,
+            }
+        )
+        return {
+            "answer": out["answer"],
+            "status": out["status"],
+            "document_names": out["document_names"],
+            "sources": out["sources"],
         }
-    )
-    _keep_steps()
-    return {
-        "answer": out["answer"],
-        "status": out["status"],
-        "document_names": out["document_names"],
-        "sources": out["sources"],
-    }
+    finally:
+        _keep_steps()

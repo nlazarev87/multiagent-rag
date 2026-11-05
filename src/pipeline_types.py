@@ -60,6 +60,23 @@ class Turn(TypedDict, total=False):
     places: list[dict[str, Any]]
 
 
+class TraceStep(TypedDict, total=False):
+    """Один шаг трассы обработки вопроса.
+
+    input и output — подробные данные шага (не только сводки). Поля
+    подчиняются обрезке координатора: строка не длиннее 4000 символов,
+    превью фрагментов — 600 символов и не больше 8, трасса целиком — 64 КБ.
+    """
+
+    node: str
+    started_at: str
+    duration_ms: float
+    input: dict[str, Any]
+    output: dict[str, Any]
+    attempt: int
+    timed_out: bool
+
+
 # select_agent возвращает список ходов, не словарь с ключом turns.
 SelectResult = list[Turn]
 
