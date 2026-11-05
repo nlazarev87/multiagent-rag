@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 import api
 import dialog
+import preferences
 import workspace
 from api import app
 
@@ -23,6 +24,7 @@ def _answer_row():
 @pytest.fixture(autouse=True)
 def ui_store(tmp_path, monkeypatch):
     monkeypatch.setattr("workspace.PATH", tmp_path / "workspace.json")
+    monkeypatch.setattr("preferences.PATH", tmp_path / "settings.json")
     monkeypatch.setenv("APP_ROOT", tempfile.mkdtemp(prefix="rag-auth-"))
     repo = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("CONFIG_DIR", str(repo / "config"))
@@ -1953,3 +1955,131 @@ def test_ratings_do_not_erase_trace(monkeypatch):
     row = client.get("/ui/dialogs/" + created["id"]).json()
     assert row["turns"][0]["trace"] == trace
     assert row["turns"][0]["ratings"]["answer_complete"] == 4
+
+
+def test_ui_settings_filter_trace_and_ratings(monkeypatch):
+    trace = [{"node": "catalog", "attempt": 1}]
+
+    def run(query, dialog_id, scope=None):
+        if scope is not None:
+            scope.trace_steps = list(trace)
+        return {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": [],
+            "sources": [],
+        }
+
+    monkeypatch.setattr("api.run", run)
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]})
+    client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_complete": 4},
+    )
+
+    def stored():
+        listed = client.get("/ui").json()
+        return next(item for item in listed["dialogs"] if item["id"] == created["id"])
+
+    assert client.get("/ui").json()["settings"] == {
+        "trace_visible": True,
+        "ratings_enabled": True,
+    }
+    assert stored()["turns"][0]["trace"] == trace
+    assert stored()["turns"][0]["ratings"]["answer_complete"] == 4
+
+    client.put("/admin/ui-settings", json={"trace_visible": False, "ratings_enabled": False})
+    hidden = stored()["turns"][0]
+    assert "trace" not in hidden
+    assert "trace_version" not in hidden
+    assert "ratings" not in hidden
+
+    client.put("/admin/ui-settings", json={"trace_visible": True, "ratings_enabled": True})
+    back = stored()["turns"][0]
+    assert back["trace"] == trace
+    assert back["ratings"]["answer_complete"] == 4
+
+
+def test_patch_ratings_403_when_disabled(monkeypatch):
+    monkeypatch.setattr(
+        "api.run",
+        lambda query, dialog_id, scope=None: {
+            "answer": "ответ",
+            "status": "подтверждён",
+            "document_names": [],
+            "sources": [],
+        },
+    )
+    client = TestClient(app)
+    created = client.post("/ui/dialogs").json()
+    client.post("/query", json={"query": "вопрос", "dialog_id": created["id"]})
+    client.put("/admin/ui-settings", json={"trace_visible": True, "ratings_enabled": False})
+    response = client.patch(
+        "/ui/dialogs/" + created["id"] + "/turns/0/ratings",
+        json={"answer_complete": 4},
+    )
+    assert response.status_code == 403
+
+
+def test_admin_ui_settings_get_put_and_audit(monkeypatch):
+    import audit
+
+    client = TestClient(app)
+    assert client.get("/admin/ui-settings").json() == {
+        "trace_visible": True,
+        "ratings_enabled": True,
+    }
+    response = client.put(
+        "/admin/ui-settings", json={"trace_visible": False, "ratings_enabled": False}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"trace_visible": False, "ratings_enabled": False}
+    assert client.get("/admin/ui-settings").json() == {
+        "trace_visible": False,
+        "ratings_enabled": False,
+    }
+    events = audit.list_events(kind="ui_settings")
+    assert events
+    assert events[0]["payload"] == {"trace_visible": False, "ratings_enabled": False}
+
+
+def test_admin_ui_settings_requires_manage_users(monkeypatch):
+    import auth
+
+    role_id = auth.create_role("Сотрудник")
+    auth.create_user("ivan", "password12", role_id)
+    monkeypatch.setenv("RAG_TEST_USER", auth.user_by_login("ivan")["id"])
+    client = TestClient(app)
+    assert client.get("/admin/ui-settings").status_code == 403
+    assert (
+        client.put(
+            "/admin/ui-settings", json={"trace_visible": False, "ratings_enabled": True}
+        ).status_code
+        == 403
+    )
+
+
+def test_ui_filters_turns_on_separate_path(monkeypatch):
+    monkeypatch.setattr("trees.separate", lambda: True)
+    monkeypatch.setattr(
+        "api._stored_page_tree", lambda user: {"id": "root", "name": "", "children": []}
+    )
+    monkeypatch.setattr(
+        "api._page_tree", lambda user: {"id": "root", "name": "", "children": []}
+    )
+    created = workspace.create_dialog()
+    workspace.append_turn(
+        created["id"],
+        "вопрос",
+        {"answer": "ответ", "document_names": [], "sources": []},
+        trace=[{"node": "catalog"}],
+    )
+    workspace.patch_ratings(created["id"], 0, {"answer_complete": 5})
+    preferences.save({"trace_visible": False, "ratings_enabled": False})
+    listed = TestClient(app).get("/ui").json()
+    turn = next(item for item in listed["dialogs"] if item["id"] == created["id"])["turns"][0]
+    assert "trace" not in turn
+    assert "ratings" not in turn
+    assert listed["settings"]["trace_visible"] is False

@@ -23,6 +23,7 @@ import access
 import audit
 import auth
 import kb
+import preferences
 import trees
 import workspace
 from coordinator import run
@@ -859,15 +860,17 @@ def _store_page_tree(user, incoming):
 def ui_get(request: Request = None):  # type: ignore[assignment]
     """Снимок диалогов этого человека. До готовности индекса список файлов не читается."""
     user = _user(request)
+    settings = preferences.load()
     if trees.separate():
         data = workspace.load()
         data["tree"] = _stored_page_tree(user) if not _state["done"] else _page_tree(user)
-        return data
-    if not _state["done"]:
-        return workspace.load()
-    data = workspace.snapshot(_visible_names(user), _on_disk())
-    data["tree"] = _filter_tree(data.get("tree"), set(_visible_names(user)))
-    return data
+    elif not _state["done"]:
+        data = workspace.load()
+    else:
+        data = workspace.snapshot(_visible_names(user), _on_disk())
+        data["tree"] = _filter_tree(data.get("tree"), set(_visible_names(user)))
+    data["settings"] = settings
+    return preferences.filter_turns(data, settings)
 
 
 def _filter_tree(node, allowed):
@@ -965,6 +968,8 @@ def ui_dialog_delete(dialog_id: str):
 @app.patch("/ui/dialogs/{dialog_id}/turns/{turn_index}/ratings")
 def ui_ratings(dialog_id: str, turn_index: int, body: Ratings):
     """Записать оценки 1–5. Число вне диапазона не сохраняется."""
+    if not preferences.load()["ratings_enabled"]:
+        raise HTTPException(403, detail="Оценки выключены")
     turn = workspace.patch_ratings(dialog_id, turn_index, _fields(body))
     if turn is None:
         raise HTTPException(404, detail="Ход не найден")
@@ -1477,3 +1482,25 @@ def admin_audit_one(event_id: int, request: Request):
         raise HTTPException(404, detail="Запись не найдена")
     audit.write("audit_view", actor, {"event_id": event_id})
     return row
+
+
+class UiSettingsBody(BaseModel):
+    trace_visible: bool
+    ratings_enabled: bool
+
+
+@app.get("/admin/ui-settings")
+def admin_ui_settings(request: Request):
+    _need(_user(request), "manage_users")
+    return preferences.load()
+
+
+@app.put("/admin/ui-settings")
+def admin_ui_settings_put(body: UiSettingsBody, request: Request):
+    user = _user(request)
+    _need(user, "manage_users")
+    saved = preferences.save(
+        {"trace_visible": body.trace_visible, "ratings_enabled": body.ratings_enabled}
+    )
+    audit.write("ui_settings", user, dict(saved))
+    return saved
