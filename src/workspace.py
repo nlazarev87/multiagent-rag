@@ -7,8 +7,9 @@
 import contextvars
 import json
 import threading
+import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dialog import drop_dialog, set_dialog
@@ -133,8 +134,18 @@ def save(data):
         _write(data)
 
 
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+_prev_now_us = 0
+
+
 def _now():
-    return datetime.now(timezone.utc).isoformat()
+    """Уникальная монотонная метка времени (мкс), чтобы сортировка не давала tie."""
+    global _prev_now_us
+    us = time.time_ns() // 1000
+    if us <= _prev_now_us:
+        us = _prev_now_us + 1
+    _prev_now_us = us
+    return (_EPOCH + timedelta(microseconds=us)).isoformat()
 
 
 def _title(text):
