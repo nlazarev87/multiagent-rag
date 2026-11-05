@@ -10,6 +10,12 @@ import pytest
 import llm
 
 
+@pytest.fixture(autouse=True)
+def _isolate_model_persistence(monkeypatch):
+    """load_model теперь сохраняет выбор; в тестах запись выключена по умолчанию."""
+    monkeypatch.setattr(llm.model_registry, "save_selected_model", lambda model_id: None)
+
+
 def test_complete_uses_cpu_settings_and_roles(monkeypatch):
     captured = {}
 
@@ -393,9 +399,26 @@ def test_load_uses_startup_model_priority(monkeypatch):
             pass
 
     _llama(monkeypatch, Fake)  # env LLM_MODEL_PATH=model.gguf
-    monkeypatch.setattr(
-        llm.model_registry, "startup_model", lambda: ("selected.gguf", "qvikhr")
-    )
+    monkeypatch.setattr(llm.model_registry, "startup_model", lambda: ("selected.gguf", "qvikhr"))
     llm.load()
     assert built == ["selected.gguf"]
     assert llm.current_model_id() == "qvikhr"
+
+
+def test_strip_thinking_removes_reasoning_artifacts():
+    assert llm._strip_thinking("<think>разбор</think>Финальный ответ") == "Финальный ответ"
+    assert llm._strip_thinking("<think>строка\nещё</think>Ответ") == "Ответ"
+    assert llm._strip_thinking("рассуждения response Итоговый ответ") == "Итоговый ответ"
+    assert llm._strip_thinking("</think>хвост<think>") == "хвост"
+    assert llm._strip_thinking("Чистый ответ") == "Чистый ответ"
+
+
+def test_load_model_persists_selection(monkeypatch):
+    saved = []
+    monkeypatch.setattr(llm, "_resolve_path", lambda path, model_id: ("fake.gguf", model_id))
+    monkeypatch.setattr(llm, "_replace_model", lambda path, model_id: None)
+    monkeypatch.setattr(
+        llm.model_registry, "save_selected_model", lambda model_id: saved.append(model_id)
+    )
+    llm.load_model(model_id="qvikhr")
+    assert saved == ["qvikhr"]

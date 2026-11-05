@@ -959,9 +959,7 @@ def test_run_writes_trace_steps_to_scope(monkeypatch):
     assert set(result) == {"answer", "status", "document_names", "sources"}
     steps = scope.trace_steps
     assert isinstance(steps, list) and steps
-    assert all(
-        "node" in step and "started_at" in step and "duration_ms" in step for step in steps
-    )
+    assert all("node" in step and "started_at" in step and "duration_ms" in step for step in steps)
     seen = [step["node"] for step in steps]
     assert seen == [
         "catalog",
@@ -1183,9 +1181,12 @@ def test_trace_answer_has_prompt_and_tokens(monkeypatch):
         return "Цех имеет номер 4 [1]."
 
     monkeypatch.setattr(coordinator, "answer_agent", answer)
+    monkeypatch.setattr(coordinator, "model_display_name", lambda: "test-model")
     coordinator.run("Какой номер у цеха?", "d-trace-answer", scope)
     step = next(s for s in scope.trace_steps if s["node"] == "answer")
     assert step["output"]["prompt"] == "SYSTEM: пример\nUSER: вопрос"
+    assert step["output"]["model"] == "test-model"
+    assert step["output"]["service"] == "llama.cpp"
     assert step["output"]["tokens_in"] == 12
     assert step["output"]["tokens_out"] == 7
     assert step["attempt"] == 1
@@ -1195,6 +1196,7 @@ def test_trace_search_has_previews(monkeypatch):
     scope = _trace_scope(monkeypatch, [_verdict(agents.CONFIRMED, [SOURCE])])
     coordinator.run("Какой номер у цеха?", "d-trace-preview", scope)
     step = _search_step(scope)
+    assert step["output"]["service"] == "chroma+bm25"
     assert step["output"]["previews"] == [
         {"document_name": "charter.txt", "chunk_index": 0, "text": "Цех имеет номер 4."}
     ]

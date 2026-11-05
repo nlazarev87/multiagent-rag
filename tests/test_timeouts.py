@@ -41,8 +41,8 @@ def test_runtime_json_has_timeouts():
     data = llm.runtime()
     assert "timeouts" in data
     limits = data["timeouts"]
-    missing = {"graph_ms", "node_ms", "llm_ms", "chroma_ms", "retries"} - set(limits)
+    missing = {"node_ms", "llm_ms", "chroma_ms", "retries"} - set(limits)
     assert not missing, missing
-    assert isinstance(limits["graph_ms"], int)
+    assert "graph_ms" not in limits
     assert isinstance(limits["llm_ms"], int)
     assert isinstance(limits["retries"], int)

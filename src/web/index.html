@@ -694,7 +694,7 @@
       border-right: 1px solid var(--line);
       display: flex;
       flex-direction: column;
-      padding: 12px 8px;
+      padding: 12px 8px 36px;
       gap: 2px;
       overflow: auto;
     }
@@ -890,6 +890,33 @@
     }
     .audit-who { color: var(--fg2); min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex: 0 0 auto; }
     .audit-msg { flex: 1 1 100%; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--fg3); }
+    .audit-detail {
+      flex: 1 1 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 8px 10px;
+      background: var(--paper-2);
+      border: 1px solid var(--line-2);
+      border-radius: var(--r-2);
+    }
+    .audit-model { font-size: 12.5px; font-weight: 600; color: var(--fg); }
+    .audit-meta { font-size: 11.5px; color: var(--fg3); }
+    .audit-detail-pre {
+      margin: 0;
+      max-height: 320px;
+      overflow: auto;
+      padding: 8px;
+      border: 1px solid var(--line-2);
+      border-radius: var(--r-2);
+      background: var(--paper);
+      color: var(--fg2);
+      font-family: Consolas, monospace;
+      font-size: 11.5px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
     .group-members { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
     .empty {
       display: flex;
@@ -1714,7 +1741,7 @@
         const btn = element("button", n === value ? "n on" : "n", String(n));
         btn.type = "button";
         btn.setAttribute("aria-label", label + " " + n);
-        btn.addEventListener("click", () => onPick(n));
+        btn.addEventListener("click", () => onPick(n === value ? null : n));
         row.append(btn);
       }
       return row;
@@ -1800,10 +1827,24 @@
       return block;
     }
 
+    function traceModel(steps) {
+      for (const step of steps || []) {
+        if (step && step.node === "answer" && step.output && step.output.model) return step.output.model;
+      }
+      return "";
+    }
+
     function traceStepBlock(step) {
       const details = element("details", "trace-step");
       const summary = element("summary");
       let title = TRACE_LABELS[step.node] || step.node || "Шаг";
+      const output = (step && step.output) || {};
+      if (step.node === "answer") {
+        if (output.model) title += " · " + output.model;
+        if (output.service) title += " · " + output.service;
+      } else if (step.node === "search" && output.service) {
+        title += " · " + output.service;
+      }
       if (typeof step.duration_ms === "number") title += " · " + Math.round(step.duration_ms) + " мс";
       if (typeof step.attempt === "number" && step.attempt > 1) title += " · попытка " + step.attempt;
       if (step.timed_out) title += " · таймаут";
@@ -1818,7 +1859,8 @@
       const details = element("details", "trace");
       const summary = element("summary");
       const total = steps.reduce((sum, step) => sum + (typeof step.duration_ms === "number" ? step.duration_ms : 0), 0);
-      summary.textContent = "Цепочка обработки · " + steps.length + " шагов · " + Math.round(total) + " мс";
+      const model = traceModel(steps);
+      summary.textContent = "Цепочка обработки" + (model ? " · " + model : "") + " · " + steps.length + " шагов · " + Math.round(total) + " мс";
       details.append(summary);
       steps.forEach((step) => {
         if (step && typeof step === "object") details.append(traceStepBlock(step));
@@ -2377,7 +2419,8 @@
     query.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        ask.requestSubmit();
+        if (sending && activeQueryCtrl) activeQueryCtrl.abort();
+        else ask.requestSubmit();
       }
     });
 
@@ -2485,8 +2528,33 @@
       request.send(body);
     };
 
+    let sending = false;
+    let activeQueryCtrl = null;
+    let activeQueryTimer = null;
+
+    function setSending(on) {
+      sending = on;
+      if (on) {
+        send.type = "button";
+        send.textContent = "■";
+        send.setAttribute("aria-label", "Прервать запрос");
+      } else {
+        send.type = "submit";
+        send.textContent = "→";
+        send.setAttribute("aria-label", "Спросить");
+      }
+    }
+
+    send.addEventListener("click", () => {
+      if (sending && activeQueryCtrl) activeQueryCtrl.abort();
+    });
+
     ask.onsubmit = async (event) => {
       event.preventDefault();
+      if (sending) {
+        if (activeQueryCtrl) activeQueryCtrl.abort();
+        return;
+      }
       const text = query.value.trim();
       if (!text) return;
       const pending = { query: text, answer: "Ответ пишется… 0 с", sources: [], ratings: {} };
@@ -2497,18 +2565,24 @@
       }
       paintChats();
       paintLog();
+      const pendingEl = log.lastElementChild ? log.lastElementChild.querySelector(".a-text") : null;
       query.value = "";
-      send.disabled = true;
+      setSending(true);
+      const ctrl = new AbortController();
+      activeQueryCtrl = ctrl;
       const started = Date.now();
       const timer = setInterval(() => {
-        pending.answer = "Ответ пишется… " + Math.round((Date.now() - started) / 1000) + " с";
-        paintLog();
+        const label = "Ответ пишется… " + Math.round((Date.now() - started) / 1000) + " с";
+        pending.answer = label;
+        if (pendingEl) pendingEl.textContent = label;
       }, 1000);
+      activeQueryTimer = timer;
       try {
         const response = await fetch("/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: text, dialog_id: dialogId }),
+          signal: ctrl.signal,
         });
         const data = await response.json().catch(() => ({}));
         clearInterval(timer);
@@ -2529,10 +2603,17 @@
         await loadUi(false);
       } catch (error) {
         clearInterval(timer);
-        pending.answer = "Сервер не ответил";
+        if (error && error.name === "AbortError") {
+          pending.answer = "Прервано";
+        } else {
+          pending.answer = "Сервер не ответил";
+        }
         paintLog();
       } finally {
-        send.disabled = false;
+        clearInterval(timer);
+        activeQueryCtrl = null;
+        activeQueryTimer = null;
+        setSending(false);
         if (systemReady) {
           readiness.textContent = "Система готова";
           readyDot.classList.add("on");
@@ -2543,6 +2624,26 @@
     const gate = document.getElementById("gate");
     const admin = document.getElementById("admin");
     const adminBody = document.getElementById("admin-body");
+    // Поколение вьюхи админки. Быстрое переключение вкладок не должно
+    // смешивать контент: ответ предыдущей вьюхи, прилетевший после открытия
+    // новой, отбрасывается по этому счётчику.
+    let adminToken = 0;
+
+    function startAdminView() {
+      adminToken += 1;
+      adminBody.replaceChildren();
+      if (modelPollTimer) { clearTimeout(modelPollTimer); modelPollTimer = null; }
+      modelSelect = null;
+      modelApplyBtn = null;
+      modelStopBtn = null;
+      modelFeedbackEl = null;
+      modelStatusLine = null;
+      return adminToken;
+    }
+
+    function adminStale(token) {
+      return token !== adminToken;
+    }
 
     async function paintUpload() {
       const response = await fetch("/upload-targets");
@@ -2713,12 +2814,13 @@
     }
 
     async function showUsers() {
-      adminBody.replaceChildren();
+      const token = startAdminView();
       const data = await (await fetch("/admin/users")).json();
       let roles = [];
       if ((me.actions || []).includes("manage_roles")) {
         roles = (await (await fetch("/admin/roles")).json()).roles || [];
       }
+      if (adminStale(token)) return;
       const toolbar = element("div", "toolbar");
       toolbar.append(adminInput("Поиск по логину…"), element("span", "spacer"));
       adminBody.append(toolbar);
@@ -2824,7 +2926,7 @@
     }
 
     async function showAudit() {
-      adminBody.replaceChildren();
+      const token = startAdminView();
       const kindSel = document.createElement("select");
       kindSel.className = "select";
       [["", "Все типы"], ["login", "Вход"], ["user_create", "Пользователь"], ["upload", "Загрузка"], ["delete", "Удаление"], ["access_allow", "Доступ"]].forEach((pair) => {
@@ -2841,6 +2943,7 @@
       currentFile.textContent = "Текущий файл";
       fileSel.append(currentFile);
       const listed = await (await fetch("/admin/audit/files")).json();
+      if (adminStale(token)) return;
       (listed.files || []).forEach((name) => {
         const option = document.createElement("option");
         option.value = name;
@@ -2874,14 +2977,34 @@
           const open = element("button", "audit-open", "Открыть");
           open.type = "button";
           open.className = "btn-ghost-sm";
+          let detailEl = null;
           open.addEventListener("click", async () => {
+            if (detailEl) {
+              detailEl.remove();
+              detailEl = null;
+              open.textContent = "Открыть";
+              return;
+            }
+            open.textContent = "Открывается…";
+            open.disabled = true;
             const one = new URLSearchParams();
             if (fileSel.value) one.set("file", fileSel.value);
             const suffix = one.toString() ? ("?" + one.toString()) : "";
             const full = await (await fetch("/admin/audit/" + event.id + suffix)).json();
-            const pre = element("pre", "", JSON.stringify(full, null, 2));
-            pre.style.gridColumn = "1 / -1";
-            row.after(pre);
+            open.textContent = "Свернуть";
+            open.disabled = false;
+            const detail = element("div", "audit-detail");
+            const payload = full.payload || {};
+            if (payload.model) {
+              detail.append(element("div", "audit-model", "Модель: " + payload.model));
+            }
+            const meta = [full.time, full.kind, full.login, full.ok === false ? "ошибка" : ""]
+              .filter(Boolean)
+              .join(" · ");
+            detail.append(element("div", "audit-meta", meta));
+            detail.append(element("pre", "audit-detail-pre", JSON.stringify(full, null, 2)));
+            detailEl = detail;
+            row.after(detail);
           });
           row.append(open);
           list.append(row);
@@ -2901,13 +3024,14 @@
     }
 
     async function showChat() {
-      adminBody.replaceChildren();
+      const token = startAdminView();
       let settings = uiSettings;
       try {
         settings = await (await fetch("/admin/ui-settings")).json();
       } catch (error) {
         settings = uiSettings;
       }
+      if (adminStale(token)) return;
       const card = element("div", "role-card");
       const body = element("div", "rc-body");
 
@@ -2957,12 +3081,37 @@
 
     let modelPollTimer = null;
     let modelStatusLine = null;
+    let modelFeedbackEl = null;
+    let modelSelect = null;
+    let modelApplyBtn = null;
+    let modelStopBtn = null;
+    let modelCards = [];
+    let modelCurrentId = "";
+    let modelCurrentState = "unloaded";
+    let modelBusy = false;
+
+    function modelDisplayName(modelId, fallback) {
+      const card = modelCards.find((m) => m.id === modelId);
+      if (card && card.name) return card.name;
+      return fallback || modelId || "";
+    }
 
     function modelStatusText(status) {
       const state = status && status.state ? status.state : "unloaded";
       const label = MODEL_STATES[state] || state;
-      const name = (status && (status.model_name || status.model_id)) || "";
+      const name = modelDisplayName(status && status.model_id, status && status.model_name);
       return name ? name + " · " + label : "Модель не выбрана · " + label;
+    }
+
+    function refreshModelControls() {
+      if (modelApplyBtn) {
+        const selected = modelSelect ? modelSelect.value : "";
+        modelApplyBtn.disabled = modelBusy || !selected || selected === modelCurrentId;
+      }
+      if (modelStopBtn) {
+        modelStopBtn.disabled = modelBusy || !modelCurrentId || modelCurrentState === "unloaded";
+      }
+      if (modelSelect) modelSelect.disabled = modelBusy;
     }
 
     function renderModelInfo(node, card) {
@@ -2988,12 +3137,24 @@
         status = null;
       }
       if (!status) return;
+      modelCurrentId = status.model_id || "";
+      modelCurrentState = status.state || "unloaded";
+      modelBusy = status.state === "loading" || status.state === "stopping";
       if (modelStatusLine) modelStatusLine.textContent = modelStatusText(status);
-      if (status.state === "loading" || status.state === "stopping") {
+      if (modelSelect && modelCurrentId) {
+        const option = [...modelSelect.options].find((o) => o.value === modelCurrentId);
+        if (option) modelSelect.value = modelCurrentId;
+      }
+      if (modelBusy) {
+        if (modelFeedbackEl) modelFeedbackEl.textContent = "Выполняется…";
         modelPollTimer = setTimeout(pollModelStatus, 1500);
       } else {
         modelPollTimer = null;
+        if (modelFeedbackEl) {
+          modelFeedbackEl.textContent = status.state === "error" ? "Не удалось применить модель" : "";
+        }
       }
+      refreshModelControls();
     }
 
     async function runModelOp(kind, modelId, feedback) {
@@ -3014,15 +3175,18 @@
       const data = await response.json().catch(() => ({}));
       if (response.ok) {
         feedback.textContent = "Выполняется…";
+        modelBusy = true;
+        refreshModelControls();
         if (modelPollTimer) { clearTimeout(modelPollTimer); modelPollTimer = null; }
         pollModelStatus();
       } else {
         feedback.textContent = data.detail || "Ошибка";
+        refreshModelControls();
       }
     }
 
     async function showModels() {
-      adminBody.replaceChildren();
+      const token = startAdminView();
       if (modelPollTimer) { clearTimeout(modelPollTimer); modelPollTimer = null; }
 
       const statusLine = element("p", "model-status", "Загрузка…");
@@ -3036,43 +3200,76 @@
       const select = document.createElement("select");
       select.className = "select";
       select.setAttribute("aria-label", "Модель");
+      modelSelect = select;
       const info = element("div", "model-info");
       const actions = element("div", "row-actions");
       const feedback = element("p", "model-feedback");
-      actions.append(
-        adminButton("Загрузить", () => runModelOp("load", select.value, feedback)),
-        adminButton("Остановить", () => runModelOp("unload", "", feedback)),
-        adminButton("Применить", () => runModelOp("switch", select.value, feedback))
-      );
+      modelFeedbackEl = feedback;
+      const applyBtn = adminButton("Применить", () => runModelOp("switch", select.value, feedback));
+      const stopBtn = adminButton("Остановить", () => runModelOp("unload", "", feedback));
+      modelApplyBtn = applyBtn;
+      modelStopBtn = stopBtn;
+      actions.append(applyBtn, stopBtn);
+
       const pickCard = element("div", "role-card");
       const pickBody = element("div", "rc-body");
       pickBody.append(select, info, actions);
+      pickBody.append(element("p", "setting-hint", "«Применить» — остановить текущую и запустить выбранную модель; выбор запоминается. «Остановить» — выгрузить модель из памяти."));
       pickCard.append(pickBody);
       adminBody.append(pickCard, feedback);
 
-      let models = [];
+      modelCards = [];
       let currentModelId = "";
+      let status = null;
       try {
         const list = await (await fetch("/admin/models")).json();
-        models = list.models || [];
+        modelCards = list.models || [];
         currentModelId = list.current_model_id || "";
+        status = list.status || null;
       } catch (error) {
-        models = [];
+        modelCards = [];
       }
+      if (adminStale(token)) return;
+
+      // Единый источник правды — статус. current_model_id бывает None при env-загрузке.
+      if (status && status.model_id) {
+        modelCurrentId = status.model_id;
+      } else {
+        modelCurrentId = currentModelId || "";
+      }
+      modelCurrentState = status ? status.state || "unloaded" : "unloaded";
+
       select.replaceChildren();
-      models.forEach((model) => {
+      modelCards.forEach((model) => {
         const option = document.createElement("option");
         option.value = model.id || "";
         option.textContent = (model.name || model.id || "") + (model.available ? "" : " (файл отсутствует)");
         option.disabled = !model.available;
         select.append(option);
       });
-      if (currentModelId && models.some((m) => m.id === currentModelId)) select.value = currentModelId;
-      const refreshInfo = () => renderModelInfo(info, models.find((m) => m.id === select.value));
-      select.addEventListener("change", refreshInfo);
-      refreshInfo();
+      if (modelCurrentId && modelCards.some((m) => m.id === modelCurrentId)) {
+        select.value = modelCurrentId;
+      } else if (modelCurrentId) {
+        const option = document.createElement("option");
+        option.value = modelCurrentId;
+        option.textContent = modelDisplayName(modelCurrentId, status && status.model_name) + " (текущая, не из реестра)";
+        select.prepend(option);
+        select.value = modelCurrentId;
+      }
 
-      pollModelStatus();
+      if (modelStatusLine) modelStatusLine.textContent = modelStatusText(status || { state: "unloaded" });
+      const refreshInfo = () => renderModelInfo(info, modelCards.find((m) => m.id === select.value));
+      select.addEventListener("change", () => { refreshInfo(); refreshModelControls(); });
+      refreshInfo();
+      refreshModelControls();
+
+      if (status && (status.state === "loading" || status.state === "stopping")) {
+        modelBusy = true;
+        refreshModelControls();
+        pollModelStatus();
+      } else {
+        modelBusy = false;
+      }
     }
 
     document.getElementById("admin-users").addEventListener("click", showUsers);
@@ -3080,9 +3277,10 @@
     document.getElementById("admin-models").addEventListener("click", showModels);
     document.getElementById("admin-audit").addEventListener("click", showAudit);
     document.getElementById("admin-roles").addEventListener("click", async () => {
-      adminBody.replaceChildren();
+      const token = startAdminView();
       field(adminBody, "p", "Действие роли само базу не открывает. Создание базы и «Открыть себе» эту матрицу не меняют.");
       const data = await (await fetch("/admin/roles")).json();
+      if (adminStale(token)) return;
       const globals = ["manage_users", "manage_roles", "manage_groups", "manage_access", "create_kb", "view_audit"];
       const globalLabel = {
         manage_users: "Управлять пользователями",
@@ -3177,7 +3375,7 @@
       }));
     });
     document.getElementById("admin-groups").addEventListener("click", async () => {
-      adminBody.replaceChildren();
+      const token = startAdminView();
       field(adminBody, "p", "Роль в группе — это все, у кого она есть сейчас и будет потом.");
       const data = await (await fetch("/admin/groups")).json();
       const userById = {};
@@ -3190,6 +3388,7 @@
         const roles = await (await fetch("/admin/roles")).json();
         (roles.roles || []).forEach((role) => { roleById[role.id] = role.name; });
       } catch (error) {}
+      if (adminStale(token)) return;
       (data.groups || []).forEach((group) => {
         const card = element("div", "role-card");
         const head = element("div", "rc-head");
@@ -3231,9 +3430,10 @@
       }));
     });
     document.getElementById("admin-access").addEventListener("click", async () => {
-      adminBody.replaceChildren();
+      const token = startAdminView();
       field(adminBody, "p", "«Открыть» человека показывает ему эту базу. Загружать, удалять и раскладывать — отдельные галочки. Роль сама базу не открывает.");
       const data = await (await fetch("/admin/kb")).json();
+      if (adminStale(token)) return;
       const people = data.people || [];
       const roles = data.roles || [];
       const groups = data.groups || [];
