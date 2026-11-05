@@ -208,3 +208,20 @@ def test_get_event_searches_archives(tmp_path, monkeypatch):
     assert found["payload"]["n"] == 2
     current = audit.get_event(1)
     assert current["payload"]["n"] == 3
+
+
+def test_get_event_without_file_returns_first_match(tmp_path, monkeypatch):
+    """#222: get_event(id) без file — первое совпадение (текущий, потом архивы).
+
+    При коллизии id выигрывает текущий файл. Строка из архива читается только с file.
+    """
+    _root(tmp_path, monkeypatch)
+    monkeypatch.setattr("settings.runtime", lambda: {"audit": {"rotation_threshold_mb": 100}})
+    audit.write("test", _user(), {"n": 1})
+    _tiny(monkeypatch)
+    audit.write("test", _user(), {"n": 2, "pad": "x" * 400})
+    archive = next(audit.path().parent.glob("log-*.sqlite"))
+    current = audit.get_event(1)
+    assert current["payload"]["n"] == 2
+    archived = audit.get_event(1, file=archive.name)
+    assert archived["payload"]["n"] == 1

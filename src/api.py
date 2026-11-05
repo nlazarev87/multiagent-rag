@@ -1454,7 +1454,9 @@ def admin_audit(
 def admin_audit_one(event_id: int, request: Request):
     actor = _user(request)
     _need(actor, "view_audit")
-    row = audit.get_event(event_id)
+    # #222: без file — первое совпадение. Query-параметр file выбирает архив.
+    chosen = request.query_params.get("file")
+    row = audit.get_event(event_id, file=chosen)
     if row is None:
         raise HTTPException(404, detail="Запись не найдена")
     audit.write("audit_view", actor, {"event_id": event_id})
