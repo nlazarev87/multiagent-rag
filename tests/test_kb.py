@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import auth
 import kb
 
 
@@ -34,3 +35,25 @@ def test_new_base_stays_inside_its_directory(tmp_path, monkeypatch):
         pass
     else:
         raise AssertionError("slash")
+
+
+def test_base_path_ignores_the_machine_that_created_it(tmp_path, monkeypatch):
+    _root(tmp_path, monkeypatch)
+    row = kb.create("Кадры")
+    conn = auth._connect()
+    try:
+        conn.execute(
+            "UPDATE kb SET inbox = ?, chroma = ? WHERE id = ?",
+            (
+                rf"C:\Users\Home\multiagent-rag\data\kbs\{row['id']}\inbox",
+                rf"C:\Users\Home\multiagent-rag\data\kbs\{row['id']}\chroma",
+                row["id"],
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    again = kb.get(row["id"])
+    root = tmp_path / "root" / "data" / "kbs" / row["id"]
+    assert again["inbox"] == root / "inbox"
+    assert again["chroma"] == root / "chroma"

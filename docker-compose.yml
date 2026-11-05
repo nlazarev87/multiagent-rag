@@ -4,12 +4,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      - ./data:/app/data
       - ./data/models:/app/data/models:ro
-      - ./data/inbox:/app/data/inbox
-      - ./data/chroma:/app/data/chroma
-      - ./data/audit:/app/data/audit
-      - ./data/ui:/app/data/ui
-      - ./data/users:/app/data/users
     environment:
       - LLM_MODEL_PATH=/app/data/models/qwen2.5-1.5b-instruct-q4_k_m.gguf
       - EMBED_PATH=/app/data/models/multilingual-e5-small

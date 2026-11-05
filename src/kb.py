@@ -1,4 +1,8 @@
-"""Реестр баз. «Документы» смотрит на текущие папку и индекс процесса, не на снимок при создании."""
+"""Реестр баз. «Документы» смотрит на текущие папку и индекс процесса.
+
+Остальные базы лежат в data/kbs/<id>. Путь, записанный при создании, не используется:
+на другой машине это чужой абсолютный каталог.
+"""
 
 from pathlib import Path
 
@@ -55,10 +59,17 @@ def get(kb_id):
         conn.close()
 
 
+def _owned(kb_id):
+    root = auth.app_root() / "data" / "kbs" / str(kb_id)
+    return root / "inbox", root / "chroma"
+
+
 def _public(row):
     legacy = bool(row["legacy"])
-    inbox = _inbox_default() if legacy else Path(row["inbox"])
-    chroma = _chroma_default() if legacy else Path(row["chroma"])
+    if legacy:
+        inbox, chroma = _inbox_default(), _chroma_default()
+    else:
+        inbox, chroma = _owned(row["id"])
     return {
         "id": row["id"],
         "name": row["name"],
@@ -76,9 +87,7 @@ def create(name):
     import uuid
 
     kb_id = str(uuid.uuid4())
-    root = auth.app_root() / "data" / "kbs" / kb_id
-    inbox = root / "inbox"
-    chroma = root / "chroma"
+    inbox, chroma = _owned(kb_id)
     inbox.mkdir(parents=True, exist_ok=True)
     chroma.mkdir(parents=True, exist_ok=True)
     conn = auth._connect()

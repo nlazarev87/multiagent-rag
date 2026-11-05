@@ -118,8 +118,10 @@ curl http://localhost:8000/ready
 Каталоги на этой машине:
 
 - `data/models/` — только чтение.
-- `data/inbox/` — документы.
-- `data/chroma/` — индекс.
+- `data/inbox/` — документы старой базы «Документы».
+- `data/chroma/` — индекс этой базы.
+- `data/kbs/` — отдельные базы и общие папки.
+- `data/auth.sqlite` — люди, пароли и права.
 - `data/audit/` — журнал.
 - `data/ui/`, `data/users/` — диалоги и пользователи.
 
