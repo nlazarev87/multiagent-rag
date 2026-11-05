@@ -6,8 +6,8 @@ EVAL = Path(__file__).resolve().parent / "eval"
 if str(EVAL) not in sys.path:
     sys.path.insert(0, str(EVAL))
 
-import pytest
-import universality
+import pytest  # noqa: E402
+import universality  # noqa: E402
 
 
 def test_code_knowledge_leakage():

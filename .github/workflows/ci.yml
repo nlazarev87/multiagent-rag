@@ -17,9 +17,8 @@ jobs:
       - run: python -m compileall -q src/
       - run: pytest -m "not slow and not holdout" -q
   lint:
-    name: lint (non-blocking)
+    name: lint
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,6 +29,6 @@ jobs:
           pip install ruff mypy
           pip install -r requirements.txt
       - name: ruff check
-        run: ruff check src/ tests/ || true
+        run: ruff check src/ tests/
       - name: mypy src/
-        run: mypy src/ --ignore-missing-imports --check-untyped-defs || true
+        run: mypy src/

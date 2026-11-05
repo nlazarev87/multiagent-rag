@@ -56,7 +56,6 @@ def test_parallel_writes_do_not_share_a_previous_hash(tmp_path, monkeypatch):
 
 def test_deleted_user_does_not_remove_the_event_or_store_a_password(tmp_path, monkeypatch):
     _root(tmp_path, monkeypatch)
-    user = {"id": "u", "login": "ann", "role_id": "r", "role": "Роль"}
     audit.write("login_fail", None, {"login": "ann"})
     text = audit.path().read_bytes()
     assert b"password" not in text.lower()

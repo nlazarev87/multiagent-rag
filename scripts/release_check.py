@@ -23,7 +23,10 @@ def main():
     ]
     code = _run(pytest_cmd)
     if code:
-        print("GATE FAIL: ненулевой leakage или падение swap. Чинить знаниями в коде нельзя.", flush=True)
+        print(
+            "GATE FAIL: ненулевой leakage или падение swap. Чинить знаниями в коде нельзя.",
+            flush=True,
+        )
         return code
     print("== scorecard all --holdout ==", flush=True)
     score_cmd = [

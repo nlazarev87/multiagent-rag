@@ -6,7 +6,7 @@ EVAL = ROOT / "tests" / "eval"
 if str(EVAL) not in sys.path:
     sys.path.insert(0, str(EVAL))
 
-import universality
+import universality  # noqa: E402
 
 SOURCES = universality.src_files()
 
