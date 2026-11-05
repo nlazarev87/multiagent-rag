@@ -3,6 +3,9 @@ import sys
 import threading
 import time
 import types
+from pathlib import Path
+
+import pytest
 
 import llm
 
@@ -59,6 +62,10 @@ def _llama(monkeypatch, factory):
     monkeypatch.setenv("LLM_MODEL_PATH", "model.gguf")
     monkeypatch.setattr(llm, "_llm", None)
     monkeypatch.setattr(llm, "loaded", False)
+    monkeypatch.setattr(llm, "_state", llm.UNLOADED)
+    monkeypatch.setattr(llm, "_model_id", None)
+    monkeypatch.setattr(llm, "_model_name", "")
+    monkeypatch.setattr(llm, "_model_path", "")
 
 
 def test_load_builds_one_cpu_model(monkeypatch):
@@ -192,3 +199,184 @@ def test_complete_follows_runtime_limits_one_call_at_a_time(monkeypatch):
         release.set()
         for thread in threads:
             thread.join(3)
+
+
+def test_status_starts_unloaded(monkeypatch):
+    monkeypatch.setattr(llm, "_llm", None)
+    monkeypatch.setattr(llm, "loaded", False)
+    monkeypatch.setattr(llm, "_state", llm.UNLOADED)
+    monkeypatch.setattr(llm, "_model_id", None)
+    monkeypatch.setattr(llm, "_model_name", "")
+    monkeypatch.setattr(llm, "_model_path", "")
+    assert llm.status()["state"] == "unloaded"
+    assert llm.current_model_id() is None
+
+
+def test_load_model_sets_identity(monkeypatch):
+    class Fake:
+        def __init__(self, **kwargs):
+            pass
+
+        def set_cache(self, cache):
+            pass
+
+        def close(self):
+            pass
+
+    _llama(monkeypatch, Fake)
+    llm.load_model(path="other.gguf", model_id="qvikhr")
+    assert llm.status()["state"] == "ready"
+    assert llm.current_model_id() == "qvikhr"
+    assert llm.model_name() == "other"
+    assert llm.status()["model_path"] == "other.gguf"
+
+
+def test_switch_closes_old_and_loads_new(monkeypatch):
+    built = []
+    closed = []
+
+    class Fake:
+        def __init__(self, **kwargs):
+            built.append(kwargs["model_path"])
+
+        def set_cache(self, cache):
+            pass
+
+        def close(self):
+            closed.append(1)
+
+    _llama(monkeypatch, Fake)
+    llm.load()
+    llm.switch_model(path="other.gguf")
+    assert built == ["model.gguf", "other.gguf"]
+    assert closed == [1]
+    assert llm.status()["state"] == "ready"
+
+
+def test_switch_error_rolls_back(monkeypatch):
+    built = []
+    closed = []
+
+    class Good:
+        def __init__(self, **kwargs):
+            built.append(kwargs["model_path"])
+
+        def set_cache(self, cache):
+            pass
+
+        def close(self):
+            closed.append(1)
+
+    def bad_factory(**kwargs):
+        built.append(kwargs["model_path"])
+        raise RuntimeError("no memory")
+
+    _llama(monkeypatch, Good)
+    llm.load()
+    monkeypatch.setattr(sys.modules["llama_cpp"], "Llama", bad_factory)
+    with pytest.raises(llm.ModelError):
+        llm.load_model(path="bad.gguf")
+    assert llm.status()["state"] == "ready"
+    assert llm.model_name() == "model"
+    assert closed == []
+    assert built == ["model.gguf", "bad.gguf"]
+
+
+def test_unload_closes_model(monkeypatch):
+    closed = []
+
+    class Fake:
+        def __init__(self, **kwargs):
+            pass
+
+        def set_cache(self, cache):
+            pass
+
+        def close(self):
+            closed.append(1)
+
+    _llama(monkeypatch, Fake)
+    llm.load()
+    llm.unload()
+    assert closed == [1]
+    assert llm.status()["state"] == "unloaded"
+    assert llm._llm is None
+
+
+def test_switch_busy_during_generation(monkeypatch):
+    monkeypatch.setattr(llm, "_BUSY_TIMEOUT", 0.1)
+    release = threading.Event()
+    entered = threading.Event()
+
+    class Fake:
+        def __init__(self, **kwargs):
+            pass
+
+        def set_cache(self, cache):
+            pass
+
+        def close(self):
+            pass
+
+        def create_chat_completion(self, messages, max_tokens, temperature):
+            entered.set()
+            release.wait(3)
+            return {"choices": [{"message": {"content": "x"}}]}
+
+    _llama(monkeypatch, Fake)
+    thread = threading.Thread(target=lambda: llm.complete("s", "u"))
+    thread.start()
+    try:
+        assert entered.wait(2)
+        with pytest.raises(llm.ModelBusy):
+            llm.switch_model(path="other.gguf")
+    finally:
+        release.set()
+        thread.join(3)
+
+
+def test_complete_during_loading_raises_modelbusy(monkeypatch):
+    class Fake:
+        def __init__(self, **kwargs):
+            pass
+
+        def set_cache(self, cache):
+            pass
+
+        def close(self):
+            pass
+
+    _llama(monkeypatch, Fake)
+    llm.load()
+    llm._set_state(llm.LOADING)
+    with pytest.raises(llm.ModelBusy):
+        llm.complete("s", "u")
+
+
+def test_switch_model_resolves_first_shard(monkeypatch):
+    built = []
+
+    class Fake:
+        def __init__(self, **kwargs):
+            built.append(kwargs["model_path"])
+
+        def set_cache(self, cache):
+            pass
+
+        def close(self):
+            pass
+
+    _llama(monkeypatch, Fake)
+    monkeypatch.setattr(
+        llm.model_registry,
+        "get_model",
+        lambda model_id: {"files": ["a-00001-of-00002.gguf", "a-00002-of-00002.gguf"]},
+    )
+    monkeypatch.setattr(
+        llm.model_registry,
+        "primary_file",
+        lambda card: Path("data/models/a-00001-of-00002.gguf"),
+    )
+    llm.load_model(model_id="m")
+    assert built == [str(Path("data/models/a-00001-of-00002.gguf"))]
+    assert llm.current_model_id() == "m"
