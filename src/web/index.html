@@ -6,13 +6,13 @@
   <title>Документы</title>
   <style>
     * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; }
+    html, body { height: 100%; margin: 0; overflow-x: hidden; }
     body { display: flex; flex-direction: column; }
     #shell { flex: 1; min-height: 0; height: auto; }
     body {
       /* Раскладка */
-      --left: 260px;
-      --mid: 380px;
+      --left: clamp(220px, 20vw, 320px);
+      --mid: clamp(300px, 26vw, 460px);
       /* Нейтральная шкала */
       --chrome: #ECECEF;
       --panel: #F6F6F8;
@@ -905,6 +905,90 @@
     }
     .access-row .access-state { margin: 0; min-width: 12rem; flex: 1 1 10rem; }
     .access-row label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+    /* Fluid shell + breakpoints (10.1) */
+    #dialog-toggle {
+      display: none;
+      width: 28px;
+      height: 28px;
+      flex: 0 0 auto;
+      border-radius: var(--r-2);
+      color: var(--fg2);
+      font-size: 15px;
+      line-height: 1;
+    }
+    #dialog-toggle:hover { background: var(--wash); color: var(--fg); }
+    .mobile-tabs {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      min-height: 40px;
+      padding: 6px 8px;
+      background: var(--chrome);
+      border-bottom: 1px solid var(--line-2);
+    }
+    .mobile-tabs button {
+      flex: 1;
+      height: 30px;
+      border-radius: var(--r-2);
+      color: var(--fg2);
+      font-size: 12.5px;
+      font-weight: 600;
+    }
+    .mobile-tabs button.on { background: var(--accent-soft); color: var(--accent); }
+
+    @media (max-width: 1279.98px) {
+      body { --left: clamp(200px, 21vw, 300px); --mid: clamp(280px, 27vw, 420px); }
+    }
+    @media (max-width: 1079.98px) {
+      body { --left: clamp(190px, 22vw, 280px); --mid: clamp(260px, 28vw, 400px); }
+    }
+    @media (max-width: 899.98px) {
+      body { --mid: clamp(260px, 46vw, 480px); }
+      .shell { grid-template-columns: var(--mid) 1px minmax(0, 1fr); }
+      .shell > aside {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: min(320px, 86vw);
+        z-index: 40;
+        border-right: 1px solid var(--line);
+        box-shadow: var(--shadow-3);
+        transform: translateX(-102%);
+        transition: transform .18s ease;
+      }
+      body.drawer .shell > aside { transform: translateX(0); }
+      body.drawer::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background: rgba(12, 12, 18, .42);
+        z-index: 39;
+      }
+      #sash-left { display: none; }
+      #dialog-toggle { display: grid; place-items: center; }
+    }
+    @media (max-width: 719.98px) {
+      .shell {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+      .mobile-tabs { display: flex; grid-column: 1; grid-row: 1; }
+      .shell > section[aria-label="Агент"] { grid-column: 1; grid-row: 2; }
+      .shell > section.editor { grid-column: 1; grid-row: 2; display: none; }
+      .shell > aside { display: none; }
+      #sash-left, #sash-right { display: none; }
+      body.mobile-doc .shell > section[aria-label="Агент"] { display: none; }
+      body.mobile-doc .shell > section.editor { display: flex; }
+    }
+    @media (max-width: 559.98px) {
+      .mid-head { padding: 4px 6px; }
+      .turn { padding: 8px 10px; }
+      .question { max-width: 96%; }
+      #ask { margin: 6px 8px 8px; }
+      .canvas { padding: 12px 14px 28px; }
+      .preview-head { padding: 10px 14px 8px; }
+    }
   </style>
 </head>
 <body>
@@ -950,6 +1034,10 @@
     </main>
   </section>
   <main class="shell" id="shell">
+    <div class="mobile-tabs" role="tablist" aria-label="Вид">
+      <button type="button" id="mtab-chat" class="on" role="tab" aria-selected="true">Чат</button>
+      <button type="button" id="mtab-doc" role="tab" aria-selected="false">Документ</button>
+    </div>
     <aside class="pane" aria-label="Диалоги">
       <div class="side-head">
         <div class="side-title"><span>Диалоги</span><button id="manage" type="button" class="hidden">Управление</button></div>
@@ -970,6 +1058,7 @@
     <div class="sash" id="sash-left" role="separator" aria-orientation="vertical" aria-label="Граница диалогов"></div>
     <section class="pane" aria-label="Агент">
       <div class="mid-head">
+        <button type="button" id="dialog-toggle" aria-label="Диалоги" aria-expanded="false">☰</button>
         <div class="seg" role="tablist" aria-label="Режим">
           <button type="button" id="mode-agent" class="on" role="tab" aria-selected="true">Agent</button>
           <button type="button" id="mode-docs" role="tab" aria-selected="false">Документы</button>
@@ -1087,14 +1176,18 @@
       return String(text || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
     }
 
-    function bindSash(sash, prop, min, max) {
+    function bindSash(sash, prop, min, max, pane, other) {
       sash.addEventListener("mousedown", (event) => {
         event.preventDefault();
         const startX = event.clientX;
-        const start = parseInt(getComputedStyle(document.body).getPropertyValue(prop), 10);
+        const start = pane.getBoundingClientRect().width;
         sash.classList.add("drag");
         function move(moveEvent) {
-          const next = Math.min(max, Math.max(min, start + (moveEvent.clientX - startX)));
+          const editorMin = 220;
+          const otherWidth = other.getBoundingClientRect().width;
+          const cap = Math.max(min, window.innerWidth - otherWidth - 2 - editorMin);
+          const limit = Math.min(max, cap);
+          const next = Math.round(Math.max(min, Math.min(limit, start + (moveEvent.clientX - startX))));
           document.body.style.setProperty(prop, next + "px");
         }
         function up() {
@@ -1107,8 +1200,41 @@
       });
     }
 
-    bindSash(document.getElementById("sash-left"), "--left", 200, 480);
-    bindSash(document.getElementById("sash-right"), "--mid", 280, 640);
+    const dialogsAside = document.querySelector('.shell > aside[aria-label="Диалоги"]');
+    const agentSection = document.querySelector('.shell > section[aria-label="Агент"]');
+    bindSash(document.getElementById("sash-left"), "--left", 200, 480, dialogsAside, agentSection);
+    bindSash(document.getElementById("sash-right"), "--mid", 280, 640, agentSection, dialogsAside);
+
+    function setDrawer(open) {
+      document.body.classList.toggle("drawer", open);
+      const btn = document.getElementById("dialog-toggle");
+      if (btn) {
+        btn.setAttribute("aria-expanded", String(open));
+        btn.setAttribute("aria-label", open ? "Закрыть диалоги" : "Диалоги");
+      }
+    }
+
+    function setMobileTab(which) {
+      const doc = which === "doc";
+      document.body.classList.toggle("mobile-doc", doc);
+      const chatBtn = document.getElementById("mtab-chat");
+      const docBtn = document.getElementById("mtab-doc");
+      if (chatBtn) {
+        chatBtn.classList.toggle("on", !doc);
+        chatBtn.setAttribute("aria-selected", String(!doc));
+      }
+      if (docBtn) {
+        docBtn.classList.toggle("on", doc);
+        docBtn.setAttribute("aria-selected", String(doc));
+      }
+    }
+
+    document.getElementById("dialog-toggle").addEventListener("click", () => setDrawer(!document.body.classList.contains("drawer")));
+    document.getElementById("mtab-chat").addEventListener("click", () => setMobileTab("chat"));
+    document.getElementById("mtab-doc").addEventListener("click", () => setMobileTab("doc"));
+    document.body.addEventListener("click", (event) => {
+      if (event.target === document.body && document.body.classList.contains("drawer")) setDrawer(false);
+    });
 
     function current() {
       return dialogs.find((row) => row.id === dialogId) || null;
@@ -1832,6 +1958,7 @@
     }
 
     async function selectDialog(id, silent) {
+      setDrawer(false);
       dialogId = id;
       sessionStorage.setItem("dialogId", dialogId);
       const response = await fetch("/ui/dialogs/" + encodeURIComponent(id));
@@ -2210,7 +2337,7 @@
       const data = await response.json().catch(() => ({}));
       window.alert(response.ok ? "Пароль изменён" : (data.detail || "Ошибка"));
     });
-    document.getElementById("manage").addEventListener("click", () => admin.classList.remove("hidden"));
+    document.getElementById("manage").addEventListener("click", () => { setDrawer(false); admin.classList.remove("hidden"); });
     document.getElementById("admin-close").addEventListener("click", () => admin.classList.add("hidden"));
     const adminMeta = {
       users: ["Пользователи", "Учётные записи, роли и статусы доступа"],
