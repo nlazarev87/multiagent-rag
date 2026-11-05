@@ -1,0 +1,31 @@
+FROM python:3.11-slim
+
+# build-essential, cmake — для llama-cpp-python, если нет готового колеса.
+# libgomp1 — для torch. curl — для healthcheck.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    libgomp1 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ src/
+COPY config/ config/
+COPY data/prompts/ data/prompts/
+COPY start.sh .
+RUN chmod +x start.sh
+
+ENV PYTHONPATH=/app/src
+ENV LLM_MODEL_PATH=/app/data/models/qwen2.5-1.5b-instruct-q4_k_m.gguf
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=300s --retries=5 \
+    CMD curl -f http://localhost:8000/ready || exit 1
+
+CMD ["./start.sh"]
