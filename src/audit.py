@@ -86,6 +86,14 @@ def _files():
     return found
 
 
+def list_files():
+    """Имена файлов журнала: текущий и архивы (#223).
+
+    Публичная обёртка над _files(). Иначе api.py импортирует приватное имя.
+    """
+    return [item.name for item in _files()]
+
+
 def _named(file):
     name = str(file or "")
     if not name.endswith(".sqlite") or "/" in name or "\\" in name:

@@ -2410,16 +2410,36 @@
         kindSel.append(option);
       });
       const person = adminInput("Пользователь…");
+      const fileSel = document.createElement("select");
+      fileSel.className = "select";
+      const currentFile = document.createElement("option");
+      currentFile.value = "";
+      currentFile.textContent = "Текущий файл";
+      fileSel.append(currentFile);
+      const listed = await (await fetch("/admin/audit/files")).json();
+      (listed.files || []).forEach((name) => {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        fileSel.append(option);
+      });
       const toolbar = element("div", "toolbar");
       const list = element("div", "table-card");
       let beforeTime = "";
-      async function load(cursor) {
+      let beforeId = 0;
+      fileSel.addEventListener("change", () => {
+        beforeTime = "";
+        beforeId = 0;
+        load();
+      });
+      async function load() {
         list.replaceChildren();
         const query = new URLSearchParams();
         if (person.value) query.set("user", person.value);
         if (kindSel.value) query.set("kind", kindSel.value);
+        if (fileSel.value) query.set("file", fileSel.value);
         if (beforeTime) query.set("before", beforeTime);
-        if (cursor) query.set("before_id", String(cursor));
+        if (beforeId) query.set("before_id", String(beforeId));
         const data = await (await fetch("/admin/audit?" + query.toString())).json();
         const events = data.events || [];
         events.forEach((event) => {
@@ -2431,7 +2451,10 @@
           open.type = "button";
           open.className = "btn-ghost-sm";
           open.addEventListener("click", async () => {
-            const full = await (await fetch("/admin/audit/" + event.id)).json();
+            const one = new URLSearchParams();
+            if (fileSel.value) one.set("file", fileSel.value);
+            const suffix = one.toString() ? ("?" + one.toString()) : "";
+            const full = await (await fetch("/admin/audit/" + event.id + suffix)).json();
             const pre = element("pre", "", JSON.stringify(full, null, 2));
             pre.style.gridColumn = "1 / -1";
             row.after(pre);
@@ -2443,11 +2466,12 @@
           const last = events[events.length - 1];
           list.append(adminGhost("Дальше", () => {
             beforeTime = last.time || "";
-            load(last.id);
+            beforeId = last.id;
+            load();
           }));
         }
       }
-      toolbar.append(kindSel, person, element("span", "spacer"), adminButton("Обновить", () => load()));
+      toolbar.append(fileSel, kindSel, person, element("span", "spacer"), adminButton("Обновить", () => load()));
       adminBody.append(toolbar, list);
       await load();
     }

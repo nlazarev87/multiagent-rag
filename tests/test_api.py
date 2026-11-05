@@ -1829,3 +1829,62 @@ def test_upload_rejects_file_over_size_limit_dynamic(tmp_path, monkeypatch):
         api._save_uploads_locked([("big.txt", b"x" * 11)], tmp_path, None, True, None)
     assert "100" in error.value.detail
     assert "50" not in error.value.detail
+
+
+def _audit_rotated(monkeypatch):
+    import audit
+
+    user = {"id": "u", "login": "ann", "role_id": "r", "role": "Роль"}
+
+    def runtime_at(mb):
+        return lambda: {"audit": {"rotation_threshold_mb": mb}}
+
+    monkeypatch.setattr("settings.runtime", runtime_at(100))
+    audit.write("test", user, {"n": 1})
+    monkeypatch.setattr("settings.runtime", runtime_at(0.0001))
+    audit.write("test", user, {"n": 2, "pad": "x" * 400})
+    archive = next(audit.path().parent.glob("log-*.sqlite"))
+    monkeypatch.setattr("settings.runtime", runtime_at(100))
+    return archive
+
+
+def test_admin_audit_files_lists_archives(monkeypatch):
+    """#223: /admin/audit/files возвращает текущий файл и архив."""
+    archive = _audit_rotated(monkeypatch)
+    response = TestClient(app).get("/admin/audit/files")
+    assert response.status_code == 200
+    names = response.json()["files"]
+    assert names[0] == "log.sqlite"
+    assert archive.name in names
+
+
+def test_admin_audit_list_with_file(monkeypatch):
+    """#223: /admin/audit?file= читает строки архива."""
+    archive = _audit_rotated(monkeypatch)
+    response = TestClient(app).get("/admin/audit", params={"file": archive.name})
+    assert response.status_code == 200
+    rows = response.json()["events"]
+    assert rows
+    assert [row["payload"]["n"] for row in rows] == [1]
+
+
+def test_admin_audit_one_with_file_returns_archive(monkeypatch):
+    """#223: /admin/audit/{id}?file= возвращает архивную строку."""
+    archive = _audit_rotated(monkeypatch)
+    client = TestClient(app)
+    current = client.get("/admin/audit/1")
+    archived = client.get("/admin/audit/1", params={"file": archive.name})
+    assert current.status_code == 200
+    assert current.json()["payload"]["n"] == 2
+    assert archived.status_code == 200
+    assert archived.json()["payload"]["n"] == 1
+
+
+def test_admin_audit_list_without_file_uses_current(monkeypatch):
+    """#223: без file список берёт только текущий log.sqlite."""
+    _audit_rotated(monkeypatch)
+    response = TestClient(app).get("/admin/audit")
+    assert response.status_code == 200
+    numbers = [row["payload"].get("n") for row in response.json()["events"]]
+    assert 2 in numbers
+    assert 1 not in numbers

@@ -1430,6 +1430,7 @@ def admin_audit(
     role: str = "",
     group: str = "",
     kind: str = "",
+    file: str = "",
     before: str = "",
     after: str = "",
     before_id: int = 0,
@@ -1437,6 +1438,7 @@ def admin_audit(
     actor = _user(request)
     _need(actor, "view_audit")
     rows = audit.list_events(
+        file=file or None,
         user_id=user,
         role_id=role,
         group_id=group,
@@ -1448,6 +1450,14 @@ def admin_audit(
     )
     audit.write("audit_view", actor, {"user": user, "role": role, "group": group, "kind": kind})
     return {"events": rows}
+
+
+@app.get("/admin/audit/files")
+def admin_audit_files(request: Request):
+    """Список файлов журнала: текущий log.sqlite и архивы log-*.sqlite (#223)."""
+    actor = _user(request)
+    _need(actor, "view_audit")
+    return {"files": audit.list_files()}
 
 
 @app.get("/admin/audit/{event_id}")
