@@ -96,7 +96,8 @@ _upload_lock = threading.Lock()
 
 
 def _files_ok():
-    model = Path(os.environ.get("LLM_MODEL_PATH", ""))
+    path, _model_id = model_registry.startup_model()
+    model = Path(path) if path else Path("")
     embed = ROOT / "data" / "models" / "multilingual-e5-small"
     return model.is_file() and embed.is_dir()
 

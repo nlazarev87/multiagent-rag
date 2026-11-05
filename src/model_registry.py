@@ -53,6 +53,10 @@ def _models_dir() -> Path:
     return _root() / "data" / "models"
 
 
+def _ui_dir() -> Path:
+    return _root() / "data" / "ui"
+
+
 def _read_config() -> dict[str, Any]:
     path = _config_dir() / "models.json"
     if not path.exists():
@@ -67,6 +71,50 @@ def _raw_models() -> list[dict[str, Any]]:
 def default_model_id() -> str:
     """Идентификатор модели по умолчанию из config/models.json."""
     return _read_config().get("default", "qvikhr")
+
+
+def selected_model_id() -> str | None:
+    """id выбранной модели из data/ui/model.json, или None."""
+    path = _ui_dir() / "model.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    value = data.get("model_id") if isinstance(data, dict) else None
+    return str(value) if value else None
+
+
+def save_selected_model(model_id: str) -> None:
+    """Атомарно сохранить выбранную модель в data/ui/model.json."""
+    folder = _ui_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / "model.json"
+    tmp = target.with_name("model.json.tmp")
+    tmp.write_text(json.dumps({"model_id": model_id}, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, target)
+
+
+def startup_model() -> tuple[str, str | None]:
+    """Путь и id модели для старта: выбранная -> env LLM_MODEL_PATH -> default."""
+    selected = selected_model_id()
+    if selected:
+        card = get_model(selected)
+        if card is not None and card.get("available"):
+            primary = primary_file(card)
+            if primary is not None:
+                return str(primary), selected
+    env_path = os.environ.get("LLM_MODEL_PATH")
+    if env_path:
+        return env_path, None
+    default_id = default_model_id()
+    card = get_model(default_id)
+    if card is not None and card.get("available"):
+        primary = primary_file(card)
+        if primary is not None:
+            return str(primary), default_id
+    return "", None
 
 
 def _safe_filename(name: str) -> bool:

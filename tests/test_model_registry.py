@@ -5,6 +5,7 @@
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -244,3 +245,52 @@ def test_primary_file_is_first_shard(monkeypatch, tmp_path):
     card = model_registry.get_model("m")
     assert card is not None
     assert model_registry.primary_file(card) == (models / "m-00001-of-00002.gguf").resolve()
+
+
+def test_selected_model_roundtrip(monkeypatch, tmp_path):
+    monkeypatch.setattr(model_registry, "_root", lambda: tmp_path)
+    assert model_registry.selected_model_id() is None
+    model_registry.save_selected_model("qvikhr")
+    assert model_registry.selected_model_id() == "qvikhr"
+    assert (tmp_path / "data" / "ui" / "model.json").is_file()
+
+
+def test_selected_model_ignores_bad_json(monkeypatch, tmp_path):
+    monkeypatch.setattr(model_registry, "_root", lambda: tmp_path)
+    ui = tmp_path / "data" / "ui"
+    ui.mkdir(parents=True)
+    (ui / "model.json").write_text("{not json", encoding="utf-8")
+    assert model_registry.selected_model_id() is None
+
+
+def test_startup_model_priority_selected(monkeypatch):
+    monkeypatch.setattr(model_registry, "selected_model_id", lambda: "qvikhr")
+    monkeypatch.setattr(
+        model_registry, "get_model", lambda mid: {"id": mid, "available": True, "files": ["a.gguf"]}
+    )
+    monkeypatch.setattr(model_registry, "primary_file", lambda card: Path("data/models/a.gguf"))
+    monkeypatch.setenv("LLM_MODEL_PATH", "env.gguf")
+    path, model_id = model_registry.startup_model()
+    assert model_id == "qvikhr"
+    assert path == str(Path("data/models/a.gguf"))
+
+
+def test_startup_model_priority_env(monkeypatch):
+    monkeypatch.setattr(model_registry, "selected_model_id", lambda: None)
+    monkeypatch.setenv("LLM_MODEL_PATH", "env.gguf")
+    path, model_id = model_registry.startup_model()
+    assert model_id is None
+    assert path == "env.gguf"
+
+
+def test_startup_model_priority_default(monkeypatch):
+    monkeypatch.setattr(model_registry, "selected_model_id", lambda: None)
+    monkeypatch.delenv("LLM_MODEL_PATH", raising=False)
+    monkeypatch.setattr(model_registry, "default_model_id", lambda: "qvikhr")
+    monkeypatch.setattr(
+        model_registry, "get_model", lambda mid: {"id": mid, "available": True, "files": ["a.gguf"]}
+    )
+    monkeypatch.setattr(model_registry, "primary_file", lambda card: Path("data/models/a.gguf"))
+    path, model_id = model_registry.startup_model()
+    assert model_id == "qvikhr"
+    assert path == str(Path("data/models/a.gguf"))

@@ -7,6 +7,6 @@ services:
       - ./data:/app/data
       - ./data/models:/app/data/models:ro
     environment:
-      - LLM_MODEL_PATH=/app/data/models/qwen2.5-1.5b-instruct-q4_k_m.gguf
+      - LLM_MODEL_PATH=/app/data/models/QVikhr-3-1.7B-Instruction-noreasoning-Q4_K_M.gguf
       - EMBED_PATH=/app/data/models/multilingual-e5-small
     restart: unless-stopped

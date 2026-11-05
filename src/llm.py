@@ -124,18 +124,20 @@ def _capture_model():
 
 
 def load():
-    """Открыть GGUF один раз, на CPU, с контекстом из runtime (путь из env)."""
+    """Открыть GGUF один раз: выбранная модель -> env LLM_MODEL_PATH -> default."""
     if _llm is None:
         with _load_lock:
             if _llm is None:
-                path = os.environ.get("LLM_MODEL_PATH", "")
+                path, model_id = model_registry.startup_model()
+                if not path:
+                    raise ModelError("модель не найдена: нет выбранной, env или файла по умолчанию")
                 _set_state(LOADING)
                 try:
                     _assign_llm(_build_model(path))
                 except Exception:
                     _set_state(ERROR)
                     raise
-                _set_identity(None, Path(path).stem, path)
+                _set_identity(model_id, Path(path).stem, path)
                 _set_state(READY)
 
 

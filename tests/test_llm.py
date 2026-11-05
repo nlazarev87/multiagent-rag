@@ -380,3 +380,22 @@ def test_switch_model_resolves_first_shard(monkeypatch):
     llm.load_model(model_id="m")
     assert built == [str(Path("data/models/a-00001-of-00002.gguf"))]
     assert llm.current_model_id() == "m"
+
+
+def test_load_uses_startup_model_priority(monkeypatch):
+    built = []
+
+    class Fake:
+        def __init__(self, **kwargs):
+            built.append(kwargs["model_path"])
+
+        def set_cache(self, cache):
+            pass
+
+    _llama(monkeypatch, Fake)  # env LLM_MODEL_PATH=model.gguf
+    monkeypatch.setattr(
+        llm.model_registry, "startup_model", lambda: ("selected.gguf", "qvikhr")
+    )
+    llm.load()
+    assert built == ["selected.gguf"]
+    assert llm.current_model_id() == "qvikhr"
