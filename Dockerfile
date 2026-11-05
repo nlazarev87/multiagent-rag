@@ -22,10 +22,11 @@ COPY src/ src/
 COPY config/ config/
 COPY data/prompts/ data/prompts/
 COPY start.sh .
-RUN chmod +x start.sh
+RUN chmod +x start.sh && sed -i 's/\r$//' start.sh
 
 ENV PYTHONPATH=/app/src
 ENV LLM_MODEL_PATH=/app/data/models/qwen2.5-1.5b-instruct-q4_k_m.gguf
+ENV EMBED_PATH=/app/data/models/multilingual-e5-small
 
 EXPOSE 8000
 
