@@ -23,6 +23,8 @@ import access
 import audit
 import auth
 import kb
+import llm
+import model_registry
 import preferences
 import trees
 import workspace
@@ -222,9 +224,10 @@ def page():
 @app.get("/ready")
 def ready():
     """200, когда модель ответа и числовая модель поиска на месте и индекс достроен."""
-    from llm import loaded
-
-    if (_state["done"] or loaded) and _files_ok():
+    state = llm.status()["state"]
+    if state in (llm.LOADING, llm.STOPPING):
+        return JSONResponse(status_code=503, content={"ready": False, "reason": "model_loading"})
+    if (_state["done"] or llm.loaded) and _files_ok():
         return {"ready": True}
     elapsed = 0 if _state["started"] is None else int(time.time() - _state["started"])
     return JSONResponse(
@@ -1482,6 +1485,98 @@ def admin_audit_one(event_id: int, request: Request):
         raise HTTPException(404, detail="Запись не найдена")
     audit.write("audit_view", actor, {"event_id": event_id})
     return row
+
+
+class ModelSwitchBody(BaseModel):
+    model_id: str = ""
+
+
+def _ensure_model_free():
+    """409, если идёт переключение/выгрузка или модель занята генерацией."""
+    state = llm.status()["state"]
+    if state in (llm.LOADING, llm.STOPPING):
+        raise HTTPException(409, detail="Модель уже переключается или выгружается")
+    if llm._run_lock.locked():
+        raise HTTPException(409, detail="Модель занята")
+
+
+def _validate_model(model_id):
+    """400, если модели нет в реестре или её файл отсутствует."""
+    card = model_registry.get_model(model_id)
+    if card is None:
+        raise HTTPException(400, detail="Неизвестная модель")
+    if not card.get("available"):
+        raise HTTPException(400, detail="Файл модели отсутствует")
+
+
+def _start_model_op(kind, user, fn, model_id):
+    """Запустить операцию с моделью в фоне и записать её в журнал."""
+
+    def worker():
+        ok = True
+        detail = {}
+        try:
+            fn()
+        except Exception as exc:
+            ok = False
+            detail["error"] = type(exc).__name__
+        payload = {"model_id": model_id} if model_id else {}
+        payload.update(detail)
+        audit.write(kind, user, payload, ok=ok)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+@app.get("/admin/models")
+def admin_models(request: Request):
+    """Список моделей, текущий выбор и состояние."""
+    _need(_user(request), "manage_users")
+    return {
+        "models": model_registry.list_models(),
+        "current_model_id": llm.current_model_id(),
+        "status": llm.status(),
+    }
+
+
+@app.get("/admin/models/status")
+def admin_models_status(request: Request):
+    _need(_user(request), "manage_users")
+    return llm.status()
+
+
+@app.post("/admin/models/switch")
+def admin_models_switch(body: ModelSwitchBody, request: Request):
+    user = _user(request)
+    _need(user, "manage_users")
+    model_id = (body.model_id or "").strip()
+    if not model_id:
+        raise HTTPException(400, detail="Нужен model_id")
+    _ensure_model_free()
+    _validate_model(model_id)
+    _start_model_op("model_switch", user, lambda: llm.switch_model(model_id=model_id), model_id)
+    return JSONResponse({"ok": True, "state": "loading"}, status_code=202)
+
+
+@app.post("/admin/models/load")
+def admin_models_load(body: ModelSwitchBody, request: Request):
+    user = _user(request)
+    _need(user, "manage_users")
+    model_id = (body.model_id or "").strip()
+    if not model_id:
+        raise HTTPException(400, detail="Нужен model_id")
+    _ensure_model_free()
+    _validate_model(model_id)
+    _start_model_op("model_load", user, lambda: llm.load_model(model_id=model_id), model_id)
+    return JSONResponse({"ok": True, "state": "loading"}, status_code=202)
+
+
+@app.post("/admin/models/unload")
+def admin_models_unload(request: Request):
+    user = _user(request)
+    _need(user, "manage_users")
+    _ensure_model_free()
+    _start_model_op("model_unload", user, llm.unload, "")
+    return JSONResponse({"ok": True, "state": "stopping"}, status_code=202)
 
 
 class UiSettingsBody(BaseModel):

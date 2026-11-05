@@ -2083,3 +2083,144 @@ def test_ui_filters_turns_on_separate_path(monkeypatch):
     assert "trace" not in turn
     assert "ratings" not in turn
     assert listed["settings"]["trace_visible"] is False
+
+
+def _model_card(model_id="qvikhr", available=True):
+    return {
+        "id": model_id,
+        "name": "QVikhr",
+        "quant": "Q4_K_M",
+        "files": ["a.gguf"],
+        "size_bytes": 1,
+        "sha256": ["x"],
+        "description": "d",
+        "pros": [],
+        "cons": [],
+        "resources": {},
+        "license": "l",
+        "source": "s",
+        "available": available,
+    }
+
+
+def test_admin_models_lists_models_and_status(monkeypatch):
+    monkeypatch.setattr(api.model_registry, "list_models", lambda: [_model_card()])
+    monkeypatch.setattr(api.llm, "current_model_id", lambda: "qvikhr")
+    monkeypatch.setattr(
+        api.llm, "status", lambda: {"state": "ready", "model_id": "qvikhr"}
+    )
+    payload = TestClient(app).get("/admin/models").json()
+    assert payload["models"][0]["id"] == "qvikhr"
+    assert payload["current_model_id"] == "qvikhr"
+    assert payload["status"]["state"] == "ready"
+
+
+def test_admin_models_status(monkeypatch):
+    monkeypatch.setattr(
+        api.llm, "status", lambda: {"state": "unloaded", "model_id": None}
+    )
+    response = TestClient(app).get("/admin/models/status")
+    assert response.status_code == 200
+    assert response.json()["state"] == "unloaded"
+
+
+def test_admin_models_requires_manage_users(monkeypatch):
+    import auth
+
+    role_id = auth.create_role("Сотрудник")
+    auth.create_user("ivan", "password12", role_id)
+    monkeypatch.setenv("RAG_TEST_USER", auth.user_by_login("ivan")["id"])
+    client = TestClient(app)
+    assert client.get("/admin/models").status_code == 403
+    assert client.get("/admin/models/status").status_code == 403
+    assert client.post("/admin/models/switch", json={"model_id": "qvikhr"}).status_code == 403
+
+
+def test_switch_unknown_model_returns_400(monkeypatch):
+    monkeypatch.setattr(api.model_registry, "get_model", lambda model_id: None)
+    response = TestClient(app).post("/admin/models/switch", json={"model_id": "нет"})
+    assert response.status_code == 400
+
+
+def test_switch_missing_file_returns_400(monkeypatch):
+    monkeypatch.setattr(
+        api.model_registry, "get_model", lambda model_id: _model_card(available=False)
+    )
+    response = TestClient(app).post("/admin/models/switch", json={"model_id": "qvikhr"})
+    assert response.status_code == 400
+
+
+def test_switch_busy_returns_409(monkeypatch):
+    import llm as llm_mod
+
+    monkeypatch.setattr(llm_mod, "_state", llm_mod.READY)
+    monkeypatch.setattr(api.model_registry, "get_model", lambda model_id: _model_card())
+    llm_mod._run_lock.acquire()
+    try:
+        response = TestClient(app).post("/admin/models/switch", json={"model_id": "qvikhr"})
+        assert response.status_code == 409
+    finally:
+        llm_mod._run_lock.release()
+
+
+def test_switch_already_loading_returns_409(monkeypatch):
+    import llm as llm_mod
+
+    monkeypatch.setattr(llm_mod, "_state", llm_mod.LOADING)
+    response = TestClient(app).post("/admin/models/switch", json={"model_id": "qvikhr"})
+    assert response.status_code == 409
+
+
+def test_switch_runs_in_background_returns_202(monkeypatch):
+    import llm as llm_mod
+
+    monkeypatch.setattr(llm_mod, "_state", llm_mod.READY)
+    monkeypatch.setattr(api.model_registry, "get_model", lambda model_id: _model_card())
+    monkeypatch.setattr(api.audit, "write", lambda *a, **k: None)
+    called = threading.Event()
+    monkeypatch.setattr(api.llm, "switch_model", lambda model_id=None: called.set())
+    response = TestClient(app).post("/admin/models/switch", json={"model_id": "qvikhr"})
+    assert response.status_code == 202
+    assert called.wait(3)
+
+
+def test_unload_runs_in_background_returns_202(monkeypatch):
+    import llm as llm_mod
+
+    monkeypatch.setattr(llm_mod, "_state", llm_mod.READY)
+    monkeypatch.setattr(api.audit, "write", lambda *a, **k: None)
+    called = threading.Event()
+    monkeypatch.setattr(api.llm, "unload", lambda: called.set())
+    response = TestClient(app).post("/admin/models/unload")
+    assert response.status_code == 202
+    assert called.wait(3)
+
+
+def test_model_switch_writes_audit(monkeypatch):
+    import llm as llm_mod
+
+    monkeypatch.setattr(llm_mod, "_state", llm_mod.READY)
+    monkeypatch.setattr(api.model_registry, "get_model", lambda model_id: _model_card())
+    events = []
+    monkeypatch.setattr(
+        api.audit, "write", lambda kind, user, payload, ok=True: events.append((kind, payload, ok))
+    )
+    monkeypatch.setattr(api.llm, "switch_model", lambda model_id=None: None)
+    response = TestClient(app).post("/admin/models/switch", json={"model_id": "qvikhr"})
+    assert response.status_code == 202
+    deadline = time.time() + 3
+    while not events and time.time() < deadline:
+        time.sleep(0.01)
+    assert events
+    assert events[0][0] == "model_switch"
+    assert events[0][1]["model_id"] == "qvikhr"
+    assert events[0][2] is True
+
+
+def test_ready_model_loading_returns_503_reason(monkeypatch):
+    import llm as llm_mod
+
+    monkeypatch.setattr(llm_mod, "_state", llm_mod.LOADING)
+    response = TestClient(app).get("/ready")
+    assert response.status_code == 503
+    assert response.json()["reason"] == "model_loading"

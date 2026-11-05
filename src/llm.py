@@ -111,8 +111,6 @@ def _resolve_path(path, model_id):
 
 def _capture_model():
     """Текущий экземпляр модели; типизированная ошибка при неготовности."""
-    if _llm is None:
-        load()
     state = _get_state()
     if state == LOADING:
         raise ModelBusy("модель загружается или переключается")
@@ -143,6 +141,7 @@ def load():
 
 def count_tokens(text):
     """Число токенов модели. Нужно, чтобы промпт уложился в бюджет."""
+    load()
     model = _capture_model()
     with _run_lock:
         return len(model.tokenize(text.encode("utf-8"), add_bos=False))
@@ -240,8 +239,10 @@ def _replace_model(path, model_id):
         _run_lock.release()
 
 
-def _complete_sync(model, system, user, max_tokens, examples, usage_sink):
+def _complete_sync(system, user, max_tokens, examples, usage_sink):
     """Тело ответа. Вызывается из соседнего потока и само не смотрит на предел времени."""
+    load()
+    model = _capture_model()
     data = runtime()
     if max_tokens is None:
         max_tokens = data.get("max_tokens", 200)
@@ -275,12 +276,11 @@ def complete(system, user, max_tokens=None, examples=(), *, usage_sink=None, tim
     if timeout_s is None:
         timeout_s = limits.get("llm_ms", 90000) / 1000
     retries = limits.get("retries", 1)
-    model = _capture_model()
     last_error: BaseException | None = None
     for attempt in range(retries + 1):
         ctx = contextvars.copy_context()
         future = _llm_executor.submit(
-            ctx.run, _complete_sync, model, system, user, max_tokens, examples, usage_sink
+            ctx.run, _complete_sync, system, user, max_tokens, examples, usage_sink
         )
         try:
             return future.result(timeout=timeout_s)
