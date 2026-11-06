@@ -2196,6 +2196,29 @@ def test_admin_provider_reset(monkeypatch):
     assert response.json()["key_source"] == "none"
 
 
+def test_admin_provider_canary_key_no_leak(monkeypatch):
+    import json as _json
+
+    canary = "hk-canary-secret-12345"
+    saved = []
+    monkeypatch.setattr(api.providers, "save_key", lambda v: saved.append(v))
+    monkeypatch.setattr(api.providers, "key_source", lambda: "file")
+    # 422 на неверный тип не эхо-ит ключ из тела запроса
+    response = TestClient(app).put("/admin/provider", json={"api_key": [canary]})
+    assert response.status_code == 422
+    assert canary not in response.text
+    # GET не отдаёт секрет
+    payload = TestClient(app).get("/admin/provider").json()
+    assert canary not in _json.dumps(payload, ensure_ascii=False)
+    # в аудите provider_save — только факт, не значение ключа
+    response = TestClient(app).put("/admin/provider", json={"api_key": canary})
+    assert response.status_code == 200
+    assert saved == [canary]
+    events = api.audit.list_events(kind="provider_save", limit=5)
+    for event in events:
+        assert canary not in _json.dumps(event.get("payload") or {}, ensure_ascii=False)
+
+
 def test_admin_models_test_ok(monkeypatch):
     monkeypatch.setattr(api.llm, "complete", lambda *a, **k: "ОК")
     response = TestClient(app).post("/admin/models/test")
