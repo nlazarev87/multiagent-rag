@@ -1035,6 +1035,11 @@ def query(body: Query, request: Request, response: Response):
             record["tokens_out"] = tokens_out
         if service:
             record["service"] = service
+            if service != "llama.cpp":
+                record["provider_id"] = (
+                    model_registry.selected_provider()[0] or providers.default_provider_id()
+                )
+                record["model_id"] = model_registry.selected_model_id() or ""
         return record
 
     try:
@@ -1765,25 +1770,40 @@ def admin_models_test(request: Request):
 
 @app.get("/admin/provider/usage")
 def admin_provider_usage(request: Request):
-    """Сводка расходов внешнего API: только внешние вызовы (service != llama.cpp)."""
+    """Сводка расходов внешнего API: только внешние вызовы; стоимость по каталогу."""
     _need(_user(request), "manage_users")
     calls = 0
     tokens_in = 0
     tokens_out = 0
+    cost_in = None
+    cost_out = None
     for event in audit.list_events(kind="query", limit=500):
         payload = event.get("payload") or {}
         service = payload.get("service") or ""
         if not service or service == "llama.cpp":
             continue
         calls += 1
-        if payload.get("tokens_in") is not None:
-            tokens_in += int(payload["tokens_in"])
-        if payload.get("tokens_out") is not None:
-            tokens_out += int(payload["tokens_out"])
+        ti = payload.get("tokens_in")
+        to = payload.get("tokens_out")
+        if ti is not None:
+            tokens_in += int(ti)
+        if to is not None:
+            tokens_out += int(to)
+        provider_id = payload.get("provider_id") or providers.default_provider_id()
+        model_id = payload.get("model_id") or ""
+        card = providers.get_provider_model(provider_id, model_id)
+        price_in = card.get("price_in") if card else None
+        price_out = card.get("price_out") if card else None
+        if isinstance(price_in, (int, float)) and ti is not None:
+            cost_in = (cost_in or 0) + int(ti) * float(price_in) / 1_000_000
+        if isinstance(price_out, (int, float)) and to is not None:
+            cost_out = (cost_out or 0) + int(to) * float(price_out) / 1_000_000
     return {
         "calls": calls,
         "tokens_in": tokens_in or None,
         "tokens_out": tokens_out or None,
+        "cost_in": None if cost_in is None else round(cost_in, 4),
+        "cost_out": None if cost_out is None else round(cost_out, 4),
     }
 
 
