@@ -125,7 +125,7 @@ def test_402_insufficient_funds():
     with pytest.raises(ProviderError) as info:
         llm_remote.complete(SETTINGS, MESSAGES)
     assert info.value.status == 402
-    assert "недостаточно средств" in info.value.text
+    assert "квота площадки исчерпана" in info.value.text
 
 
 def test_429_retries_then_ok():
