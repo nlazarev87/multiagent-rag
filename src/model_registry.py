@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 from typing import Any, TypedDict
 
+import providers
 import settings
 
 # Каталоги эмбеддингов/реранкеров и служебные не являются чат-моделями.
@@ -73,31 +74,73 @@ def default_model_id() -> str:
     return _read_config().get("default", "qvikhr")
 
 
-def selected_model_id() -> str | None:
-    """id выбранной модели из data/ui/model.json, или None."""
+def _read_model_json() -> dict[str, Any]:
+    """Выбор из data/ui/model.json. Битый JSON или не-словарь → {}."""
     path = _ui_dir() / "model.json"
     if not path.is_file():
-        return None
+        return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return None
-    value = data.get("model_id") if isinstance(data, dict) else None
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def selected_model_id() -> str | None:
+    """id выбранной модели из data/ui/model.json, или None."""
+    value = _read_model_json().get("model_id")
     return str(value) if value else None
 
 
-def save_selected_model(model_id: str) -> None:
-    """Атомарно сохранить выбранную модель в data/ui/model.json."""
+def selected_backend() -> str:
+    """Текущий backend выбора: 'local' | 'remote'. Старый файл без backend = local."""
+    backend = _read_model_json().get("backend")
+    return backend if backend in ("local", "remote") else "local"
+
+
+def selected_provider() -> tuple[str | None, str | None]:
+    """Операторский выбор площадки: (provider_id, base_url), каждый может быть None."""
+    data = _read_model_json()
+    provider_id = data.get("provider_id")
+    base_url = data.get("base_url")
+    return (str(provider_id) if provider_id else None, str(base_url) if base_url else None)
+
+
+def save_selected_model(
+    model_id: str,
+    backend: str = "local",
+    provider_id: str | None = None,
+    base_url: str | None = None,
+) -> None:
+    """Атомарно сохранить выбор модели в data/ui/model.json.
+
+    Одноаргументный вызов (его делает load_model) пишет backend="local".
+    Поля оператора (provider_id, base_url) пишет та же функция в тот же файл.
+    """
+    payload: dict[str, Any] = {"model_id": model_id, "backend": backend}
+    if provider_id:
+        payload["provider_id"] = provider_id
+    if base_url:
+        payload["base_url"] = base_url
     folder = _ui_dir()
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / "model.json"
     tmp = target.with_name("model.json.tmp")
-    tmp.write_text(json.dumps({"model_id": model_id}, ensure_ascii=False), encoding="utf-8")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     os.replace(tmp, target)
 
 
 def startup_model() -> tuple[str, str | None]:
-    """Путь и id модели для старта: выбранная -> env LLM_MODEL_PATH -> default."""
+    """Путь и id модели для старта.
+
+    Явный remote — без GGUF и без LLM_MODEL_PATH (путь пустой, id внешней модели).
+    Иначе локальная цепочка: выбранный model_id (если GGUF на диске) -> env
+    LLM_MODEL_PATH -> default реестра; битый/пустой файл попадает в эту цепочку.
+    Признак remote смотри отдельно через selected_backend(): пустой путь бывает и
+    у remote, и когда локальной модели нет совсем.
+    """
+    if selected_backend() == "remote":
+        return "", selected_model_id()
     selected = selected_model_id()
     if selected:
         card = get_model(selected)
@@ -235,6 +278,33 @@ def list_models() -> list[ModelCard]:
             files.pop(f, None)
     cards.extend(_fallback_cards(files))
     return cards
+
+
+def list_external_models() -> list[dict[str, Any]]:
+    """Карточки внешних моделей выбранной площадки из config/providers.json."""
+    provider_id, _base_url = selected_provider()
+    provider_id = provider_id or providers.default_provider_id()
+    card = providers.get_provider(provider_id)
+    if card is None:
+        return []
+    result: list[dict[str, Any]] = []
+    for model in card.get("models", []) or []:
+        if not isinstance(model, dict) or not model.get("id"):
+            continue
+        result.append(
+            {
+                "id": str(model["id"]),
+                "name": str(model.get("name") or model["id"]),
+                "backend": "remote",
+                "context": int(model.get("context", 0) or 0),
+                "provider_id": provider_id,
+                "price_in": model.get("price_in"),
+                "price_out": model.get("price_out"),
+                "reasoning": bool(model.get("reasoning")),
+                "available": True,
+            }
+        )
+    return result
 
 
 def get_model(model_id: str) -> ModelCard | None:
