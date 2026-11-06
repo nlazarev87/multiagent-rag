@@ -8,6 +8,7 @@ data/inbox/
 data/models/
 data/load_time.txt
 data/ui/
+data/secrets/
 data/auth.sqlite
 data/audit/
 data/kbs/

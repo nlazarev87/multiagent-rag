@@ -98,3 +98,36 @@ class GraphState(TypedDict, total=False):
     status: str
     feedback: str
     sources: list[Source]
+
+
+class ProviderModel(TypedDict, total=False):
+    """Одна модель внутри площадки (config/providers.json)."""
+
+    id: str
+    name: str
+    context: int
+    price_in: float
+    price_out: float
+    max_tokens: int
+    temperature: float
+    reasoning: bool
+    chars_per_token: float
+
+
+class ProviderCard(TypedDict, total=False):
+    """Карточка площадки (config/providers.json)."""
+
+    id: str
+    name: str
+    base_url: str
+    requires_key: bool
+    http_timeout_ms: int
+    models: list[ProviderModel]
+
+
+class ProviderSettings(TypedDict, total=False):
+    """Операторский выбор площадки (пишется в data/ui/model.json рядом с выбором модели)."""
+
+    provider_id: str
+    base_url: str
+    model_id: str
