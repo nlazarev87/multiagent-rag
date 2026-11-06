@@ -440,6 +440,63 @@ def test_load_remote_marks_ready(monkeypatch):
     assert llm.status()["backend"] == "remote"
 
 
+def test_complete_remote_length_with_content_reasoning_raises(monkeypatch):
+    monkeypatch.setattr(llm.model_registry, "selected_backend", lambda: "remote")
+    monkeypatch.setattr(llm, "_remote_settings", lambda: {"model": "deepseek-ai/DeepSeek-R1"})
+    monkeypatch.setattr(
+        llm.llm_remote,
+        "complete",
+        lambda s, m: {
+            "text": "<think>думаю…</think>",
+            "reasoning": None,
+            "finish_reason": "length",
+        },
+    )
+    with pytest.raises(llm.ProviderError) as info:
+        llm.complete("правила", "вопрос")
+    assert "лимит" in info.value.text
+
+
+def test_remote_settings_custom_base_url_no_key_required(monkeypatch):
+    monkeypatch.setattr(llm.model_registry, "selected_model_id", lambda: "qwen:7b")
+    monkeypatch.setattr(
+        llm.model_registry,
+        "selected_provider",
+        lambda: ("hyperbolic", "http://localhost:11434/v1"),
+    )
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setattr(llm.providers, "load_key", lambda: None)
+    monkeypatch.setattr(
+        llm.providers,
+        "get_provider",
+        lambda pid: {
+            "id": "hyperbolic",
+            "base_url": "https://api.hyperbolic.xyz/v1",
+            "requires_key": True,
+        },
+    )
+    settings = llm._remote_settings()
+    assert settings is not None
+    assert settings["base_url"] == "http://localhost:11434/v1"
+    assert settings["api_key"] == ""
+
+
+def test_remote_settings_unknown_provider_with_base_url(monkeypatch):
+    monkeypatch.setattr(llm.model_registry, "selected_model_id", lambda: "my-model")
+    monkeypatch.setattr(
+        llm.model_registry,
+        "selected_provider",
+        lambda: ("custom", "http://localhost:11434/v1"),
+    )
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setattr(llm.providers, "load_key", lambda: None)
+    monkeypatch.setattr(llm.providers, "get_provider", lambda pid: None)
+    settings = llm._remote_settings()
+    assert settings is not None
+    assert settings["base_url"] == "http://localhost:11434/v1"
+    assert settings["model"] == "my-model"
+
+
 def test_switch_model_resolves_first_shard(monkeypatch):
     built = []
 

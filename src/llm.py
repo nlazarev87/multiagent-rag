@@ -133,20 +133,28 @@ def _remote_active() -> bool:
 
 
 def _remote_settings() -> dict[str, Any] | None:
-    """Настройки remote из выбора + каталога площадки. None, если не настроено."""
+    """Настройки remote из выбора + каталога площадки. None, если не настроено.
+
+    Свой адрес (не из каталога, например Ollama/vLLM) ключа не требует; неизвестный
+    provider_id с заданными адресом и id модели не отбрасывается.
+    """
     model_id = model_registry.selected_model_id() or ""
     provider_id, base_url = model_registry.selected_provider()
     provider_id = provider_id or providers.default_provider_id()
     card = providers.get_provider(provider_id)
-    if card is None:
+    if card is None and not (base_url and model_id):
         return None
+    card_base = str((card or {}).get("base_url", ""))
+    custom_endpoint = base_url is not None and base_url.rstrip("/") != card_base.rstrip("/")
     api_key = providers.load_key()
-    if card.get("requires_key") and not api_key:
+    requires_key = card is not None and not custom_endpoint and bool(card.get("requires_key"))
+    if requires_key and not api_key:
         return None
-    base_url = base_url or str(card.get("base_url", ""))
+    base_url = base_url or card_base
     if not base_url or not model_id:
         return None
-    model_card = providers.get_provider_model(provider_id, model_id) or {}
+    model_card = providers.get_provider_model(provider_id, model_id) if card is not None else None
+    model_card = model_card or {}
     data = runtime()
     max_tokens = int(model_card.get("max_tokens") or data.get("max_tokens", 200))
     raw_temperature = model_card.get("temperature")
@@ -159,7 +167,7 @@ def _remote_settings() -> dict[str, Any] | None:
         "model": model_id,
         "max_tokens": max_tokens,
         "temperature": temperature,
-        "http_timeout_ms": int(card.get("http_timeout_ms", 60000)),
+        "http_timeout_ms": int((card or {}).get("http_timeout_ms", 60000)),
         "retries": int((data.get("timeouts") or {}).get("retries", 1)),
         "chars_per_token": model_card.get("chars_per_token"),
     }
@@ -398,34 +406,33 @@ def _complete_sync(system, user, max_tokens, examples, usage_sink):
     return _strip_thinking(reply["choices"][0]["message"]["content"])
 
 
-def _complete_remote(system, user, max_tokens, examples, usage_sink, no_retry):
-    """Тело remote-ответа: собрать сообщения и звать llm_remote под _run_lock."""
+def _complete_remote_locked(system, user, max_tokens, examples, usage_sink, no_retry):
+    """Тело remote-ответа. Вызывается при удерживаемом _run_lock (снимок бэкенда один)."""
     messages = [{"role": "system", "content": system}]
     for question, reply in examples:
         messages += [{"role": "user", "content": question}, {"role": "assistant", "content": reply}]
     messages.append({"role": "user", "content": user})
-    with _run_lock:
-        settings = _remote_settings()
-        if settings is None:
+    settings = _remote_settings()
+    if settings is None:
+        raise ProviderError(
+            None, "", "внешняя модель не настроена: укажите площадку, ключ и модель"
+        )
+    if max_tokens is not None:
+        settings["max_tokens"] = max_tokens
+    settings["no_retry"] = no_retry
+    result = llm_remote.complete(settings, messages)
+    text = _strip_thinking(result["text"])
+    if not text:
+        if result.get("finish_reason") == "length":
             raise ProviderError(
-                None, "", "внешняя модель не настроена: укажите площадку, ключ и модель"
+                None,
+                settings["model"],
+                "лимит ответа исчерпан рассуждением — поднимите потолок модели или выберите модель без reasoning",
             )
-        if max_tokens is not None:
-            settings["max_tokens"] = max_tokens
-        settings["no_retry"] = no_retry
-        result = llm_remote.complete(settings, messages)
-        text = _strip_thinking(result["text"])
-        if not text:
-            if result.get("reasoning") and result.get("finish_reason") == "length":
-                raise ProviderError(
-                    None,
-                    settings["model"],
-                    "лимит ответа исчерпан рассуждением — поднимите потолок модели или выберите модель без reasoning",
-                )
-            raise ProviderError(None, settings["model"], "пустой ответ площадки")
-        if usage_sink is not None:
-            _add_usage(usage_sink, result.get("tokens_in"), result.get("tokens_out"))
-        return text
+        raise ProviderError(None, settings["model"], "пустой ответ площадки")
+    if usage_sink is not None:
+        _add_usage(usage_sink, result.get("tokens_in"), result.get("tokens_out"))
+    return text
 
 
 def complete(
@@ -434,11 +441,13 @@ def complete(
     """Ответ модели. Примеры идут парами user/assistant перед вопросом.
 
     usage_sink, если передан, получает сумму tokens_in/tokens_out всех вызовов.
+    Выбор remote/local читается один раз под _run_lock и по нему выбирается ветка.
     remote идёт обычным вызовом с таймаутом httpx (повторы — внутри llm_remote;
     no_retry — для «Проверить подключение»). Локальный путь не меняется.
     """
-    if _remote_active():
-        return _complete_remote(system, user, max_tokens, examples, usage_sink, no_retry)
+    with _run_lock:
+        if _remote_active():
+            return _complete_remote_locked(system, user, max_tokens, examples, usage_sink, no_retry)
     limits = runtime().get("timeouts") or {}
     if timeout_s is None:
         timeout_s = limits.get("llm_ms", 90000) / 1000
