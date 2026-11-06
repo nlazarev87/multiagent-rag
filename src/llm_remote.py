@@ -142,7 +142,7 @@ def _error_message(status: int, body: str, data: dict[str, Any] | None, api_key:
             server = data["message"]
     server = _sanitize(server, api_key).strip()
     if status == 402 or "insufficient_quota" in code.lower() or "insufficient" in server.lower():
-        return "недостаточно средств на балансе площадки" + (f": {server}" if server else "")
+        return "квота площадки исчерпана" + (f": {server}" if server else "")
     if status == 401:
         return "площадка отклонила ключ (HTTP 401)" + (f": {server}" if server else "")
     if status == 403:
