@@ -294,3 +294,57 @@ def test_startup_model_priority_default(monkeypatch):
     path, model_id = model_registry.startup_model()
     assert model_id == "qvikhr"
     assert path == str(Path("data/models/a.gguf"))
+
+
+def test_save_selected_model_one_arg_writes_local(monkeypatch, tmp_path):
+    monkeypatch.setattr(model_registry, "_root", lambda: tmp_path)
+    model_registry.save_selected_model("qvikhr")
+    assert model_registry.selected_backend() == "local"
+    assert model_registry.selected_model_id() == "qvikhr"
+
+
+def test_save_selected_model_remote_fields(monkeypatch, tmp_path):
+    monkeypatch.setattr(model_registry, "_root", lambda: tmp_path)
+    model_registry.save_selected_model(
+        "Qwen/Qwen2.5-72B-Instruct",
+        backend="remote",
+        provider_id="hyperbolic",
+        base_url="https://api.hyperbolic.xyz/v1",
+    )
+    assert model_registry.selected_backend() == "remote"
+    assert model_registry.selected_provider() == ("hyperbolic", "https://api.hyperbolic.xyz/v1")
+
+
+def test_selected_backend_old_file_is_local(monkeypatch, tmp_path):
+    monkeypatch.setattr(model_registry, "_root", lambda: tmp_path)
+    ui = tmp_path / "data" / "ui"
+    ui.mkdir(parents=True)
+    (ui / "model.json").write_text('{"model_id": "qvikhr"}', encoding="utf-8")
+    assert model_registry.selected_backend() == "local"
+    assert model_registry.selected_model_id() == "qvikhr"
+
+
+def test_startup_model_remote_no_gguf(monkeypatch, tmp_path):
+    monkeypatch.setattr(model_registry, "_root", lambda: tmp_path)
+    model_registry.save_selected_model("Qwen/Qwen2.5-72B-Instruct", backend="remote")
+    monkeypatch.setenv("LLM_MODEL_PATH", "env.gguf")
+    path, model_id = model_registry.startup_model()
+    assert path == ""
+    assert model_id == "Qwen/Qwen2.5-72B-Instruct"
+
+
+def test_list_external_models_hyperbolic(monkeypatch, tmp_path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "providers.json").write_text(
+        '{"default": "hyperbolic", "providers": [{"id": "hyperbolic", "base_url": "https://api.hyperbolic.xyz/v1",'
+        ' "models": [{"id": "Qwen/Qwen2.5-72B-Instruct", "name": "Qwen", "context": 131072, "price_in": 0.4, "price_out": 1.6}]}]}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(model_registry.providers, "_config_dir", lambda: config_dir)
+    monkeypatch.setattr(model_registry, "_root", lambda: tmp_path)
+    cards = model_registry.list_external_models()
+    assert len(cards) == 1
+    assert cards[0]["id"] == "Qwen/Qwen2.5-72B-Instruct"
+    assert cards[0]["backend"] == "remote"
+    assert cards[0]["context"] == 131072
