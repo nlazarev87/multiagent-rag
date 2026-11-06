@@ -13,7 +13,7 @@
 ## Обязательно
 1. Новый порог → config/runtime.json + docs/thresholds.md.
 2. Поиск/промпт/эвристика → git diff last.json до/после.
-3. Новый публичный контракт → TypedDict в src/types.py + tests/test_contracts.py.
+3. Новый публичный контракт → TypedDict в src/pipeline_types.py + tests/test_contracts.py.
 4. Каждый PR — pytest локально.
 
 ## Формат
