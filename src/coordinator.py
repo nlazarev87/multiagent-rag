@@ -15,6 +15,8 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 
+import model_registry
+import providers
 from agents import (
     CONFIRMED,
     CONFIRMED_OVERVIEW,
@@ -538,10 +540,15 @@ def _run(query: str, dialog_id: str, scope, features: dict | None = None) -> Gra
             prompts = list(getattr(scope, "trace", None) or [])[trace_mark:]
             if prompts:
                 prompt = prompts[-1]
+        service = "llama.cpp"
+        if model_registry.selected_backend() == "remote":
+            provider_id, _ = model_registry.selected_provider()
+            card = providers.get_provider(provider_id or providers.default_provider_id())
+            service = str(card.get("name") or "remote") if card else "remote"
         output: dict[str, Any] = {
             "answer": state.get("answer"),
             "model": model_display_name(),
-            "service": "llama.cpp",
+            "service": service,
             "answer_len": len(state.get("answer") or ""),
         }
         if prompt is not None:
