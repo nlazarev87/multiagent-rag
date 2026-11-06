@@ -2294,6 +2294,17 @@ def test_query_provider_error_returns_answer(monkeypatch):
     assert "Проверьте настройки" in data["answer"]
 
 
+def test_ui_models_external_section():
+    page = Path(__file__).resolve().parents[1] / "src" / "web" / "index.html"
+    text = page.read_text(encoding="utf-8")
+    assert "innerHTML" not in text and "insertAdjacentHTML" not in text
+    assert "data/secrets/" in text
+    assert "Сбросить ключ" in text
+    assert "Внешние модели (API)" in text
+    assert "Расходы внешнего API" in text
+    assert "Проверить подключение" in text
+
+
 def test_switch_missing_file_returns_400(monkeypatch):
     monkeypatch.setattr(
         api.model_registry, "get_model", lambda model_id: _model_card(available=False)
