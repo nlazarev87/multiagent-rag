@@ -2249,6 +2249,51 @@ def test_validate_base_url_ssrf():
     api._validate_base_url("http://localhost:11434/v1")
 
 
+def test_usage_totals_sums_answer_steps():
+    class Scope:
+        trace_steps = [
+            {
+                "node": "answer",
+                "output": {"tokens_in": 10, "tokens_out": 3, "service": "Hyperbolic AI"},
+            },
+            {
+                "node": "answer",
+                "output": {"tokens_in": 5, "tokens_out": 2, "service": "Hyperbolic AI"},
+            },
+            {"node": "search", "output": {}},
+        ]
+
+    assert api._usage_totals(Scope()) == (15, 5, "Hyperbolic AI")
+
+
+def test_admin_provider_usage_only_external(monkeypatch):
+    events = [
+        {
+            "kind": "query",
+            "payload": {"service": "Hyperbolic AI", "tokens_in": 10, "tokens_out": 3},
+        },
+        {"kind": "query", "payload": {"service": "llama.cpp", "tokens_in": 100, "tokens_out": 50}},
+    ]
+    monkeypatch.setattr(api.audit, "list_events", lambda **k: events)
+    payload = TestClient(app).get("/admin/provider/usage").json()
+    assert payload == {"calls": 1, "tokens_in": 10, "tokens_out": 3}
+
+
+def test_query_provider_error_returns_answer(monkeypatch):
+    from llm_remote import ProviderError
+
+    def boom(query, memory_key, scope):
+        raise ProviderError(401, "m", "площадка отклонила ключ")
+
+    monkeypatch.setattr(api, "run", boom)
+    response = TestClient(app).post("/query", json={"query": "вопрос", "dialog_id": "d1"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ошибка модели"
+    assert "площадка отклонила ключ" in data["answer"]
+    assert "Проверьте настройки" in data["answer"]
+
+
 def test_switch_missing_file_returns_400(monkeypatch):
     monkeypatch.setattr(
         api.model_registry, "get_model", lambda model_id: _model_card(available=False)
