@@ -2155,6 +2155,127 @@ def test_switch_unknown_model_returns_400(monkeypatch):
     assert response.status_code == 400
 
 
+def test_admin_provider_get_no_secret(monkeypatch):
+    monkeypatch.setattr(
+        api.providers, "providers", lambda: [{"id": "hyperbolic", "name": "Hyperbolic AI"}]
+    )
+    monkeypatch.setattr(api.providers, "default_provider_id", lambda: "hyperbolic")
+    monkeypatch.setattr(api.providers, "key_source", lambda: "file")
+    monkeypatch.setattr(api.model_registry, "selected_provider", lambda: (None, None))
+    payload = TestClient(app).get("/admin/provider").json()
+    assert payload["key_source"] == "file"
+    assert payload["key_set"] is True
+    assert payload["providers"][0]["id"] == "hyperbolic"
+
+
+def test_admin_provider_put_empty_does_not_erase(monkeypatch):
+    saved = []
+    monkeypatch.setattr(api.providers, "save_key", lambda v: saved.append(v))
+    response = TestClient(app).put("/admin/provider", json={"api_key": ""})
+    assert response.status_code == 200
+    assert saved == []
+
+
+def test_admin_provider_put_saves_key(monkeypatch):
+    saved = []
+    monkeypatch.setattr(api.providers, "save_key", lambda v: saved.append(v))
+    monkeypatch.setattr(api.providers, "key_source", lambda: "file")
+    response = TestClient(app).put("/admin/provider", json={"api_key": "hk-123"})
+    assert response.status_code == 200
+    assert saved == ["hk-123"]
+    assert response.json()["key_source"] == "file"
+
+
+def test_admin_provider_reset(monkeypatch):
+    called = []
+    monkeypatch.setattr(api.providers, "reset_key", lambda: called.append(1))
+    monkeypatch.setattr(api.providers, "key_source", lambda: "none")
+    response = TestClient(app).post("/admin/provider/reset")
+    assert response.status_code == 200
+    assert called == [1]
+    assert response.json()["key_source"] == "none"
+
+
+def test_admin_provider_canary_key_no_leak(monkeypatch):
+    import json as _json
+
+    canary = "hk-canary-secret-12345"
+    saved = []
+    monkeypatch.setattr(api.providers, "save_key", lambda v: saved.append(v))
+    monkeypatch.setattr(api.providers, "key_source", lambda: "file")
+    # 422 на неверный тип не эхо-ит ключ из тела запроса
+    response = TestClient(app).put("/admin/provider", json={"api_key": [canary]})
+    assert response.status_code == 422
+    assert canary not in response.text
+    # GET не отдаёт секрет
+    payload = TestClient(app).get("/admin/provider").json()
+    assert canary not in _json.dumps(payload, ensure_ascii=False)
+    # в аудите provider_save — только факт, не значение ключа
+    response = TestClient(app).put("/admin/provider", json={"api_key": canary})
+    assert response.status_code == 200
+    assert saved == [canary]
+    events = api.audit.list_events(kind="provider_save", limit=5)
+    for event in events:
+        assert canary not in _json.dumps(event.get("payload") or {}, ensure_ascii=False)
+
+
+def test_admin_models_test_ok(monkeypatch):
+    monkeypatch.setattr(api.llm, "complete", lambda *a, **k: "ОК")
+    response = TestClient(app).post("/admin/models/test")
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+
+
+def test_admin_models_test_provider_error(monkeypatch):
+    from llm_remote import ProviderError
+
+    def boom(*a, **k):
+        raise ProviderError(401, "m", "площадка отклонила ключ")
+
+    monkeypatch.setattr(api.llm, "complete", boom)
+    response = TestClient(app).post("/admin/models/test")
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert "ключ" in response.json()["error"]
+
+
+def test_switch_remote_passes_backend_to_facade(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(api.llm, "switch_model", lambda **k: captured.update(k))
+    monkeypatch.setattr(api, "_start_model_op", lambda kind, user, fn, mid: fn())
+    response = TestClient(app).post(
+        "/admin/models/switch",
+        json={
+            "model_id": "Qwen/Qwen2.5-72B-Instruct",
+            "backend": "remote",
+            "provider_id": "hyperbolic",
+            "base_url": "https://api.hyperbolic.xyz/v1",
+        },
+    )
+    assert response.status_code == 202
+    assert captured == {
+        "model_id": "Qwen/Qwen2.5-72B-Instruct",
+        "backend": "remote",
+        "provider_id": "hyperbolic",
+        "base_url": "https://api.hyperbolic.xyz/v1",
+    }
+
+
+def test_validate_base_url_ssrf():
+    import pytest as _pytest
+
+    with _pytest.raises(Exception):
+        api._validate_base_url("http://example.com/v1")
+    with _pytest.raises(Exception):
+        api._validate_base_url("http://169.254.169.254/v1")
+    with _pytest.raises(Exception):
+        api._validate_base_url("https://169.254.169.254.nip.io/v1")
+    with _pytest.raises(Exception):
+        api._validate_base_url("https://2852039166/v1")
+    api._validate_base_url("https://api.hyperbolic.xyz/v1")
+    api._validate_base_url("http://localhost:11434/v1")
+
+
 def test_switch_missing_file_returns_400(monkeypatch):
     monkeypatch.setattr(
         api.model_registry, "get_model", lambda model_id: _model_card(available=False)
