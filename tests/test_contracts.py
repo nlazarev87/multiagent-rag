@@ -75,3 +75,12 @@ def test_trace_step_contract():
         "attempt",
         "timed_out",
     }
+
+
+def test_provider_contract():
+    """ProviderCard/ProviderSettings/ProviderModel — публичный контракт каталога площадок."""
+    from pipeline_types import ProviderCard, ProviderModel, ProviderSettings
+
+    assert set(ProviderCard.__annotations__) >= {"id", "name", "base_url", "requires_key", "models"}
+    assert set(ProviderModel.__annotations__) >= {"id", "name", "context", "price_in", "price_out"}
+    assert set(ProviderSettings.__annotations__) >= {"provider_id", "base_url", "model_id"}
