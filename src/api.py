@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, TypedDict, cast
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -26,6 +27,7 @@ import kb
 import llm
 import model_registry
 import preferences
+import providers
 import trees
 import workspace
 from coordinator import run
@@ -50,6 +52,14 @@ def _session_key(request: Request) -> str:
 limiter = Limiter(key_func=_session_key, key_style="endpoint")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, cast(Any, _rate_limit_exceeded_handler))
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_handler(request: Request, exc: RequestValidationError):
+    """422 без эха тела запроса: ключ/секрет не должен попадать в detail."""
+    return JSONResponse(status_code=422, content={"detail": "Некорректное тело запроса"})
+
+
 INBOX = Path("data/inbox")
 _PUBLIC = {
     ("GET", "/"),
@@ -96,9 +106,11 @@ _upload_lock = threading.Lock()
 
 
 def _files_ok():
+    embed = ROOT / "data" / "models" / "multilingual-e5-small"
+    if model_registry.selected_backend() == "remote":
+        return embed.is_dir()
     path, _model_id = model_registry.startup_model()
     model = Path(path) if path else Path("")
-    embed = ROOT / "data" / "models" / "multilingual-e5-small"
     return model.is_file() and embed.is_dir()
 
 
@@ -152,6 +164,7 @@ def _warm():
 
 @app.on_event("startup")
 def startup():
+    providers.load_env_file()
     if os.environ.get("PYTEST_CURRENT_TEST"):
         _state["started"] = time.time()
         _state["done"] = _files_ok()
@@ -1491,6 +1504,19 @@ def admin_audit_one(event_id: int, request: Request):
 
 class ModelSwitchBody(BaseModel):
     model_id: str = ""
+    backend: str = "local"
+    provider_id: str = ""
+    base_url: str = ""
+
+
+class ProviderBody(BaseModel):
+    api_key: str = ""
+
+
+class ModelTestBody(BaseModel):
+    provider_id: str = ""
+    base_url: str = ""
+    model_id: str = ""
 
 
 def _ensure_model_free():
@@ -1509,6 +1535,30 @@ def _validate_model(model_id):
         raise HTTPException(400, detail="Неизвестная модель")
     if not card.get("available"):
         raise HTTPException(400, detail="Файл модели отсутствует")
+
+
+def _validate_base_url(url: str) -> None:
+    """SSRF-защита адреса площадки: https; http только localhost; metadata запрещён."""
+    if not url:
+        return
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        raise HTTPException(400, detail="Некорректный адрес API")
+    scheme = (parsed.scheme or "").lower()
+    host = (parsed.hostname or "").lower()
+    if scheme not in ("https", "http"):
+        raise HTTPException(400, detail="Адрес API должен быть https")
+    if scheme == "http" and host not in ("localhost", "127.0.0.1", "::1"):
+        raise HTTPException(400, detail="http допускается только для localhost/Ollama")
+    if (
+        host == "169.254.169.254"
+        or host.startswith("169.254.")
+        or host == "metadata.google.internal"
+    ):
+        raise HTTPException(400, detail="Служебный адрес запрещён")
 
 
 def _start_model_op(kind, user, fn, model_id):
@@ -1534,7 +1584,7 @@ def admin_models(request: Request):
     """Список моделей, текущий выбор и состояние."""
     _need(_user(request), "manage_users")
     return {
-        "models": model_registry.list_models(),
+        "models": model_registry.list_models() + model_registry.list_external_models(),
         "current_model_id": llm.current_model_id(),
         "status": llm.status(),
     }
@@ -1554,8 +1604,23 @@ def admin_models_switch(body: ModelSwitchBody, request: Request):
     if not model_id:
         raise HTTPException(400, detail="Нужен model_id")
     _ensure_model_free()
-    _validate_model(model_id)
-    _start_model_op("model_switch", user, lambda: llm.switch_model(model_id=model_id), model_id)
+    backend = (body.backend or "local").strip()
+    if backend == "remote":
+        _validate_base_url((body.base_url or "").strip())
+        _start_model_op(
+            "model_switch",
+            user,
+            lambda: llm.switch_model(
+                model_id=model_id,
+                backend="remote",
+                provider_id=(body.provider_id or "").strip() or None,
+                base_url=(body.base_url or "").strip() or None,
+            ),
+            model_id,
+        )
+    else:
+        _validate_model(model_id)
+        _start_model_op("model_switch", user, lambda: llm.switch_model(model_id=model_id), model_id)
     return JSONResponse({"ok": True, "state": "loading"}, status_code=202)
 
 
@@ -1579,6 +1644,61 @@ def admin_models_unload(request: Request):
     _ensure_model_free()
     _start_model_op("model_unload", user, llm.unload, "")
     return JSONResponse({"ok": True, "state": "stopping"}, status_code=202)
+
+
+@app.get("/admin/provider")
+def admin_provider_get(request: Request):
+    """Настройки площадки: каталог, выбор, признак ключа (не секрет)."""
+    _need(_user(request), "manage_users")
+    source = providers.key_source()
+    selected_provider_id, selected_base_url = model_registry.selected_provider()
+    return {
+        "providers": providers.providers(),
+        "default_provider_id": providers.default_provider_id(),
+        "key_source": source,
+        "key_set": source != "none",
+        "selected_provider_id": selected_provider_id,
+        "selected_base_url": selected_base_url,
+    }
+
+
+@app.put("/admin/provider")
+def admin_provider_put(body: ProviderBody, request: Request):
+    """Записать ключ площадки в data/secrets/llm_api_key (пустое поле — не менять)."""
+    user = _user(request)
+    _need(user, "manage_users")
+    key = (body.api_key or "").strip()
+    if key:
+        providers.save_key(key)
+    audit.write("provider_save", user, {"changed": bool(key)}, ok=True)
+    return {"ok": True, "key_source": providers.key_source()}
+
+
+@app.post("/admin/provider/reset")
+def admin_provider_reset(request: Request):
+    """Сбросить ключ: удалить файл и память (env-источник не трогается)."""
+    user = _user(request)
+    _need(user, "manage_users")
+    providers.reset_key()
+    audit.write("provider_reset", user, {}, ok=True)
+    return {"ok": True, "key_source": providers.key_source()}
+
+
+@app.post("/admin/models/test")
+def admin_models_test(request: Request):
+    """Проверить связь с текущей моделью: короткий запрос, без RAG, без повторов."""
+    user = _user(request)
+    _need(user, "manage_users")
+    try:
+        llm.complete("Проверка связи", "Ответь одним словом: ОК", max_tokens=8, no_retry=True)
+    except llm.ProviderError as exc:
+        audit.write("model_test", user, {"ok": False, "status": exc.status}, ok=False)
+        return JSONResponse({"ok": False, "error": exc.text}, status_code=200)
+    except llm.ModelError as exc:
+        audit.write("model_test", user, {"ok": False}, ok=False)
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=200)
+    audit.write("model_test", user, {"ok": True}, ok=True)
+    return {"ok": True}
 
 
 class UiSettingsBody(BaseModel):
