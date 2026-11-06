@@ -2297,13 +2297,23 @@ def test_admin_provider_usage_only_external(monkeypatch):
     events = [
         {
             "kind": "query",
-            "payload": {"service": "Hyperbolic AI", "tokens_in": 10, "tokens_out": 3},
+            "payload": {
+                "service": "Hyperbolic AI",
+                "tokens_in": 1000,
+                "tokens_out": 500,
+                "provider_id": "hyperbolic",
+                "model_id": "Qwen/Qwen2.5-72B-Instruct",
+            },
         },
         {"kind": "query", "payload": {"service": "llama.cpp", "tokens_in": 100, "tokens_out": 50}},
     ]
     monkeypatch.setattr(api.audit, "list_events", lambda **k: events)
     payload = TestClient(app).get("/admin/provider/usage").json()
-    assert payload == {"calls": 1, "tokens_in": 10, "tokens_out": 3}
+    assert payload["calls"] == 1
+    assert payload["tokens_in"] == 1000
+    assert payload["tokens_out"] == 500
+    assert payload["cost_in"] == round(1000 * 0.4 / 1_000_000, 4)
+    assert payload["cost_out"] == round(500 * 1.6 / 1_000_000, 4)
 
 
 def test_query_provider_error_returns_answer(monkeypatch):
@@ -2319,6 +2329,19 @@ def test_query_provider_error_returns_answer(monkeypatch):
     assert data["status"] == "ошибка модели"
     assert "площадка отклонила ключ" in data["answer"]
     assert "Проверьте настройки" in data["answer"]
+
+
+def test_ui_models_external_section():
+    page = Path(__file__).resolve().parents[1] / "src" / "web" / "index.html"
+    text = page.read_text(encoding="utf-8")
+    assert "innerHTML" not in text and "insertAdjacentHTML" not in text
+    assert "data/secrets/" in text
+    assert "Сбросить ключ" in text
+    assert "Внешние модели (API)" in text
+    assert "Расходы внешнего API" in text
+    assert "Проверить подключение" in text
+    assert "Оценка стоимости" in text
+    assert "Другая (OpenAI-совместимая)" in text
 
 
 def test_switch_missing_file_returns_400(monkeypatch):

@@ -3089,6 +3089,16 @@
     let modelCurrentId = "";
     let modelCurrentState = "unloaded";
     let modelBusy = false;
+    let providerData = { providers: [], default_provider_id: "", key_source: "none" };
+    let providerSelect = null;
+    let baseUrlInput = null;
+    let keyInput = null;
+    let keyStatusEl = null;
+    let externalSelect = null;
+    let externalFeedback = null;
+    let usageBody = null;
+    let externalModelInput = null;
+    let externalCurrentId = "";
 
     function modelDisplayName(modelId, fallback) {
       const card = modelCards.find((m) => m.id === modelId);
@@ -3185,6 +3195,179 @@
       }
     }
 
+    function keySourceLabel(source) {
+      if (source === "env") return "ключ задан окружением";
+      if (source === "file") return "ключ задан · файл";
+      return "ключ не задан";
+    }
+
+    function externalCardFor(providerId) {
+      return (providerData.providers || []).find((p) => p.id === providerId);
+    }
+
+    function providerIsCustom() {
+      const id = providerSelect ? providerSelect.value : "";
+      return id === "custom" || id === "custom-server";
+    }
+
+    function populateExternalModels(selectedModelId) {
+      if (!externalSelect) return;
+      if (providerIsCustom()) {
+        externalSelect.style.display = "none";
+        if (externalModelInput) {
+          externalModelInput.style.display = "";
+          if (selectedModelId) externalModelInput.value = selectedModelId;
+        }
+        return;
+      }
+      if (externalModelInput) externalModelInput.style.display = "none";
+      externalSelect.style.display = "";
+      externalSelect.replaceChildren();
+      const card = externalCardFor(providerSelect ? providerSelect.value : "");
+      const models = (card && card.models) || [];
+      models.forEach((model) => {
+        const option = document.createElement("option");
+        option.value = model.id || "";
+        option.textContent = (model.name || model.id || "") + " · контекст " + (model.context || "?");
+        externalSelect.append(option);
+      });
+      if (selectedModelId) {
+        const found = [...externalSelect.options].find((o) => o.value === selectedModelId);
+        if (found) externalSelect.value = selectedModelId;
+      }
+    }
+
+    async function refreshProviderState() {
+      let data = providerData;
+      try {
+        data = await (await fetch("/admin/provider")).json();
+      } catch (error) {
+        data = providerData;
+      }
+      providerData = data;
+      if (keyStatusEl) {
+        keyStatusEl.textContent = keySourceLabel(data.key_source || "none");
+        keyStatusEl.className = data.key_source === "none" ? "badge badge-mute" : "badge badge-ok";
+      }
+      if (providerSelect) {
+        providerSelect.replaceChildren();
+        (data.providers || []).forEach((p) => {
+          const option = document.createElement("option");
+          option.value = p.id || "";
+          option.textContent = p.name || p.id || "";
+          providerSelect.append(option);
+        });
+        const optOther = document.createElement("option");
+        optOther.value = "custom";
+        optOther.textContent = "Другая (OpenAI-совместимая)";
+        providerSelect.append(optOther);
+        const optServer = document.createElement("option");
+        optServer.value = "custom-server";
+        optServer.textContent = "Собственный сервер (vLLM / Ollama)";
+        providerSelect.append(optServer);
+        if (data.selected_provider_id) {
+          const found = [...providerSelect.options].find((o) => o.value === data.selected_provider_id);
+          if (found) providerSelect.value = data.selected_provider_id;
+        } else if (data.default_provider_id) {
+          const found = [...providerSelect.options].find((o) => o.value === data.default_provider_id);
+          if (found) providerSelect.value = data.default_provider_id;
+        }
+        if (data.selected_base_url && baseUrlInput) {
+          baseUrlInput.value = data.selected_base_url;
+        } else if (baseUrlInput && !providerIsCustom()) {
+          const card = externalCardFor(providerSelect.value);
+          baseUrlInput.value = (card && card.base_url) || "";
+        }
+        populateExternalModels(externalCurrentId || "");
+      }
+    }
+
+    async function applyExternal() {
+      if (!externalFeedback || !externalSelect) return;
+      externalFeedback.textContent = "";
+      const key = keyInput ? keyInput.value.trim() : "";
+      if (key) {
+        try {
+          await fetch("/admin/provider", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ api_key: key }),
+          });
+        } catch (error) {
+          externalFeedback.textContent = "Сервер не ответил";
+          return;
+        }
+      }
+      const modelId = providerIsCustom()
+        ? (externalModelInput ? externalModelInput.value.trim() : "")
+        : (externalSelect ? externalSelect.value : "");
+      const body = {
+        model_id: modelId,
+        backend: "remote",
+        provider_id: providerSelect ? providerSelect.value : "",
+        base_url: baseUrlInput ? baseUrlInput.value.trim() : "",
+      };
+      let response;
+      try {
+        response = await fetch("/admin/models/switch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      } catch (error) {
+        externalFeedback.textContent = "Сервер не ответил";
+        return;
+      }
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        externalFeedback.textContent = "Выполняется…";
+        externalCurrentId = modelId;
+        modelBusy = true;
+        refreshModelControls();
+        if (modelPollTimer) { clearTimeout(modelPollTimer); modelPollTimer = null; }
+        pollModelStatus();
+        await refreshProviderState();
+      } else {
+        externalFeedback.textContent = data.detail || "Ошибка";
+      }
+    }
+
+    async function testConnection() {
+      if (!externalFeedback) return;
+      externalFeedback.textContent = "Проверка…";
+      let data;
+      try {
+        const response = await fetch("/admin/models/test", { method: "POST" });
+        data = await response.json().catch(() => ({}));
+      } catch (error) {
+        externalFeedback.textContent = "Сервер не ответил";
+        return;
+      }
+      if (data.ok) {
+        externalFeedback.textContent = "Подключение успешно";
+      } else {
+        externalFeedback.textContent = data.error || "Не удалось подключиться";
+      }
+    }
+
+    async function renderUsage() {
+      if (!usageBody) return;
+      usageBody.replaceChildren();
+      let data;
+      try {
+        data = await (await fetch("/admin/provider/usage")).json();
+      } catch (error) {
+        data = {};
+      }
+      usageBody.append(element("p", "", "Запросы (внешние): " + (data.calls === undefined ? "—" : data.calls)));
+      usageBody.append(element("p", "", "Токены вход: " + (data.tokens_in == null ? "неизвестно" : data.tokens_in)));
+      usageBody.append(element("p", "", "Токены выход: " + (data.tokens_out == null ? "неизвестно" : data.tokens_out)));
+      const costIn = data.cost_in == null ? "неизвестно" : "$" + data.cost_in;
+      const costOut = data.cost_out == null ? "неизвестно" : "$" + data.cost_out;
+      usageBody.append(element("p", "", "Оценка стоимости (вход / выход): " + costIn + " / " + costOut));
+      usageBody.append(element("p", "setting-hint", "Детали по каждому вопросу — в «Журнале». Если площадка не вернула usage — «неизвестно», не ноль."));
+    }
+
     async function showModels() {
       const token = startAdminView();
       if (modelPollTimer) { clearTimeout(modelPollTimer); modelPollTimer = null; }
@@ -3218,6 +3401,83 @@
       pickCard.append(pickBody);
       adminBody.append(pickCard, feedback);
 
+      // Внешние модели (API)
+      const extCard = element("div", "role-card");
+      const extHead = element("div", "rc-head");
+      extHead.append(element("span", "rc-name", "Внешние модели (API)"));
+      extCard.append(extHead);
+      const extBody = element("div", "rc-body");
+
+      const pField = element("div", "field");
+      pField.append(element("label", "", "Площадка"));
+      providerSelect = document.createElement("select");
+      providerSelect.className = "select";
+      providerSelect.addEventListener("change", () => {
+        if (!providerIsCustom()) {
+          const card = externalCardFor(providerSelect.value);
+          if (baseUrlInput) baseUrlInput.value = (card && card.base_url) || "";
+        }
+        populateExternalModels(externalCurrentId || "");
+      });
+      pField.append(providerSelect);
+
+      const urlField = element("div", "field");
+      urlField.append(element("label", "", "Адрес API (base URL)"));
+      baseUrlInput = document.createElement("input");
+      baseUrlInput.className = "input";
+      baseUrlInput.placeholder = "https://api.hyperbolic.xyz/v1";
+      urlField.append(baseUrlInput);
+      extBody.append(pField, urlField);
+
+      const keyField = element("div", "field");
+      keyField.append(element("label", "", "API-ключ"));
+      keyInput = document.createElement("input");
+      keyInput.type = "password";
+      keyInput.className = "input";
+      keyInput.placeholder = "Введите ключ (пустое поле — не менять)";
+      keyStatusEl = badge("ключ не задан", "mute");
+      const keyActions = element("div", "row-actions");
+      keyActions.append(keyStatusEl, adminButton("Сбросить ключ", async () => {
+        try { await fetch("/admin/provider/reset", { method: "POST" }); } catch (error) {}
+        await refreshProviderState();
+      }));
+      keyField.append(keyInput, keyActions);
+      keyField.append(element("p", "setting-hint", "Ключ хранится в data/secrets/ (git игнорирует) и подхватывается при старте. Пустое поле — не менять; vLLM/Ollama обычно не требуют ключа."));
+      extBody.append(keyField);
+
+      const mField = element("div", "field");
+      mField.append(element("label", "", "Модель"));
+      externalSelect = document.createElement("select");
+      externalSelect.className = "select";
+      mField.append(externalSelect);
+      externalModelInput = document.createElement("input");
+      externalModelInput.className = "input";
+      externalModelInput.placeholder = "id модели, например Qwen/Qwen2.5-72B-Instruct";
+      externalModelInput.style.display = "none";
+      mField.append(externalModelInput);
+      extBody.append(mField);
+
+      externalFeedback = element("p", "model-feedback");
+      const extActions = element("div", "row-actions");
+      extActions.append(
+        adminButton("Применить", () => applyExternal()),
+        adminButton("Проверить подключение", () => testConnection())
+      );
+      extBody.append(extActions, externalFeedback);
+      extBody.append(element("p", "setting-hint", "«Применить» сохраняет ключ и переключает на внешнюю модель — локальная GGUF выгружается из памяти. «Проверить» проверяет текущее подключение."));
+      extCard.append(extBody);
+      adminBody.append(extCard);
+
+      // Расходы внешнего API
+      const usageCard = element("div", "role-card");
+      const usageHead = element("div", "rc-head");
+      usageHead.append(element("span", "rc-name", "Расходы внешнего API"));
+      usageHead.append(adminButton("Обновить", () => renderUsage()));
+      usageCard.append(usageHead);
+      usageBody = element("div", "rc-body");
+      usageCard.append(usageBody);
+      adminBody.append(usageCard);
+
       modelCards = [];
       let currentModelId = "";
       let status = null;
@@ -3241,12 +3501,16 @@
 
       select.replaceChildren();
       modelCards.forEach((model) => {
+        if (model.backend === "remote") return;
         const option = document.createElement("option");
         option.value = model.id || "";
         option.textContent = (model.name || model.id || "") + (model.available ? "" : " (файл отсутствует)");
         option.disabled = !model.available;
         select.append(option);
       });
+      externalCurrentId = status && status.backend === "remote" ? status.model_id || "" : "";
+      await refreshProviderState();
+      await renderUsage();
       if (modelCurrentId && modelCards.some((m) => m.id === modelCurrentId)) {
         select.value = modelCurrentId;
       } else if (modelCurrentId) {
