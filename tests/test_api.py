@@ -2245,6 +2245,10 @@ def test_validate_base_url_ssrf():
         api._validate_base_url("http://example.com/v1")
     with _pytest.raises(Exception):
         api._validate_base_url("http://169.254.169.254/v1")
+    with _pytest.raises(Exception):
+        api._validate_base_url("https://169.254.169.254.nip.io/v1")
+    with _pytest.raises(Exception):
+        api._validate_base_url("https://2852039166/v1")
     api._validate_base_url("https://api.hyperbolic.xyz/v1")
     api._validate_base_url("http://localhost:11434/v1")
 
