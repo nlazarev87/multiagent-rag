@@ -994,6 +994,26 @@ def ui_ratings(dialog_id: str, turn_index: int, body: Ratings):
     return turn
 
 
+def _usage_totals(scope) -> tuple[int | None, int | None, str | None]:
+    """Сумма токенов всех шагов answer в трассе + имя площадки первого шага."""
+    tokens_in = 0
+    tokens_out = 0
+    service = None
+    for step in getattr(scope, "trace_steps", None) or []:
+        if not isinstance(step, dict) or step.get("node") != "answer":
+            continue
+        output = step.get("output")
+        if not isinstance(output, dict):
+            continue
+        if output.get("tokens_in") is not None:
+            tokens_in += int(output["tokens_in"])
+        if output.get("tokens_out") is not None:
+            tokens_out += int(output["tokens_out"])
+        if service is None and output.get("service"):
+            service = str(output["service"])
+    return (tokens_in or None, tokens_out or None, service)
+
+
 @limiter.limit("10/minute")
 def query(body: Query, request: Request, response: Response):
     """Ответить на вопрос. Базу выбирает проверка прав, не поле запроса."""
@@ -1009,6 +1029,13 @@ def query(body: Query, request: Request, response: Response):
         if runtime().get("audit", {}).get("trace_json", True):
             record["trace_json"] = getattr(scope, "trace_steps", None)
         record["model"] = llm.model_display_name()
+        tokens_in, tokens_out, service = _usage_totals(scope)
+        if tokens_in is not None:
+            record["tokens_in"] = tokens_in
+        if tokens_out is not None:
+            record["tokens_out"] = tokens_out
+        if service:
+            record["service"] = service
         return record
 
     try:
@@ -1073,6 +1100,41 @@ def query(body: Query, request: Request, response: Response):
             sources=[],
             request_id=request_id,
             feedback="timeout",
+        )
+    except llm.ProviderError as exc:
+        answer_text = (
+            "Внешняя модель недоступна: "
+            + exc.text
+            + ". Проверьте настройки площадки во вкладке «Модель» или переключитесь на локальную модель."
+        )
+        workspace.append_turn(
+            body.dialog_id,
+            body.query,
+            {"answer": answer_text, "status": "ошибка модели", "document_names": [], "sources": []},
+            create=not existed,
+            trace=getattr(scope, "trace_steps", None),
+        )
+        audit.write(
+            "query",
+            user,
+            _record(
+                query=body.query,
+                answer=answer_text,
+                status="ошибка модели",
+                dialog_id=body.dialog_id,
+                sources=[],
+                attempts=getattr(scope, "attempts", 0) or 0,
+                feedback=exc.text,
+                error="provider",
+            ),
+            ok=False,
+        )
+        return QueryResponse(
+            answer=answer_text,
+            status="ошибка модели",
+            document_names=[],
+            sources=[],
+            request_id=request_id,
         )
     except Exception as exc:
         audit.write(
@@ -1724,6 +1786,30 @@ def admin_models_test(request: Request):
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=200)
     audit.write("model_test", user, {"ok": True}, ok=True)
     return {"ok": True}
+
+
+@app.get("/admin/provider/usage")
+def admin_provider_usage(request: Request):
+    """Сводка расходов внешнего API: только внешние вызовы (service != llama.cpp)."""
+    _need(_user(request), "manage_users")
+    calls = 0
+    tokens_in = 0
+    tokens_out = 0
+    for event in audit.list_events(kind="query", limit=500):
+        payload = event.get("payload") or {}
+        service = payload.get("service") or ""
+        if not service or service == "llama.cpp":
+            continue
+        calls += 1
+        if payload.get("tokens_in") is not None:
+            tokens_in += int(payload["tokens_in"])
+        if payload.get("tokens_out") is not None:
+            tokens_out += int(payload["tokens_out"])
+    return {
+        "calls": calls,
+        "tokens_in": tokens_in or None,
+        "tokens_out": tokens_out or None,
+    }
 
 
 class UiSettingsBody(BaseModel):
