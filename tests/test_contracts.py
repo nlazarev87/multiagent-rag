@@ -11,6 +11,7 @@ import inspect
 import pytest
 
 import agents
+import llm
 import store
 
 # имя, функция, обязательные, известные необязательные
@@ -37,6 +38,13 @@ CONTRACTS = [
         ["clear_query"],
         ["limit", "document_names", "debug", "features"],
     ),
+    (
+        "complete",
+        llm.complete,
+        ["system", "user"],
+        ["max_tokens", "examples", "usage_sink", "timeout_s", "no_retry"],
+    ),
+    ("count_tokens", llm.count_tokens, ["text"], []),
 ]
 
 
