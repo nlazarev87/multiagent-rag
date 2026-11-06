@@ -11,7 +11,10 @@ import threading
 from pathlib import Path
 from typing import Any, cast
 
+import llm_remote
 import model_registry
+import providers
+from llm_remote import ProviderError
 from settings import runtime
 
 CONTEXT = 4096
@@ -124,8 +127,75 @@ def _capture_model():
     return _llm
 
 
+def _remote_active() -> bool:
+    """Выбран ли remote-бэкенд (отдельное чтение data/ui/model.json)."""
+    return model_registry.selected_backend() == "remote"
+
+
+def _remote_settings() -> dict[str, Any] | None:
+    """Настройки remote из выбора + каталога площадки. None, если не настроено."""
+    model_id = model_registry.selected_model_id() or ""
+    provider_id, base_url = model_registry.selected_provider()
+    provider_id = provider_id or providers.default_provider_id()
+    card = providers.get_provider(provider_id)
+    if card is None:
+        return None
+    api_key = providers.load_key()
+    if card.get("requires_key") and not api_key:
+        return None
+    base_url = base_url or str(card.get("base_url", ""))
+    if not base_url or not model_id:
+        return None
+    model_card = providers.get_provider_model(provider_id, model_id) or {}
+    data = runtime()
+    max_tokens = int(model_card.get("max_tokens") or data.get("max_tokens", 200))
+    raw_temperature = model_card.get("temperature")
+    if raw_temperature is None:
+        raw_temperature = data.get("temperature", 0.0)
+    temperature = float(raw_temperature)
+    return {
+        "base_url": base_url,
+        "api_key": api_key or "",
+        "model": model_id,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "http_timeout_ms": int(card.get("http_timeout_ms", 60000)),
+        "retries": int((data.get("timeouts") or {}).get("retries", 1)),
+        "chars_per_token": model_card.get("chars_per_token"),
+    }
+
+
+def _estimate_tokens(text: str) -> int:
+    """Консервативная оценка токенов для remote: len//2 или chars_per_token из карточки."""
+    settings = _remote_settings()
+    chars = (settings or {}).get("chars_per_token")
+    if isinstance(chars, (int, float)) and float(chars) > 0:
+        return max(1, int(len(text) / float(chars)))
+    return max(1, len(text) // 2)
+
+
+def _add_usage(usage_sink, tokens_in, tokens_out):
+    """Прибавить токены к общему счётчику (сумма всех вызовов за вопрос)."""
+    if tokens_in is not None:
+        usage_sink["tokens_in"] = (usage_sink.get("tokens_in") or 0) + int(tokens_in)
+    if tokens_out is not None:
+        usage_sink["tokens_out"] = (usage_sink.get("tokens_out") or 0) + int(tokens_out)
+
+
+def _mark_remote_ready() -> None:
+    """Состояние READY для remote без загрузки GGUF."""
+    global loaded
+    model_id = model_registry.selected_model_id() or ""
+    _set_state(READY)
+    _set_identity(model_id, model_id.rsplit("/", 1)[-1] if model_id else "", "")
+    loaded = True
+
+
 def load():
     """Открыть GGUF один раз: выбранная модель -> env LLM_MODEL_PATH -> default."""
+    if _remote_active():
+        _mark_remote_ready()
+        return
     if _llm is None:
         with _load_lock:
             if _llm is None:
@@ -144,6 +214,8 @@ def load():
 
 def count_tokens(text):
     """Число токенов модели. Нужно, чтобы промпт уложился в бюджет."""
+    if _remote_active():
+        return _estimate_tokens(text)
     load()
     model = _capture_model()
     with _run_lock:
@@ -181,12 +253,14 @@ def current_model_id():
 
 def status():
     """Состояние и идентичность текущей модели."""
+    backend = "remote" if _remote_active() else "local"
     with _state_lock:
         return {
             "state": _state,
             "model_id": _model_id,
             "model_name": _model_name,
             "model_path": _model_path,
+            "backend": backend,
         }
 
 
@@ -200,9 +274,34 @@ def load_model(path=None, model_id=None):
         model_registry.save_selected_model(resolved_id)
 
 
-def switch_model(path=None, model_id=None):
-    """Переключиться на новую модель. Синоним load_model."""
+def switch_model(path=None, model_id=None, backend="local", provider_id=None, base_url=None):
+    """Переключиться на модель. remote — сохранить выбор без GGUF; local — load_model."""
+    if backend == "remote":
+        return _switch_remote(model_id, provider_id, base_url)
     return load_model(path=path, model_id=model_id)
+
+
+def _switch_remote(model_id, provider_id, base_url):
+    """Переключение на remote: выгрузить локальную GGUF, сохранить выбор одним вызовом."""
+    global loaded
+    if not _run_lock.acquire(timeout=_BUSY_TIMEOUT):
+        raise ModelBusy("модель занята генерацией")
+    try:
+        if _llm is not None:
+            _set_state(STOPPING)
+            try:
+                _llm.close()
+            except Exception:
+                pass
+            _assign_llm(None)
+        model_registry.save_selected_model(
+            model_id, backend="remote", provider_id=provider_id, base_url=base_url
+        )
+        _set_identity(model_id, model_id.rsplit("/", 1)[-1] if model_id else "", "")
+        _set_state(READY)
+        loaded = True
+    finally:
+        _run_lock.release()
 
 
 def unload():
@@ -295,19 +394,51 @@ def _complete_sync(system, user, max_tokens, examples, usage_sink):
         )
     usage = reply.get("usage") if isinstance(reply, dict) else None
     if usage_sink is not None and isinstance(usage, dict):
-        usage_sink["tokens_in"] = usage.get("prompt_tokens")
-        usage_sink["tokens_out"] = usage.get("completion_tokens")
+        _add_usage(usage_sink, usage.get("prompt_tokens"), usage.get("completion_tokens"))
     return _strip_thinking(reply["choices"][0]["message"]["content"])
 
 
-def complete(system, user, max_tokens=None, examples=(), *, usage_sink=None, timeout_s=None):
+def _complete_remote(system, user, max_tokens, examples, usage_sink, no_retry):
+    """Тело remote-ответа: собрать сообщения и звать llm_remote под _run_lock."""
+    messages = [{"role": "system", "content": system}]
+    for question, reply in examples:
+        messages += [{"role": "user", "content": question}, {"role": "assistant", "content": reply}]
+    messages.append({"role": "user", "content": user})
+    with _run_lock:
+        settings = _remote_settings()
+        if settings is None:
+            raise ProviderError(
+                None, "", "внешняя модель не настроена: укажите площадку, ключ и модель"
+            )
+        if max_tokens is not None:
+            settings["max_tokens"] = max_tokens
+        settings["no_retry"] = no_retry
+        result = llm_remote.complete(settings, messages)
+        text = _strip_thinking(result["text"])
+        if not text:
+            if result.get("reasoning") and result.get("finish_reason") == "length":
+                raise ProviderError(
+                    None,
+                    settings["model"],
+                    "лимит ответа исчерпан рассуждением — поднимите потолок модели или выберите модель без reasoning",
+                )
+            raise ProviderError(None, settings["model"], "пустой ответ площадки")
+        if usage_sink is not None:
+            _add_usage(usage_sink, result.get("tokens_in"), result.get("tokens_out"))
+        return text
+
+
+def complete(
+    system, user, max_tokens=None, examples=(), *, usage_sink=None, timeout_s=None, no_retry=False
+):
     """Ответ модели. Примеры идут парами user/assistant перед вопросом.
 
-    usage_sink, если передан, получает tokens_in и tokens_out из ответа модели.
-    Старый вызов без этого аргумента возвращает только текст.
-    Предел времени — timeouts.llm_ms. Повтор один, если в конфиге retries=1.
-    Поток с моделью после предела не обрывается: он дописывает ответ уже без слушателя.
+    usage_sink, если передан, получает сумму tokens_in/tokens_out всех вызовов.
+    remote идёт обычным вызовом с таймаутом httpx (повторы — внутри llm_remote;
+    no_retry — для «Проверить подключение»). Локальный путь не меняется.
     """
+    if _remote_active():
+        return _complete_remote(system, user, max_tokens, examples, usage_sink, no_retry)
     limits = runtime().get("timeouts") or {}
     if timeout_s is None:
         timeout_s = limits.get("llm_ms", 90000) / 1000

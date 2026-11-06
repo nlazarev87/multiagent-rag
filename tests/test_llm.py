@@ -359,6 +359,87 @@ def test_complete_during_loading_raises_modelbusy(monkeypatch):
         llm.complete("s", "u")
 
 
+def test_count_tokens_remote_does_not_build_model(monkeypatch):
+    monkeypatch.setattr(llm.model_registry, "selected_backend", lambda: "remote")
+    monkeypatch.setattr(llm, "_estimate_tokens", lambda text: 7)
+    built = []
+    monkeypatch.setattr(llm, "_build_model", lambda path: built.append(path))
+    assert llm.count_tokens("любой текст") == 7
+    assert built == []
+
+
+def test_complete_remote_calls_llm_remote(monkeypatch):
+    monkeypatch.setattr(llm.model_registry, "selected_backend", lambda: "remote")
+    monkeypatch.setattr(
+        llm, "_remote_settings", lambda: {"model": "Qwen", "max_tokens": 200, "temperature": 0.0}
+    )
+    captured = {}
+
+    def fake_complete(settings, messages):
+        captured["messages"] = messages
+        return {
+            "text": " Ответ ",
+            "reasoning": None,
+            "finish_reason": "stop",
+            "tokens_in": 5,
+            "tokens_out": 2,
+        }
+
+    monkeypatch.setattr(llm.llm_remote, "complete", fake_complete)
+    sink = {}
+    assert llm.complete("правила", "вопрос", usage_sink=sink) == "Ответ"
+    assert sink == {"tokens_in": 5, "tokens_out": 2}
+    assert captured["messages"][-1] == {"role": "user", "content": "вопрос"}
+
+
+def test_complete_remote_empty_after_strip_raises(monkeypatch):
+    monkeypatch.setattr(llm.model_registry, "selected_backend", lambda: "remote")
+    monkeypatch.setattr(llm, "_remote_settings", lambda: {"model": "Qwen"})
+    monkeypatch.setattr(
+        llm.llm_remote,
+        "complete",
+        lambda s, m: {"text": "  ", "reasoning": None, "finish_reason": "stop"},
+    )
+    with pytest.raises(llm.ProviderError) as info:
+        llm.complete("правила", "вопрос")
+    assert "пустой ответ" in info.value.text
+
+
+def test_switch_remote_saves_selection_once(monkeypatch):
+    saved = []
+    monkeypatch.setattr(
+        llm.model_registry,
+        "save_selected_model",
+        lambda *a, **k: saved.append((a, k)),
+    )
+    monkeypatch.setattr(llm, "_llm", None)
+    llm.switch_model(
+        model_id="Qwen/Qwen2.5-72B-Instruct",
+        backend="remote",
+        provider_id="hyperbolic",
+        base_url="https://api.hyperbolic.xyz/v1",
+    )
+    assert len(saved) == 1
+    args, kwargs = saved[0]
+    assert args == ("Qwen/Qwen2.5-72B-Instruct",)
+    assert kwargs == {
+        "backend": "remote",
+        "provider_id": "hyperbolic",
+        "base_url": "https://api.hyperbolic.xyz/v1",
+    }
+
+
+def test_load_remote_marks_ready(monkeypatch):
+    monkeypatch.setattr(llm.model_registry, "selected_backend", lambda: "remote")
+    monkeypatch.setattr(
+        llm.model_registry, "selected_model_id", lambda: "Qwen/Qwen2.5-72B-Instruct"
+    )
+    monkeypatch.setattr(llm, "_llm", None)
+    llm.load()
+    assert llm.status()["state"] == llm.READY
+    assert llm.status()["backend"] == "remote"
+
+
 def test_switch_model_resolves_first_shard(monkeypatch):
     built = []
 
