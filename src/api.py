@@ -4,6 +4,7 @@
 Неудачная замена файла возвращает прежние байты.
 """
 
+import ipaddress
 import json
 import os
 import threading
@@ -1599,8 +1600,33 @@ def _validate_model(model_id):
         raise HTTPException(400, detail="Файл модели отсутствует")
 
 
+def _host_ip(host: str):
+    """IP хоста: прямая, десятичная запись или первый сегмент вида <ip>.nip.io/sslip.io."""
+    try:
+        return ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    if host.isdigit():
+        try:
+            return ipaddress.ip_address(int(host))
+        except ValueError:
+            pass
+    parts = host.split(".")
+    if len(parts) >= 5:
+        try:
+            return ipaddress.ip_address(".".join(parts[:4]))
+        except ValueError:
+            pass
+    if parts and parts[0].isdigit():
+        try:
+            return ipaddress.ip_address(int(parts[0]))
+        except ValueError:
+            pass
+    return None
+
+
 def _validate_base_url(url: str) -> None:
-    """SSRF-защита адреса площадки: https; http только localhost; metadata запрещён."""
+    """SSRF-защита адреса площадки: https; http только localhost; 169.254.0.0/16 запрещён."""
     if not url:
         return
     from urllib.parse import urlparse
@@ -1615,11 +1641,10 @@ def _validate_base_url(url: str) -> None:
         raise HTTPException(400, detail="Адрес API должен быть https")
     if scheme == "http" and host not in ("localhost", "127.0.0.1", "::1"):
         raise HTTPException(400, detail="http допускается только для localhost/Ollama")
-    if (
-        host == "169.254.169.254"
-        or host.startswith("169.254.")
-        or host == "metadata.google.internal"
-    ):
+    ip = _host_ip(host)
+    if ip is not None and ip in ipaddress.ip_network("169.254.0.0/16"):
+        raise HTTPException(400, detail="Служебный адрес запрещён")
+    if host == "metadata.google.internal":
         raise HTTPException(400, detail="Служебный адрес запрещён")
 
 
