@@ -2347,6 +2347,7 @@ def test_ui_models_external_section():
     assert "Проверить подключение" in text
     assert "Оценка стоимости" in text
     assert "Другая (OpenAI-совместимая)" in text
+    assert "Обновить модели" in text
 
 
 def test_switch_missing_file_returns_400(monkeypatch):
@@ -2431,3 +2432,52 @@ def test_ready_model_loading_returns_503_reason(monkeypatch):
     response = TestClient(app).get("/ready")
     assert response.status_code == 503
     assert response.json()["reason"] == "model_loading"
+
+
+class _ModelsFakeResp:
+    def __init__(self, status, payload):
+        self.status_code = status
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+def test_admin_provider_models_live_list(monkeypatch):
+    payload = {"data": [{"id": "glm-5.3-flash"}, {"id": "kimi-k3"}]}
+    captured = {}
+
+    def fake_get(url, headers, timeout, follow_redirects):
+        captured["url"] = url
+        captured["headers"] = headers
+        return _ModelsFakeResp(200, payload)
+
+    monkeypatch.setattr(api.httpx, "get", fake_get)
+    monkeypatch.setattr(api.providers, "load_key", lambda: "k")
+    url = "/admin/provider/models?provider_id=hyperbolic&base_url=https://api.hyperbolic.ai/inference/v1"
+    response = TestClient(app).get(url)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is True
+    assert [m["id"] for m in data["models"]] == ["glm-5.3-flash", "kimi-k3"]
+    assert captured["url"] == "https://api.hyperbolic.ai/inference/v1/models"
+
+
+def test_admin_provider_models_401(monkeypatch):
+    monkeypatch.setattr(api.httpx, "get", lambda *a, **kw: _ModelsFakeResp(401, {"detail": "bad"}))
+    monkeypatch.setattr(api.providers, "load_key", lambda: "k")
+    url = "/admin/provider/models?provider_id=hyperbolic&base_url=https://api.hyperbolic.ai/inference/v1"
+    data = TestClient(app).get(url).json()
+    assert data["ok"] is False
+    assert "отклонён" in data["error"]
+
+
+def test_admin_provider_models_network(monkeypatch):
+    def fake_get(*a, **kw):
+        raise api.httpx.TransportError("boom")
+
+    monkeypatch.setattr(api.httpx, "get", fake_get)
+    url = "/admin/provider/models?provider_id=hyperbolic&base_url=https://api.hyperbolic.ai/inference/v1"
+    data = TestClient(app).get(url).json()
+    assert data["ok"] is False
+    assert "недоступен" in data["error"]
