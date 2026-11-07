@@ -2308,6 +2308,11 @@ def test_admin_provider_usage_only_external(monkeypatch):
         {"kind": "query", "payload": {"service": "llama.cpp", "tokens_in": 100, "tokens_out": 50}},
     ]
     monkeypatch.setattr(api.audit, "list_events", lambda **k: events)
+    monkeypatch.setattr(
+        api.providers,
+        "get_provider_model",
+        lambda provider_id, model_id: {"price_in": 0.4, "price_out": 1.6},
+    )
     payload = TestClient(app).get("/admin/provider/usage").json()
     assert payload["calls"] == 1
     assert payload["tokens_in"] == 1000

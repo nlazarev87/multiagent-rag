@@ -148,7 +148,7 @@ def _error_message(status: int, body: str, data: dict[str, Any] | None, api_key:
     if status == 403:
         return "модель недоступна для этого ключа (HTTP 403)" + (f": {server}" if server else "")
     if status == 404:
-        return "модель не найдена на площадке (HTTP 404)"
+        return "модель не найдена на площадке (HTTP 404)" + (f": {server}" if server else "")
     if status == 413:
         return "запрос длиннее окна модели (HTTP 413)"
     if status == 422:
@@ -178,18 +178,22 @@ def _retry_after_seconds(resp: httpx.Response) -> int | None:
         return None
 
 
-def _error_from_response(resp: httpx.Response, model: str, api_key: str) -> ProviderError:
+def _error_from_response(resp: httpx.Response, model: str, api_key: str, url: str) -> ProviderError:
     status = resp.status_code
     body, data = _error_details(resp)
     is_json = data is not None
     retryable = is_json and (status in (408, 429) or (status is not None and status >= 500))
-    if status == 429 and is_json:
-        wait = _retry_after_seconds(resp)
-        if wait is not None and wait > 2:
-            retryable = False
-    return ProviderError(
-        status, model, _error_message(status, body, data, api_key), retryable=retryable
-    )
+    wait = _retry_after_seconds(resp)
+    if wait is not None and wait > 2 and (status == 429 or (status is not None and status >= 500)):
+        retryable = False
+        message = (
+            "лимит запросов площадки (HTTP 429) — попробуйте позже"
+            if status == 429
+            else f"модель временно недоступна (HTTP {status}) — попробуйте позже"
+        )
+    else:
+        message = _error_message(status, body, data, api_key)
+    return ProviderError(status, model, f"{url}: {message}", retryable=retryable)
 
 
 def _request(settings: dict[str, Any], messages: list[dict[str, Any]]) -> httpx.Response:
@@ -216,16 +220,19 @@ def _request(settings: dict[str, Any], messages: list[dict[str, Any]]) -> httpx.
 def _complete_once(settings: dict[str, Any], messages: list[dict[str, Any]]) -> dict[str, Any]:
     model = settings["model"]
     api_key = settings.get("api_key") or ""
+    url = _chat_url(settings["base_url"])
     resp = _request(settings, messages)
     if resp.status_code == 200:
         try:
             data = resp.json()
         except (json.JSONDecodeError, ValueError):
-            raise ProviderError(resp.status_code, model, "некорректный ответ площадки (не JSON)")
+            raise ProviderError(
+                resp.status_code, model, f"{url}: некорректный ответ площадки (не JSON)"
+            )
         if not isinstance(data, dict):
-            raise ProviderError(resp.status_code, model, "некорректный ответ площадки")
+            raise ProviderError(resp.status_code, model, f"{url}: некорректный ответ площадки")
         return _parse_ok(data, model, api_key)
-    raise _error_from_response(resp, model, api_key)
+    raise _error_from_response(resp, model, api_key, url)
 
 
 def complete(settings: dict[str, Any], messages: list[dict[str, Any]]) -> dict[str, Any]:
@@ -236,6 +243,7 @@ def complete(settings: dict[str, Any], messages: list[dict[str, Any]]) -> dict[s
     no_retry=True («Проверить подключение») отключает повторы.
     """
     model = settings["model"]
+    url = _chat_url(settings["base_url"])
     retries = int(settings.get("retries", 1))
     no_retry = bool(settings.get("no_retry", False))
     attempts = 1 if no_retry else retries + 1
@@ -249,5 +257,5 @@ def complete(settings: dict[str, Any], messages: list[dict[str, Any]]) -> dict[s
         except httpx.TransportError:
             if not no_retry and attempt + 1 < attempts:
                 continue
-            raise ProviderError(None, model, "площадка недоступна (сеть/таймаут)")
-    raise ProviderError(None, model, "площадка недоступна (сеть/таймаут)")
+            raise ProviderError(None, model, f"{url}: площадка недоступна (сеть/таймаут)")
+    raise ProviderError(None, model, f"{url}: площадка недоступна (сеть/таймаут)")
