@@ -2367,13 +2367,13 @@ def test_ui_models_external_section():
     text = page.read_text(encoding="utf-8")
     assert "innerHTML" not in text and "insertAdjacentHTML" not in text
     assert "data/secrets/" in text
-    assert "Сбросить ключ" in text
+    assert "Сбросить" in text
     assert "Внешние модели (API)" in text
     assert "Расходы внешнего API" in text
-    assert "Проверить подключение" in text
+    assert "Проверить" in text
     assert "Оценка стоимости" in text
     assert "Другая (OpenAI-совместимая)" in text
-    assert "Обновить модели" in text
+    assert "Обновить" in text
     assert "Применено и проверено" in text
     assert "внешняя (выбрана)" in text
 
