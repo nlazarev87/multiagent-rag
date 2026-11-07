@@ -264,3 +264,33 @@ def test_chat_url_full_path_not_doubled():
     llm_remote.complete(full, MESSAGES)
     assert captured["url"].endswith("/chat/completions")
     assert "/chat/completions/chat/completions" not in captured["url"]
+
+
+def test_error_includes_url_and_server_message():
+    def handler(request):
+        return httpx.Response(
+            404, json={"error": {"message": "This inference endpoint has been decommissioned"}}
+        )
+
+    _client(handler)
+    with pytest.raises(ProviderError) as info:
+        llm_remote.complete(SETTINGS, MESSAGES)
+    assert "chat/completions" in info.value.text
+    assert "decommissioned" in info.value.text
+
+
+def test_503_retry_after_long_not_retried():
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(
+            503, json={"error": {"message": "overloaded"}}, headers={"Retry-After": "60"}
+        )
+
+    _client(handler)
+    with pytest.raises(ProviderError) as info:
+        llm_remote.complete(SETTINGS, MESSAGES)
+    assert info.value.status == 503
+    assert calls["n"] == 1
+    assert "временно недоступна" in info.value.text
