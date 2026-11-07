@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
+import httpx
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
@@ -1774,6 +1775,53 @@ def admin_provider_reset(request: Request):
     providers.reset_key()
     audit.write("provider_reset", user, {}, ok=True)
     return {"ok": True, "key_source": providers.key_source()}
+
+
+@app.get("/admin/provider/models")
+def admin_provider_models(request: Request, provider_id: str = "", base_url: str = ""):
+    """Динамический список моделей площадки: прокси GET {base_url}/models с ключом."""
+    _need(_user(request), "manage_users")
+    base_url = (base_url or "").strip()
+    if not base_url:
+        pid = (
+            provider_id or model_registry.selected_provider()[0] or providers.default_provider_id()
+        )
+        card = providers.get_provider(pid)
+        base_url = str((card or {}).get("base_url", ""))
+    if not base_url:
+        return {"ok": False, "error": "Не задан адрес площадки", "models": []}
+    _validate_base_url(base_url)
+    api_key = providers.load_key() or ""
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    models_url = base_url.rstrip("/") + "/models"
+    try:
+        resp = httpx.get(models_url, headers=headers, timeout=10.0, follow_redirects=False)
+    except httpx.TransportError:
+        return {"ok": False, "error": "Список моделей недоступен (сеть)", "models": []}
+    if resp.status_code == 401:
+        return {"ok": False, "error": "Ключ отклонён — список моделей недоступен", "models": []}
+    if resp.status_code != 200:
+        return {
+            "ok": False,
+            "error": f"Не удалось получить список моделей (HTTP {resp.status_code})",
+            "models": [],
+        }
+    try:
+        data = resp.json()
+    except (json.JSONDecodeError, ValueError):
+        return {"ok": False, "error": "Некорректный ответ площадки", "models": []}
+    raw = data.get("data") if isinstance(data, dict) else None
+    if raw is None:
+        raw = data.get("models") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        raw = [data] if isinstance(data, dict) else []
+    models = []
+    for item in raw:
+        if isinstance(item, str):
+            models.append({"id": item, "name": item})
+        elif isinstance(item, dict) and item.get("id"):
+            models.append({"id": str(item["id"]), "name": str(item.get("name") or item["id"])})
+    return {"ok": True, "models": models}
 
 
 @app.post("/admin/models/test")

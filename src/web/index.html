@@ -3099,6 +3099,7 @@
     let usageBody = null;
     let externalModelInput = null;
     let externalCurrentId = "";
+    let remoteModels = [];
 
     function modelDisplayName(modelId, fallback) {
       const card = modelCards.find((m) => m.id === modelId);
@@ -3224,7 +3225,7 @@
       externalSelect.style.display = "";
       externalSelect.replaceChildren();
       const card = externalCardFor(providerSelect ? providerSelect.value : "");
-      const models = (card && card.models) || [];
+      const models = remoteModels.length ? remoteModels : ((card && card.models) || []);
       models.forEach((model) => {
         const option = document.createElement("option");
         option.value = model.id || "";
@@ -3280,6 +3281,24 @@
         }
         populateExternalModels(externalCurrentId || "");
       }
+    }
+
+    async function refreshRemoteModels() {
+      if (!externalSelect || !providerSelect) return;
+      const base = baseUrlInput ? baseUrlInput.value.trim() : "";
+      const params = new URLSearchParams();
+      if (!providerIsCustom()) params.set("provider_id", providerSelect.value);
+      if (base) params.set("base_url", base);
+      let data = { ok: false, models: [] };
+      try {
+        data = await (await fetch("/admin/provider/models?" + params.toString())).json();
+      } catch (error) {
+        data = { ok: false, models: [] };
+      }
+      if (data.ok && (data.models || []).length) {
+        remoteModels = data.models;
+      }
+      populateExternalModels(externalCurrentId || "");
     }
 
     async function applyExternal() {
@@ -3417,7 +3436,7 @@
           const card = externalCardFor(providerSelect.value);
           if (baseUrlInput) baseUrlInput.value = (card && card.base_url) || "";
         }
-        populateExternalModels(externalCurrentId || "");
+        refreshRemoteModels();
       });
       pField.append(providerSelect);
 
@@ -3455,6 +3474,9 @@
       externalModelInput.placeholder = "id модели, например Qwen/Qwen2.5-72B-Instruct";
       externalModelInput.style.display = "none";
       mField.append(externalModelInput);
+      const mActions = element("div", "row-actions");
+      mActions.append(adminButton("Обновить модели", () => refreshRemoteModels()));
+      mField.append(mActions);
       extBody.append(mField);
 
       externalFeedback = element("p", "model-feedback");
@@ -3510,6 +3532,7 @@
       });
       externalCurrentId = status && status.backend === "remote" ? status.model_id || "" : "";
       await refreshProviderState();
+      await refreshRemoteModels();
       await renderUsage();
       if (modelCurrentId && modelCards.some((m) => m.id === modelCurrentId)) {
         select.value = modelCurrentId;
