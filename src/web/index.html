@@ -3494,7 +3494,7 @@
       keyInput.placeholder = "Введите ключ (пустое поле — не менять)";
       keyStatusEl = badge("ключ не задан", "mute");
       const keyActions = element("div", "row-actions");
-      keyActions.append(keyStatusEl, adminButton("Сбросить ключ", async () => {
+      keyActions.append(keyStatusEl, adminButton("Сбросить", async () => {
         try { await fetch("/admin/provider/reset", { method: "POST" }); } catch (error) {}
         await refreshProviderState();
       }));
@@ -3513,7 +3513,7 @@
       externalModelInput.style.display = "none";
       mField.append(externalModelInput);
       const mActions = element("div", "row-actions");
-      mActions.append(adminButton("Обновить модели", () => refreshRemoteModels()));
+      mActions.append(adminButton("Обновить", () => refreshRemoteModels()));
       mField.append(mActions);
       extBody.append(mField);
 
@@ -3521,7 +3521,7 @@
       const extActions = element("div", "row-actions");
       extActions.append(
         adminButton("Применить", () => applyExternal()),
-        adminButton("Проверить подключение", () => testConnection())
+        adminButton("Проверить", () => testConnection())
       );
       extBody.append(extActions, externalFeedback);
       extBody.append(element("p", "setting-hint", "«Применить» сохраняет ключ и переключает на внешнюю модель — локальная GGUF выгружается из памяти. «Проверить» проверяет текущее подключение."));
