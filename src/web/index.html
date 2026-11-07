@@ -3339,31 +3339,67 @@
       }
       const data = await response.json().catch(() => ({}));
       if (response.ok) {
-        externalFeedback.textContent = "Выполняется…";
         externalCurrentId = modelId;
         modelBusy = true;
         refreshModelControls();
         if (modelPollTimer) { clearTimeout(modelPollTimer); modelPollTimer = null; }
-        pollModelStatus();
+        await waitModelReady();
         await refreshProviderState();
+        externalFeedback.textContent = "Выполняется проверка связи…";
+        const check = await runTestConnection();
+        if (check.ok) {
+          externalFeedback.textContent = "Применено и проверено: подключение успешно"
+            + (check.model ? " (" + check.model + ")" : "");
+        } else {
+          externalFeedback.textContent = "Применено, но связь не работает: "
+            + (check.error || "ошибка");
+        }
       } else {
         externalFeedback.textContent = data.detail || "Ошибка";
+      }
+    }
+
+    async function waitModelReady() {
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        try {
+          const s = await (await fetch("/admin/models/status")).json();
+          const st = (s && s.state) || "unloaded";
+          if (st !== "loading" && st !== "stopping") return;
+        } catch (error) {}
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+    }
+
+    async function runTestConnection() {
+      const modelId = providerIsCustom()
+        ? (externalModelInput ? externalModelInput.value.trim() : "")
+        : (externalSelect ? externalSelect.value : "");
+      if (!modelId) return { ok: false, error: "Укажите id модели" };
+      const body = {
+        model_id: modelId,
+        provider_id: providerSelect ? providerSelect.value : "",
+        base_url: baseUrlInput ? baseUrlInput.value.trim() : "",
+      };
+      try {
+        const response = await fetch("/admin/models/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        return await response.json().catch(() => ({ ok: false, error: "Не удалось подключиться" }));
+      } catch (error) {
+        return { ok: false, error: "Сервер не ответил" };
       }
     }
 
     async function testConnection() {
       if (!externalFeedback) return;
       externalFeedback.textContent = "Проверка…";
-      let data;
-      try {
-        const response = await fetch("/admin/models/test", { method: "POST" });
-        data = await response.json().catch(() => ({}));
-      } catch (error) {
-        externalFeedback.textContent = "Сервер не ответил";
-        return;
-      }
+      const data = await runTestConnection();
       if (data.ok) {
-        externalFeedback.textContent = "Подключение успешно";
+        externalFeedback.textContent = "Подключение успешно"
+          + (data.model ? ": " + data.model : "");
       } else {
         externalFeedback.textContent = data.error || "Не удалось подключиться";
       }
@@ -3544,7 +3580,14 @@
         select.value = modelCurrentId;
       }
 
-      if (modelStatusLine) modelStatusLine.textContent = modelStatusText(status || { state: "unloaded" });
+      if (modelStatusLine) {
+        const st = status || { state: "unloaded" };
+        if (st.backend === "remote" && st.state === "ready") {
+          modelStatusLine.textContent = modelDisplayName(st.model_id, st.model_name) + " · внешняя (выбрана)";
+        } else {
+          modelStatusLine.textContent = modelStatusText(st);
+        }
+      }
       const refreshInfo = () => renderModelInfo(info, modelCards.find((m) => m.id === select.value));
       select.addEventListener("change", () => { refreshInfo(); refreshModelControls(); });
       refreshInfo();

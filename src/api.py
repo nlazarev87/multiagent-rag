@@ -1825,12 +1825,24 @@ def admin_provider_models(request: Request, provider_id: str = "", base_url: str
 
 
 @app.post("/admin/models/test")
-def admin_models_test(request: Request):
-    """Проверить связь с текущей моделью: короткий запрос, без RAG, без повторов."""
+def admin_models_test(body: ModelTestBody, request: Request):
+    """Проверить связь с внешней моделью по значениям формы: короткий запрос, без повторов."""
     user = _user(request)
     _need(user, "manage_users")
+    model_id = (body.model_id or "").strip()
+    if not model_id:
+        return {"ok": False, "error": "Укажите id модели"}
+    provider_id = (body.provider_id or "").strip() or None
+    base_url = (body.base_url or "").strip() or None
+    if base_url:
+        _validate_base_url(base_url)
     try:
-        llm.complete("Проверка связи", "Ответь одним словом: ОК", max_tokens=8, no_retry=True)
+        llm.complete_remote(
+            provider_id=provider_id,
+            base_url=base_url,
+            model_id=model_id,
+            messages=[{"role": "user", "content": "Ответь одним словом: ОК"}],
+        )
     except llm.ProviderError as exc:
         audit.write("model_test", user, {"ok": False, "status": exc.status}, ok=False)
         return JSONResponse({"ok": False, "error": exc.text}, status_code=200)
@@ -1838,7 +1850,7 @@ def admin_models_test(request: Request):
         audit.write("model_test", user, {"ok": False}, ok=False)
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=200)
     audit.write("model_test", user, {"ok": True}, ok=True)
-    return {"ok": True}
+    return {"ok": True, "model": model_id}
 
 
 @app.get("/admin/provider/usage")

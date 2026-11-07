@@ -132,15 +132,20 @@ def _remote_active() -> bool:
     return model_registry.selected_backend() == "remote"
 
 
-def _remote_settings() -> dict[str, Any] | None:
-    """Настройки remote из выбора + каталога площадки. None, если не настроено.
+def _remote_settings(
+    provider_id: str | None = None,
+    base_url: str | None = None,
+    model_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Настройки remote из выбора (или переданных значений) + каталога. None, если не настроено.
 
     Свой адрес (не из каталога, например Ollama/vLLM) ключа не требует; неизвестный
     provider_id с заданными адресом и id модели не отбрасывается.
     """
-    model_id = model_registry.selected_model_id() or ""
-    provider_id, base_url = model_registry.selected_provider()
-    provider_id = provider_id or providers.default_provider_id()
+    model_id = (model_id if model_id is not None else model_registry.selected_model_id()) or ""
+    if provider_id is None:
+        provider_id, base_url = model_registry.selected_provider()
+        provider_id = provider_id or providers.default_provider_id()
     card = providers.get_provider(provider_id)
     if card is None and not (base_url and model_id):
         return None
@@ -180,6 +185,26 @@ def _estimate_tokens(text: str) -> int:
     if isinstance(chars, (int, float)) and float(chars) > 0:
         return max(1, int(len(text) / float(chars)))
     return max(1, len(text) // 2)
+
+
+def complete_remote(
+    provider_id: str | None,
+    base_url: str | None,
+    model_id: str,
+    messages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Проверочный/прямой вызов внешней модели по явным настройкам (не сохранённым).
+
+    Возвращает результат llm_remote.complete как есть — не бросает на
+    finish_reason=length, поэтому годится для «Проверить подключение»:
+    200 от площадки означает, что связь и ключ работают.
+    """
+    settings = _remote_settings(provider_id=provider_id, base_url=base_url, model_id=model_id)
+    if settings is None:
+        raise ModelError("внешняя модель не настроена")
+    settings["max_tokens"] = 16
+    settings["no_retry"] = True
+    return llm_remote.complete(settings, messages)
 
 
 def _add_usage(usage_sink, tokens_in, tokens_out):

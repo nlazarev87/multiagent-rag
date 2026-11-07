@@ -2220,23 +2220,49 @@ def test_admin_provider_canary_key_no_leak(monkeypatch):
 
 
 def test_admin_models_test_ok(monkeypatch):
-    monkeypatch.setattr(api.llm, "complete", lambda *a, **k: "ОК")
-    response = TestClient(app).post("/admin/models/test")
+    captured = {}
+    monkeypatch.setattr(
+        api.llm, "complete_remote", lambda **k: captured.update(k) or {"text": "ОК"}
+    )
+    response = TestClient(app).post(
+        "/admin/models/test",
+        json={
+            "model_id": "glm-5.3-flash",
+            "provider_id": "hyperbolic",
+            "base_url": "https://api.hyperbolic.ai/inference/v1",
+        },
+    )
     assert response.status_code == 200
     assert response.json()["ok"] is True
+    assert captured["model_id"] == "glm-5.3-flash"
+    assert captured["provider_id"] == "hyperbolic"
 
 
 def test_admin_models_test_provider_error(monkeypatch):
     from llm_remote import ProviderError
 
-    def boom(*a, **k):
+    def boom(**k):
         raise ProviderError(401, "m", "площадка отклонила ключ")
 
-    monkeypatch.setattr(api.llm, "complete", boom)
-    response = TestClient(app).post("/admin/models/test")
+    monkeypatch.setattr(api.llm, "complete_remote", boom)
+    response = TestClient(app).post(
+        "/admin/models/test",
+        json={
+            "model_id": "glm-5.3-flash",
+            "provider_id": "hyperbolic",
+            "base_url": "https://api.hyperbolic.ai/inference/v1",
+        },
+    )
     assert response.status_code == 200
     assert response.json()["ok"] is False
     assert "ключ" in response.json()["error"]
+
+
+def test_admin_models_test_missing_model(monkeypatch):
+    response = TestClient(app).post("/admin/models/test", json={})
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert "id модели" in response.json()["error"]
 
 
 def test_switch_remote_passes_backend_to_facade(monkeypatch):
@@ -2348,6 +2374,8 @@ def test_ui_models_external_section():
     assert "Оценка стоимости" in text
     assert "Другая (OpenAI-совместимая)" in text
     assert "Обновить модели" in text
+    assert "Применено и проверено" in text
+    assert "внешняя (выбрана)" in text
 
 
 def test_switch_missing_file_returns_400(monkeypatch):
