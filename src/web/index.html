@@ -3480,8 +3480,10 @@
       urlField.append(element("label", "", "Адрес API (base URL)"));
       baseUrlInput = document.createElement("input");
       baseUrlInput.className = "input";
-      baseUrlInput.placeholder = "https://api.hyperbolic.xyz/v1";
+      baseUrlInput.placeholder = "https://api.hyperbolic.ai/inference/v1";
       urlField.append(baseUrlInput);
+      urlField.append(element("p", "setting-hint",
+        "Инференс Hyperbolic — https://api.hyperbolic.ai/inference/v1 (не /v2: это API аренды GPU)."));
       extBody.append(pField, urlField);
 
       const keyField = element("div", "field");
